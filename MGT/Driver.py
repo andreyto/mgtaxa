@@ -2,8 +2,8 @@
 import sys, os
 sys.path.append(os.environ['CA_BINDIR'])
 
-from mgt.db import *
-from mgt.svm import *
+from MGT.Db import *
+from MGT.Svm import *
 
 #dbSql = createDbSQL()
 #

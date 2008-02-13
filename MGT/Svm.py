@@ -1,5 +1,5 @@
-from mgt.taxa import *
-from mgt.kmers import *
+from MGT.Taxa import *
+from MGT.Kmers import *
 
 
 class CountAggregateVisitor:

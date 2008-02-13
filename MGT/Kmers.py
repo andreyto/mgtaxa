@@ -1,4 +1,4 @@
-from mgt.common import *
+from MGT.Common import *
 
 
 class KmerFreqRecord:

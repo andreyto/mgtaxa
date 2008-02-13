@@ -1,4 +1,4 @@
-from mgt.common import *
+from MGT.Common import *
 
 def dbClose(dbObj):
     print "Running 'atexit()' handler"
