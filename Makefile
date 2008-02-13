@@ -5,18 +5,22 @@ CXXFLAGS=
 MAKE=make
 AR=/usr/bin/ar
 ARFLAGS=-rvs
-MAKEDEPEND = mkdir -p $(DEPDIR); $(CXX) $(CXXFLAGS) $(EXTRA_CXXFLAGS) -MM -o $(DEPDIR)/$*.d $<
-DEPDIR = .deps
-df = $(DEPDIR)/$(*F)
+DOXYGEN=$(shell which doxygen)
+MAKEDEPEND = mkdir -p $(DEP_DIR); $(CXX) $(CXXFLAGS) $(EXTRA_CXXFLAGS) -MM -o $(DEP_DIR)/$*.d $<
+DEP_DIR = .deps
+df = $(DEP_DIR)/$(*F)
 
 ## Dependency autogeneration code is taken from:
 ##http://make.paulandlesley.org/autodep.html
 
 PROJ_DIR = $(HOME)/work/mgtaxa
 SRC_DIR = $(PROJ_DIR)/src
+PY_DIR = $(PROJ_DIR)/MGT
 INC_DIR = $(PROJ_DIR)/include
 TEST_DIR = $(PROJ_DIR)/test
-TEST_DIR_SRC = $(TEST_DIR)/cpp
+TEST_SRC_DIR = $(TEST_DIR)/cpp
+TEST_PY_DIR = $(TEST_DIR)/py
+DOC_DIR = $(PROJ_DIR)/doc
 
 PROGRAMS   = test_kmers
 
@@ -29,23 +33,29 @@ EXTRA_CXXFLAGS = -I$(PROJ_DIR)/include
 #VPATH = $(SRC_DIR):$(TEST_DIR)
 vpath %.h $(INC_DIR)
 vpath %.hpp $(INC_DIR)
-vpath %.cpp $(SRC_DIR) $(TEST_DIR_SRC)
+vpath %.cpp $(SRC_DIR) $(TEST_SRC_DIR)
+vpath $.py $(PY_DIR) $(TEST_PY_DIR)
 
 # Source files
 SRC_CPP = $(wildcard *.cpp)
 SRC_C = $(wildcard *.c)
 SRC = $(SRC_CPP) $(SRC_C)
-DEP = $(SRC_CPP:.cpp=.d) $(SRC_C:.c=.d)
+PY = $(wildcard *.py)
+#DEP = $(SRC_CPP:.cpp=.d) $(SRC_C:.c=.d)
 OBJ = $(SRC:.cpp=.o) $(SRC:.c=.o)
 
 ######################### Target Definitions ##########################
 
 # Targets that you shouldn't need to change
 
-all: $(PROGRAMS) $(LIBRARIES)
+all: $(PROGRAMS) $(LIBRARIES) doc
+
+doc: $(SRC) $(PY) $(DOC_DIR)/Doxyfile
+	cd $(PROJ_DIR); $(DOXYGEN) $(DOC_DIR)/Doxyfile
 
 clean:		
-	rm -f $(PROGRAMS) $(LIBRARIES) *.o $(DEPDIR)/*.P
+	rm -f $(PROGRAMS) $(LIBRARIES) *.o *.pyc *.pyo $(DEP_DIR)/*.P
+	rm -rf $(DOC_DIR)/html $(DOC_DIR)/tex
 
 install: all
 ifdef PROGRAMS
@@ -114,8 +124,8 @@ test_kmers: test_kmers.o
 #C_DEPS   = $(patsubst %.c, %.d, $(filter %.c, $(SRC)))
 #CXX_DEPS = $(patsubst %.cpp, %.d, $(filter %.cpp, $(SRC)))
 
--include $(SRC:%.c=$(DEPDIR)/%.P)
--include $(SRC:%.cpp=$(DEPDIR)/%.P)
+-include $(SRC:%.c=$(DEP_DIR)/%.P)
+-include $(SRC:%.cpp=$(DEP_DIR)/%.P)
 
 #sinclude $(CXX_DEPS) $(C_DEPS)
 #ifeq (0, $(words $(findstring $(MAKECMDGOALS), clean distclean)))
