@@ -8,8 +8,27 @@ ARFLAGS=-rvs
 DOXYGEN=$(shell which doxygen)
 MAKEDEPEND = mkdir -p $(DEP_DIR); $(CXX) $(CXXFLAGS) $(EXTRA_CXXFLAGS) -MM -o $(DEP_DIR)/$*.d $<
 
+PROGRAMS  := test_kmers
+EXTRA_CXXFLAGS = -I$(PROJ_DIR)/include
+
+## How we generate autodependencies:
 ## Dependency autogeneration code is taken from:
-##http://make.paulandlesley.org/autodep.html
+## http://make.paulandlesley.org/autodep.html
+## with the following change: We include here only those .P files
+## that already exist (through wildcard search). This way, we do not
+## need to define (or build through wildcard search) a list of all source files.
+## What happens:
+## Whenever a specific source file has to be compiled, an attempt is made to
+## generate a dependency .P file for it. If preprocessor fails, the compilation
+## of source file fails (as it should). If dependency file is generated, it will
+## be included in this Makefile the next time make is run, in which case make
+## will cause a recompilation of the source on any dependency update.
+## If the dependency file does not exist (and not included in Makefile) then
+## .o file does not exist either, in which case source compilation is done anyway.
+## Compared to generating a list of all source files through wildcard search,
+## this approach has the benefit that we can have any malformed source files in our
+## source tree, as long as they are not involved in target compilation, and make
+## will still succeed.
 
 PROJ_DIR := $(HOME)/work/mgtaxa
 BUILD_DIR := $(PROJ_DIR)/build/$(MACH)
@@ -26,33 +45,16 @@ DEP_DIR := $(BUILD_DIR)/.deps
 SRC_DIRS := $(SRC_DIR) $(TEST_SRC_DIR)
 PY_DIRS := $(PY_DIR) $(TEST_PY_DIR)
 
-PROGRAMS   := test_kmers
-
-EXTRA_CXXFLAGS = -I$(PROJ_DIR)/include
-
 #EXTRA_LIBS = -L/usr/X11R6/lib -L/usr/local/lib -lX11 -lgzstream -lz -lm
 
 #EXTRA_LIBS = -L/usr/X11R6/lib -L/home/syooseph/gzstream_bioinfo/gzstream -lX11 -lgzstream -lz -lm
 
-#VPATH = $(SRC_DIR):$(TEST_DIR)
 vpath %.h $(INC_DIR)
 vpath %.hpp $(INC_DIR)
 vpath %.cpp $(SRC_DIRS)
-vpath %.py $(PY_DIR) $(TEST_PY_DIR)
+vpath %.py $(PY_DIRS)
 
-# Source files
-# We do not use wildcards here so that make can still succeed when we have some
-# files that do not pass the preprocessor yet (during dependencies generation)
-#SRC_CPP := $(notdir $(foreach dir,$(SRC_DIRS),$(wildcard $(dir)/*.cpp)))
-SRC_C := 
-SRC = $(SRC_CPP) $(SRC_C)
-PY = $(wildcard $(PY_DIR)/*.py $(TEST_PY_DIR)/*.py)
-#DEP = $(SRC_CPP:.cpp=.d) $(SRC_C:.c=.d)
-OBJ = $(SRC:.cpp=.o) $(SRC:.c=.o)
-
-######################### Target Definitions ##########################
-
-# Targets that you shouldn't need to change
+####################### .PHONY Target Definitions #########################
 
 .PHONY: all
 all: $(PROGRAMS) $(LIBRARIES) doc
@@ -61,32 +63,36 @@ all: $(PROGRAMS) $(LIBRARIES) doc
 doc: $(DOC_DIR)/html
 
 $(DOC_DIR)/html: $(SRC) $(PY) $(DOC_DIR)/Doxyfile
-	cd $(PROJ_DIR) && $(DOXYGEN) $(DOC_DIR)/Doxyfile
+	@echo && echo "Running Doxygen" && echo
+	cd $(PROJ_DIR) && $(DOXYGEN) $(DOC_DIR)/Doxyfile > /dev/null
 
 .PHONY: clean
 clean:		
 	rm -f $(PROGRAMS) $(LIBRARIES) *.o *.pyc *.pyo $(DEP_DIR)/*.P
 	rm -rf $(DOC_DIR)/html $(DOC_DIR)/tex
 
-.PHONY: install
-install: all
-ifdef PROGRAMS
-	for PR in $(PROGRAMS) ; do cp $$PR $(PREFIX)/bin ; done
-endif
-ifdef LIBRARIES
-	for LB in $(LIBRARIES) ; do cp $$LB $(PREFIX)/lib ; done
-endif
 
-# dynamically expands into dependancy file name below
+############################ Compilation Rules #############################
+
+##### A couple of macro definitions for autodependency ######
+##### generation in compile rules:                     ######
+
+# Dynamically expands into dependancy file name:
+
 define df 
 $(DEP_DIR)/$(*F)
 endef
+
+# Create .P file from .d file:
+
 define df_pf
 cp $(df).d $(df).P && \
             sed -e 's/#.*//' -e 's/^[^:]*: *//' -e 's/ *\\$$//' \
                 -e '/^$$/ d' -e 's/$$/ :/' < $(df).d >> $(df).P && \
             rm $(df).d
 endef
+
+####### Compile here ########
 
 %.o: %.cpp
 	$(MAKEDEPEND) && $(df_pf)
@@ -96,58 +102,27 @@ endef
 	@$(MAKEDEPEND); $(df_pf)
 	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c -o $*.o $<
 
-#%.d: %.c
-#	$(CC) -M $(EXTRA_FLAGS) $< > $@
 
-#%.d: %.cpp
-#	$(CXX) -M $(EXTRA_FLAGS) $< > $@
+######################### Real Target Definitions ##########################
 
-# Add .d to Make's recognized suffixes.
-#SUFFIXES += .d
+# Define macro for executable linking
+define LINK_EXE
+$(CXX) $(CXXFLAGS) $(EXTRA_CXXFLAGS) $(LDFLAGS) $(EXTRA_LIBS) -lm -o $@ $<
+endef
 
-# Generate file.d from file.cpp.
-#%.d: %.cpp
-#	$(CXX) $(CXXFLAGS) $(EXTRA_CXXFLAGS) -MM $< > $@
-
-#%.d: %.cpp
-#	$(SHELL) -ec '$(CXX) -MM $(CXXFLAGS) $(EXTRA_CXXFLAGS) $(CPPFLAGS) $< \
-#                      | sed '\''s/\($*\)\.o[ :]*/\1.o $@ : /g'\'' > $@; \
-#                      [ -s $@ ] || rm -f $@'
-
-# In order to support multiple targets, you need to place a target
-# for each program and library down here.
-
-# Sample program target
-#
-# myprog: $(MYPROG_OBJ) $(EXTRA_LIBS)
-#	$(CC) -o myprog $(CFLAGS) $(EXTRA_FLAGS) $(MYPROG_OBJ) $(EXTRA_LIBS)
-
-# Sample library target
-#
-# mylib.a: $(MYLIB_OBJ)
-#       $(AR) $(ARFLAGS) mylib.a $(MYLIB_OBJ)
+#####################################################################################
+#### Define each target, adding custom libs and options after LINK_EXE as needed ####
 
 test_kmers: test_kmers.o
-	$(CXX) -o test_kmers $(CXXFLAGS) $(EXTRA_CXXFLAGS) test_kmers.o \
-	$(EXTRA_LIBS) -lm
+	$(LINK_EXE)
 
+########################## End target definitions ###################################
+#####################################################################################
 
-##
-## Dependencies
-##
+#################### Include generated dependency files as Makefiles #######
 
-#C_DEPS   = $(patsubst %.c, %.d, $(filter %.c, $(SRC)))
-#CXX_DEPS = $(patsubst %.cpp, %.d, $(filter %.cpp, $(SRC)))
-
-#-include $(SRC:%.c=$(DEP_DIR)/%.P)
-#-include $(SRC:%.cpp=$(DEP_DIR)/%.P)
-
-#always create an empty dependency file (it needs to have at least a new line in it)
+#We always create an empty dependency file (it needs to have at least a new line in it)
 #so that -include would not print a warning after make is run after previous 'make clean'
+
 $(shell echo '' > $(DEP_DIR)/dummy_make_empty.P)
 -include $(wildcard $(DEP_DIR)/*.P)
-
-#sinclude $(CXX_DEPS) $(C_DEPS)
-#ifeq (0, $(words $(findstring $(MAKECMDGOALS), clean distclean)))
-#include $(DEP)
-#endif
