@@ -1,5 +1,5 @@
 
-KmerWalker::KmerWalker(int kmerLen, int nAbc) {
+KmerStates::KmerStates(int kmerLen, int nAbc) {
 	if( kmerLen > maxKmerLen ) {
 		throw KmerErrorLimits("kmerLen is too large");
 	}
@@ -22,30 +22,30 @@ KmerWalker::KmerWalker(int kmerLen, int nAbc) {
 	for(int i = 1; i < kmerLen; i++) {
 		m_blockStart[i] = m_blockSize[i-1] + m_blockStart[i-1];
 	}
-	m_counts.resize(nKmers);
+	m_states.resize(nKmers);
 	m_kmers.resize(nKmers);
 }
 
-void KmerWalker::initAllKmers() {
-	PKmerCounter pCounterFirst = &m_counts[0];
-	PKmerCounter pCounter = pCounterFirst;
-	for(int iCounter = 0; iCounter < m_counts.size(); iCounter++) {
-		PKmerCounter pCounter = &m_counts[iCounter];
-		Kmer& cKmer = m_kmers[iCounter];
-		indexToKmer(iCounter,cKmer);
+void KmerStates::initAllKmers() {
+	PKmerState pStateFirst = &m_states[0];
+	PKmerState pState = pStateFirst;
+	for(int iState = 0; iState < m_states.size(); iState++) {
+		PKmerState pState = &m_states[iState];
+		Kmer& cKmer = m_kmers[iState];
+		indexToKmer(iState,cKmer);
 		//TODO: make assertion here that indexToKmer returns the same as
 		//the content of cKmer if it was initialized before
 		for(INuc c = 0; c < m_nAbc; c++) {
 			Kmer nKmer;
 			nextKmer(cKmer,c,nKmer);
-			PKmerCounter pCounterNext = kmerToPointer(nKmer);
-			pCounter->m_next[c] = pCounterNext;
-			if( pCounterNext > pCounter ) {
+			PKmerState pStateNext = kmerToPointer(nKmer);
+			pState->m_next[c] = pStateNext;
+			if( pStateNext > pState ) {
 				// all kmers that are like a0bc and not like 00ab or abcd
-				// will have pCounterNext pointing to the 0 position counter,
+				// will have pStateNext pointing to the 0 position State,
 				// so everything else must be stored to be processed in some next
-				// iCounter loop iteration
-				m_kmers[pCounterNext - pCounterFirst] = nKmer;
+				// iState loop iteration
+				m_kmers[pStateNext - pStateFirst] = nKmer;
 			}
 		}
 	}

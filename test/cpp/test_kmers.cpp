@@ -1,4 +1,4 @@
-//#include "mgtaxa/kmers.hpp"
+#include "mgtaxa/kmers.hpp"
 #include "mgtaxa/version.hpp"
 #include <boost/test/minimal.hpp>
 

@@ -77,7 +77,7 @@ clean:
 ##### A couple of macro definitions for autodependency ######
 ##### generation in compile rules:                     ######
 
-# Dynamically expands into dependancy file name:
+# Dynamically expands into dependency file name:
 
 define df 
 $(DEP_DIR)/$(*F)
