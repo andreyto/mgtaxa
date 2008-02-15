@@ -1,90 +1,64 @@
-#ifndef KMERS_HPP_
-#define KMERS_HPP_
+#ifndef MGT_KMERS_HPP_
+#define MGT_KMERS_HPP_
+
+#include "mgtaxa/exceptions.hpp"
 
 #include <vector>
 #include <iostream>
-#include <exception>
 #include <cmath>
 
 namespace MGT {
 
-//inline int ipow(int b, int p) {
-//	return int(std::pow(b,p));
-//}	
 
-/** Small integer type to encode a nucledotide.*/
-/** Example of encoding: 0,1,2,3,4 (0 - for N). */
+/** Small integer type to encode a nucledotide.
+ * Example: 0,1,2,3,4 encodes NACTG (N - degenerate symbol.*/
 
 typedef char INuc;
 
-const int maxINuc = 5;
+/** Upper bound on valid INuc values.*/
 
-/** Type for one-letter encoded nucleotide.*/
+const int g_maxINuc = 5;
+
+/** Type for one-letter encoded nucleotide.
+ * Example 'NACTG'.*/
 
 typedef char CNuc;
 
-const int maxCNuc = 256;
+/** Upper bound on valid CNuc values.*/
+
+const int g_maxCNuc = 256;
 
 typedef unsigned long ULong;
 
-const int maxKmerLen = 10;
+/** Upper bound on k-mer length.*/
 
-/** Base exception class.*/
+const int g_maxKmerLen = 10;
 
-class KmerError: public std::exception
-{
-public:
-	KmerError():
-	m_msg("KmerError")
-	{}
-	KmerError(const char* msg):
-	m_msg(msg)
-	{}
 
-  virtual const char* what() const throw()
-  {
-    return m_msg;
-  }
- protected:
- const char* m_msg;
-};
+/** Class Alphabet convertor from one letter character to integer index.
+ * @see AbcConvCharToInt() constructor.*/
+ 
+class AbcConvCharToInt {
 
-class KmerBadAlphabet: public KmerError
-{
-public:
-	KmerBadAlphabet():
-	KmerError("Alphabet is too long")
-	{}
-};
+	public:
 
-class KmerErrorLimits: public KmerError
-{
-public:
-	KmerErrorLimits(const char* msg): KmerError(msg)
-	{}
-};
+	AbcConvCharToInt(const CNuc abc[], int nAbc);
+	~AbcConvCharToInt();
+	
+	INuc operator()(CNuc c);
+	
+	protected:
 
-/** Exception raised when unallowed one-letter nucleotide code is received in the input. */  
+	/**If abc is 'ACTG', then m_CNucToINuc['A'] => 1, m_CNucToINuc['C'] => 2 and so on.*/
+	const CNuc * m_CNucToINuc;
+	
+	/**number of "real" alphabet symbols*/
+	int m_nAbc;
+	/**total number of encoded alphabet symbols (m_nAbc + 1)*/
+	int m_nINuc;
 
-class KmerBadNuc: public KmerError
-{
-  
-  KmerBadNuc(CNuc cnuc) 
-  {
-  	m_msg[0] = cnuc;
-  	m_msg[1] = '\0';
-  }
-  
-  virtual const char* what() const throw()
-  {
-    return m_msg;
-  }
-  
-  protected:
-  
-  char m_msg[2];
-  
-};	
+};		
+
 
 /** Class that holds a counter for one k-mer along with jump pointers for next k-mers.*/
 
@@ -98,7 +72,7 @@ class KmerState {
 	public:
 
 	/** Declared public only for access by KmerStates class.*/
-	PKmerState m_next[maxINuc];
+	PKmerState m_next[g_maxINuc];
 
 	/** Declared public only for access by KmerCounter class.*/
 	ULong m_count;	
@@ -108,15 +82,31 @@ class KmerState {
 
 typedef KmerState::PKmerState PKmerState;
 
+
+/** Class that describes k-mer in integer index representation.*/ 
+
 class Kmer {
 	public:
 	Kmer() {
-		for(int i = 0; i < maxKmerLen; i++) { m_data[i] = 0; }
+		for(int i = 0; i < g_maxKmerLen; i++) { m_data[i] = 0; }
 	}
-	INuc m_data[maxKmerLen];
+	INuc m_data[g_maxKmerLen];
 	inline INuc& operator[](int i) { return m_data[i]; }
 	inline const INuc& operator[](int i) const { return m_data[i]; }	
 };
+
+/** State machine for k-mers.
+ * It is optimized for the following use case:
+ * 1. relatively short k-mers (k < 10)
+ * 2. k-mer counts will be computed for many short chunks of sequence
+ * (reset counts, stream through sequence chunk, extract the counts, repeat).
+ * Typical length of sequence chunk (~1000 nuc) is less than the number of
+ * possible k-mers (~16,000 for k = 7).
+ * 3. k-mer counts will be extracted only for non-redundant subset of 
+ * reverse complement k-mers (~8,000 for k = 7).
+ * @see nextState implements the key operation of moving to the next k-mer
+ * from currently seen one.
+ * In view of (2), */ 
 
 class KmerStates {
 	protected:
@@ -152,6 +142,10 @@ class KmerStates {
 };
 
 
+/** Class that computes k-mer counts of incoming nucleotide sequence.
+ * In the future, it can be easily parameterized on different @see KmerStates
+ * implementations.*/
+ 
 class KmerCounter {
 	
 	public:
@@ -159,29 +153,21 @@ class KmerCounter {
 	KmerCounter(int kmerLen);
 	
 	inline void doCNuc(CNuc cnuc) {
-		doINuc(m_CNucToINuc[cnuc]);
+		doINuc((*m_pAbcConv)(cnuc));
 	}
 	
 	inline void doINuc(INuc inuc) {
-		m_pState = m_pStates->nextState(m_pState,inuc);
-		m_pState->m_count++;
+		m_pSt = m_pStates->nextState(m_pSt,inuc);
+		m_pSt->m_count++;
 	}
 	
 	protected:
+
+	AbcConvCharToInt * m_pAbcConv;
 	
-	void ctorCNucToINuc(const CNuc Abc[], int nAbc);
-	
-	protected:
-	
-	const CNuc * m_CNucToINuc;
-	
-	PKmerState m_pState;
+	PKmerState m_pSt;
 	KmerStates *m_pStates;
 	
-	/**number of "real" alphabet symbols*/
-	int m_nAbc;
-	/**total number of encoded alphabet symbols (m_nAbc + 1)*/
-	int m_nINuc;
 	int m_kmerLen;
 	
 };
@@ -193,9 +179,14 @@ class KmerCounter {
 ///
 ////////////////////////////////////////////////////////////////
 
+inline INuc AbcConvCharToInt::operator()(CNuc c) {
+	return m_CNucToINuc[c];
+}
+
+
 inline KmerState::KmerState():
 	m_count(0) {
-		for(int i = 0; i < maxINuc; i++) {
+		for(int i = 0; i < g_maxINuc; i++) {
 			m_next[i] = 0;
 		}
 	}
@@ -255,4 +246,4 @@ inline void KmerStates::indexToKmer(int ind, Kmer& kmer) {
 
 } // namespace MGT
 
-#endif /*KMERS_HPP_*/
+#endif /*MGT_KMERS_HPP_*/

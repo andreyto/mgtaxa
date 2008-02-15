@@ -1,9 +1,12 @@
+#include "mgtaxa/kmers.hpp"
+
+namespace MGT {
 
 KmerStates::KmerStates(int kmerLen, int nAbc) {
-	if( kmerLen > maxKmerLen ) {
+	if( kmerLen > g_maxKmerLen ) {
 		throw KmerErrorLimits("kmerLen is too large");
 	}
-	if( nAbc + 1 > maxINuc ) {
+	if( nAbc + 1 > g_maxINuc ) {
 		throw KmerErrorLimits("nAbc is too large");
 	}
 	m_kmerLen = kmerLen;
@@ -52,33 +55,46 @@ void KmerStates::initAllKmers() {
 }
 
 
+/** A constructor.
+ * @param abc is a sequence of allowed non-degenerate character alphabet symbolsal (e.g. ATGC),
+ * anything else that will be seen in the future sequence input
+ * will be treated as degenerate symbols, equal to each other. 
+ * @param nAbc is size of @see kmerLen
+*/
 
-// alphabet must list all "real" nucleotide symbols (e.g. ATGC)
-// anything else that will be seen in the future sequence input
-// will be treated as N, equal to each other (e.g. X will be considered an N too)
-
-KmerCounter::KmerCounter(int kmerLen, const CNuc abc[], int nAbc) {
-	ctorCNucToINuc(abc,nAbc);
-	ctorKmerArray(kmerLen);
-}
-
-void KmerCounter::ctorCNucToINuc(const CNuc abc[], int nAbc) {
-	if( nAbc > maxINuc - 1 ) {
+AbcConvCharToInt::AbcConvCharToInt(const CNuc abc[], int nAbc) {
+	if( nAbc > g_maxINuc - 1 ) {
 		throw KmerBadAlphabet();
 	}
-	m_CNucToINuc = new CNuc[maxCNuc];
-	for(int i = 0; i < maxCNuc; i++) {
+	m_CNucToINuc = new CNuc[g_maxCNuc];
+	for(int i = 0; i < g_maxCNuc; i++) {
 		m_CNucToINuc[i] = 0;
 	}
 	for(int i = 0, ind = 1; i < nAbc; i++) {
 		CNuc cnuc = abc[i];
-		if( cnuc > maxCNuc || cnuc < 1 ) {
+		if( cnuc > g_maxCNuc || cnuc < 1 ) {
 			throw KmerBadNuc(cnuc);
 		}
 		m_CNucToINuc[cnuc] = ind++;
 	}
 	m_nAbc = nAbc;
 	m_nINuc = nAbc + 1;
+}
+
+~AbcConvCharToInt::AbcConvCharToInt() {
+	delete [] m_CNucToINuc;
+}
+
+
+/** A constructor.
+ * @param kmerLen is a length of a k-mer. In the current implementation, all kmers are
+ * precalculated and stored in memory, so be reasonable with this parameter.
+ * @param abc and @param nAbc are parameters for @see AbcConvCharToInt() constructor.
+*/
+
+KmerCounter::KmerCounter(int kmerLen, const CNuc abc[], int nAbc) {
+	m_pAbcConv = new AbcConvCharToInt(abc,nAbc);
+	ctorKmerArray(kmerLen);
 }
 
 void KmerCounter::ctorKmerArray(int kmerLen) {
@@ -91,24 +107,8 @@ void KmerCounter::ctorKmerArray(int kmerLen) {
 		
 
 ~KmerCounter::KmerCounter() {
-	delete [] m_CNucToINuc;
+	delete m_abcConv;
 }
 
 
-} // namespace Phy
-
-int main() {
-vector<char> a(1000*1000*100);
-a[0] = 3;
-a[1] = 200;
-for(int i = 2; i < a.size(); i++) {
-	a[i] = (a[i-1] + a[i-2])/2;
-}
-if( a[a.size()-1] < 10 ) {
-	cout << a[a[a.size()-1]] << "\n";
-}
-else {
-	cout << a[a[a.size()-1]/2] << "\n";
-}
-return 0;
-}
+} // namespace MGT
