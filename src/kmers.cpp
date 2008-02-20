@@ -41,7 +41,7 @@ void KmerStates::initAllKmers() {
 		for(INuc c = 0; c < m_nAbc; c++) {
 			Kmer nKmer;
 			nextKmer(cKmer,c,nKmer);
-			PKmerState pStateNext = kmerToPointer(nKmer);
+			PKmerState pStateNext = kmerToState(nKmer);
 			pState->m_next[c] = pStateNext;
 			if( pStateNext > pState ) {
 				// all kmers that are like a0bc and not like 00ab or abcd
@@ -55,14 +55,15 @@ void KmerStates::initAllKmers() {
 }
 
 
-/** A constructor.
+/**A constructor.
  * @param abc is a sequence of allowed non-degenerate character alphabet symbolsal (e.g. ATGC),
  * anything else that will be seen in the future sequence input
  * will be treated as degenerate symbols, equal to each other. 
- * @param nAbc is size of @see kmerLen
 */
 
-AbcConvCharToInt::AbcConvCharToInt(const CNuc abc[], int nAbc) {
+AbcConvCharToInt::AbcConvCharToInt(const std::string& abc) {
+	m_abcExt = "N"+abc;
+	int nAbc = abc.size();
 	if( nAbc > g_maxINuc - 1 ) {
 		throw KmerBadAlphabet();
 	}
@@ -81,7 +82,7 @@ AbcConvCharToInt::AbcConvCharToInt(const CNuc abc[], int nAbc) {
 	m_nINuc = nAbc + 1;
 }
 
-~AbcConvCharToInt::AbcConvCharToInt() {
+AbcConvCharToInt::~AbcConvCharToInt() {
 	delete [] m_CNucToINuc;
 }
 
@@ -89,12 +90,15 @@ AbcConvCharToInt::AbcConvCharToInt(const CNuc abc[], int nAbc) {
 /** A constructor.
  * @param kmerLen is a length of a k-mer. In the current implementation, all kmers are
  * precalculated and stored in memory, so be reasonable with this parameter.
- * @param abc and @param nAbc are parameters for @see AbcConvCharToInt() constructor.
+ * @param abc is a parameter for AbcConvCharToInt::AbcConvCharToInt() constructor.
 */
 
-KmerCounter::KmerCounter(int kmerLen, const CNuc abc[], int nAbc) {
-	m_pAbcConv = new AbcConvCharToInt(abc,nAbc);
+KmerCounter::KmerCounter(int kmerLen, const std::string& abc) {
+	m_pAbcConv = new AbcConvCharToInt(abc);
 	ctorKmerArray(kmerLen);
+	m_data.resize(m_pStates->numStates())
+	m_iDataEnd = 0;
+	m_iDataExtr = 0;
 }
 
 void KmerCounter::ctorKmerArray(int kmerLen) {
@@ -106,7 +110,7 @@ void KmerCounter::ctorKmerArray(int kmerLen) {
 }
 		
 
-~KmerCounter::KmerCounter() {
+KmerCounter::~KmerCounter() {
 	delete m_abcConv;
 }
 
