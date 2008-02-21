@@ -9,6 +9,8 @@
 #include <cmath>
 #include <string>
 
+#include "assert.h"
+
 namespace MGT {
 
 /** Alphabet convertor from one-letter character to integer index.*/
@@ -16,29 +18,40 @@ namespace MGT {
 class AbcConvCharToInt {
 
 	public:
+	
+	enum { I_DEGEN = 0 };
 
-	AbcConvCharToInt(const std::string& abc);
-	~AbcConvCharToInt();
+	AbcConvCharToInt(const std::string& abc, const std::string& abcRevCompl);
 	
 	INuc operator()(CNuc c) const;
+	INuc toINuc(CNuc c) const;
 	CNuc toCNuc(INuc i) const;
-	
+	int nAbc() const;
+	int nCodes() const;
+
+	INuc revCompl(INuc i) const;	
 	
 	protected:
 
 	/**If abc is 'ACTG', then m_CNucToINuc['A'] => 1, m_CNucToINuc['C'] => 2 and so on. 0 is reserved for 'N'*/
-	const CNuc * m_CNucToINuc;
+	const CNuc m_CNucToINuc[g_maxCNuc];
 	
-	/**Extended alphabet, e.g. - 'NACTG'*/ 
+	/**Extended alphabet, e.g. - 'NACGT'*/ 
 	std::string m_abcExt;
 	
 	/**number of "real" alphabet symbols*/
 	int m_nAbc;
 	/**total number of encoded alphabet symbols (m_nAbc + 1)*/
-	int m_nINuc;
+	int m_nCodes;
+	
+	/**maps INuc index into reverse-complement INuc index.*/
+	const INuc m_iNucRevCompl[g_maxINuc];
 
 };		
 
+
+extern std::string defNucAbc;
+extern std::string defNucAbcRevComp;
 
 /** Class that describes a k-mer in integer index representation.
  * We expect to create many k-mer objects for the same k, so k
@@ -55,15 +68,20 @@ class Kmer {
 };
 
 
-std::string kmerToStr(const Kmer& kmer, int kmerLen, const AbcConvCharToInt& conv);  
+std::string kmerToStr(const Kmer& kmer, int kmerLen, const AbcConvCharToInt& conv);
+
+void kmerToRevCompl(const Kmer& kmer, int kmerLen, const AbcConvCharToInt& conv, Kmer& kmer);
+  
 
 /** Forward declaration of payload class for  KmerState.*/
 
 class KmerStateData;
 
+/** Pointer to KmerStateData.*/
+
 typedef KmerStateData *PKmerStateData;
 
-/** Type for unique, stable between program invocations ID of a k-mer.
+/** Type for unique ID of a k-mer. It should be stable between program invocations.
  * For dense  KmerStates implementation, this is defined as int.
  * For sparce (e.g. hash) representations, it might be k-mer itself.*/
  
@@ -124,6 +142,10 @@ class KmerStateData {
 	PKmerState getState() {
 		return m_pState;
 	}
+
+	const PKmerState getState() const {
+		return m_pState;
+	}
 	
 	void setState(PKmerState pState) {
 		m_pState = pState;
@@ -169,6 +191,11 @@ class KmerStateData {
  * and check if its payload is NULL. If it is, we allocate the new payload object. Then, we 
  * increment the count in the payload object.
  *
+ * Any implementation of KmerStates must guarantee this:
+ * All degenerate states point to the very first (zero) state as their reverse-complement state.
+ * That allows KmerCounter to link zero state to a single dummy KmerStateData object.
+ * Thus, reverse-complement link is not symmetric for degenerate states.
+ *
  * When counts are to be extracted, we have to loop only through the payload objects for those k-mers 
  * that were actually seen and represent the non-redundant subset of all reverse-complement pairs.  
  * 
@@ -181,35 +208,38 @@ class KmerStates {
 	typedef std::vector<KmerState> StateArray;
 	typedef std::vector<Kmer> KmerArray; 
 	public:
-		KmerStates(int kmerLen,int nAbc);
+		KmerStates(int kmerLen, const AbcConvCharToInt *pAbcConv);
 		PKmerState nextState(PKmerState pState,INuc c);
 		PKmerState revCompState(PKmerState pState);
 		PKmerState revCompStateFirst(PKmerState pState);		
-		bool isRevComp(PKmerState pState);
+		bool isRevComp(PKmerState pState) const;
+		bool isDegenState(PKmerState pState) const;
 		PKmerState firstState();
+		const PKmerState firstState() const;
 		int numStates() const;
-		KmerId idState(PKmerState pState);
+		KmerId idState(PKmerState pState) const;
 		PKmerStateData getData(PKmerState pState);
 		void setData(PKmerState pState,PKmerStateData pStateData);
 		const Kmer& kmerState(PKmerState pState) const;
 	protected:
-		PKmerState kmerToState(const Kmer& kmer); 
-		void nextKmer(const Kmer& currKmer, INuc c, Kmer& nextKmer);
-		int kmerToIndex(const Kmer& kmer);
-		void indexToKmer(int ind,Kmer& kmer);
+		PKmerState kmerToState(const Kmer& kmer) const; 
+		void nextKmer(const Kmer& currKmer, INuc c, Kmer& nextKmer) const;
+		int kmerToIndex(const Kmer& kmer) const;
+		void indexToKmer(int ind,Kmer& kmer) const;
 		void initAllKmers();
+		void initRevCompl();		
 
 	protected:
-	/**number of "real" alphabet symbols.*/
-	int m_nAbc;
-	/**total number of encoded alphabet symbols - (m_nAbc + 1)*/
-	int m_nCodes;
+	const AbcConvCharToInt *m_pAbcConv;	
 	int m_kmerLen;
 	std::vector<int> m_blockSize;
 	std::vector<int> m_blockStart;
 	
 	StateArray m_states;
 	KmerArray m_kmers;
+	
+	/** Index of the first non-degenerate state in m_states.*/ 
+	int iFirstStateNonDegen;
 	
 };
 
@@ -223,7 +253,7 @@ class KmerCounter {
 	
 	public:
 	
-	KmerCounter(int kmerLen, const std::string& abc);
+	KmerCounter(int kmerLen, const AbcConvCharToInt *pAbcConv);
 	~KmerCounter();
 	
 	void doCNuc(CNuc cnuc);
@@ -234,7 +264,8 @@ class KmerCounter {
  	* They must be called in a strict order because they change the internal state
  	* of KmerCounter object. The interface is designed for efficiency and flexibility
  	* of the caller.
- 	* After doCNuc() has been called any number of times, the extraction is done as in the
+ 	* After doCNuc() has been called any number of times (we call this "accumulation cycle", 
+ 	* the extraction is done as in the
  	* following code sample, after which doCNuc() can be called again to accumulate new counts.
  	* @code
  	* int n = o.numKmers();
@@ -247,7 +278,7 @@ class KmerCounter {
  	* nextKmer() can be called less than numKmers() times.
  	* */
 	/*@{*/ 	
-	/** Return number of k-mers found so far.*/
+	/** Return number of k-mers found so far in current accumulation cycle.*/
 	int numKmers() const;
 	/** Prepare internal state for result extraction.*/
 	void startKmer();
@@ -265,7 +296,7 @@ class KmerCounter {
 	
 	protected:
 
-	AbcConvCharToInt * m_pAbcConv;
+	AbcConvCharToInt *m_pAbcConv;
 	
 	PKmerState m_pSt;
 	KmerStates *m_pStates;
@@ -275,8 +306,19 @@ class KmerCounter {
 	/** Preallocated array of  KmerStateData objects.
 	 * Array size is equal to the total number of states.
 	 * This guarantees that there is always enough data elements
-	 * regardless of the input sequence length.*/
+	 * regardless of the input sequence length.
+	 * @todo Current array size is more than 50% excessive because
+	 * we only store counts for one of every two reverse-complement
+	 * states, and all degenerate states have zero state set as
+	 * their reverse complement. This is a low priority optimization.*/
 	std::vector<KmerStateData> m_data;
+	
+	/** One dummy KmerStateData object that is linked to the zero state,
+	 * which in turn is set as a reverse-complement one for all other
+	 * degenerate states. This way, it serves as a sink counter for
+	 * all degenerate states. That in turn removes one branch condition
+	 * from the time-critical code in doINuc().*/ 
+	KmerStateData m_dataDegen;
 	
 	/** Index of the first unused element in ::m_data.*/
 	int m_iDataEnd;
@@ -292,20 +334,69 @@ class KmerCounter {
 ///
 ////////////////////////////////////////////////////////////////
 
+/** Convert character code to integer code. */ 
+
 inline INuc AbcConvCharToInt::operator()(CNuc c) const {
 	return m_CNucToINuc[c];
 }
+
+/** Convert character code to integer code. */
+
+inline INuc AbcConvCharToInt::toINuc(CNuc c) const {
+	return m_CNucToINuc[c];
+}
+
+/** Convert integer code to character code. */
 
 inline CNuc AbcConvCharToInt::toCNuc(INuc i) const {
 	return m_abcExt[i];
 }
 
+/** Return size of non-degenerate character alphabet*/
+
+inline int AbcConvCharToInt::nAbc() const {
+	return m_nAbc;
+}
+
+/** Return number of integer codes (with degenerate code).*/
+
+inline int AbcConvCharToInt::nCodes() const {
+	return m_nCodes;
+}
+
+
+/** Convert integer index of a nucleotide into integer index of a reverse-complement nucleotide.
+ * @param i - integer index of a nucleotide. Must be in the valid range [0,::g_maxINuc]. 
+ * Degenerate entry is converted into degenerate.*/
+
+inline INuc AbcConvCharToInt::revCompl(INuc i) const {
+	return m_iNucRevCompl[i]; 
+}	
+
+
+/** Return character string representation of Kmer */
+
 inline std::string kmerToStr(const Kmer& kmer, int kmerLen, const AbcConvCharToInt& conv) {
-	std::string s(kmerLen);
+	std::string s(kmerLen,' ');
 	for(int i = 0; i < kmerLen; i++) {
 		s[i] = conv.toCNuc(kmer[i]);
 	}
 	return s;
+}
+
+
+/** Reverse-complement a k-mer.
+ * @param kmerInp - input k-mer
+ * @param kmerLen - length of k-mer
+ * @param conv - alphabet converter
+ * @param kmerOut - output k-mer, which will become the reverse-complement of kmerInp. Should not point to
+ * the same location as kmerInp.
+ */
+ 
+inline void kmerToRevCompl(const Kmer& kmerInp, int kmerLen, const AbcConvCharToInt& conv, Kmer& kmerOut) {
+	for(int i = 0, j = kmerLen - 1; i < kmerLen; i++, j--) {
+		kmerOut[j] = conv.revCompl(kmerInp[i]);
+	}
 }
 
 inline KmerState::KmerState():
@@ -317,9 +408,18 @@ inline KmerState::KmerState():
 		}
 }
 
+/** Return pointer to the next KmerState in the state machine.
+ * @param pState - current state
+ * @param c - nucleotide integer code
+ */
+  
 inline PKmerState KmerStates::nextState(PKmerState pState,INuc c) {
 	return pState->m_next[c];
 }
+
+/** Return pointer to the reverse complement KmerState.
+ * @param pState - current state
+ */
 
 inline PKmerState KmerStates::revCompState(PKmerState pState) {
 	return pState->m_revComp;
@@ -335,9 +435,22 @@ inline PKmerState KmerStates::revCompStateFirst(PKmerState pState) {
 	return pState->m_isRevComp ? pState->m_revComp : pState;
 }
 
+/** Return pointer to the very first KmerState in the state machine.
+ * Each k-mer count accumulation cycle starts from this state.*/ 
+
 inline PKmerState KmerStates::firstState() {
 	return &m_states[0];
 }
+
+/** Return constant pointer to the very first KmerState in the state machine.
+ * Each k-mer count accumulation cycle starts from this state.*/ 
+
+
+inline const PKmerState KmerStates::firstState() const {
+	return const_cast<const PKmerState>(&m_states[0]);
+}
+
+/** Return total number of KmerState states in the state machine (normal and degenerate).*/ 
 
 inline int KmerStates::numStates() const {
 	return m_states.size();
@@ -349,17 +462,32 @@ inline int KmerStates::numStates() const {
  * and that it is always the same one between different invocations
  * of the program.*/
   
-inline bool KmerStates::isRevComp(PKmerState pState) {
+inline bool KmerStates::isRevComp(PKmerState pState) const {
 	return pState->m_isRevComp;
 }
+
+/** Return pointer to KmerStateData object linked to the given state.
+ * @param pState - current state
+ * */ 
 
 inline PKmerStateData KmerStates::getData(PKmerState pState) {
 	return pState->m_pData; 
 }
 
+/** Link given KmerState object to the given KmerStateData object.
+ * This sets only uni-directed link from KmerState to KmerStateData.
+ * @param pState - pointer to state
+ * @param pStateData - pointer to data
+ */   
+
 inline void KmerStates::setData(PKmerState pState,PKmerStateData pStateData) {
 	pState->m_pData = pStateData;
 }
+
+/** Return reference to Kmer object for a given KmerState obejct.
+ * @param pState - pointer to state
+ * This is done in constant time based on position of pState in internal array.
+ */ 
 
 inline const Kmer& KmerStates::kmerState(PKmerState pState) const {
 	return m_kmers[pState-firstState()];
@@ -368,16 +496,28 @@ inline const Kmer& KmerStates::kmerState(PKmerState pState) const {
 /** Return unique ID of the state's k-mer.
  * This is stable between invocations of the program.*/
 
-inline KmerId KmerStates::idState(PKmerState pState) {
+inline KmerId KmerStates::idState(PKmerState pState) const {
 	return pState->m_id;
 }
 
-inline PKmerState KmerStates::kmerToState(const Kmer& kmer) {
+/** Return pointer to KmerState for a given Kmer object.
+ * @param kmer - Kmer object.
+ * This is done based on value of kmer, and complexity is linear 
+ * in kmer length.
+ */
+
+inline PKmerState KmerStates::kmerToState(const Kmer& kmer) const {
 	int ind = kmerToIndex(kmer);
-	return & m_states[ind]; 
+	return const_cast<const PKmerState>(& m_states[ind]); 
 }
 
-inline int KmerStates::kmerToIndex(const Kmer& kmer) {
+/** Return position of Kmer object in internal array.
+ * @param kmer - Kmer object
+ * This is done based on value of kmer, and complexity is linear 
+ * in kmer length.
+ */ 
+
+inline int KmerStates::kmerToIndex(const Kmer& kmer) const {
 	int i = 0;
 	for(; i < m_kmerLen; i++) {
 		if( kmer[i] != 0 ) {
@@ -387,7 +527,7 @@ inline int KmerStates::kmerToIndex(const Kmer& kmer) {
 	int ndim = m_kmerLen - i;
 	int blockStart = m_blockStart[ndim];
 	int blockSize = m_blockSize[ndim];
-	int extent = m_nAbc;
+	int extent = m_pAbcConv->nAbc();
 	int stride = 1;
 	int ind = blockStart;
 	for(; i < m_kmerLen; i++) {
@@ -397,8 +537,13 @@ inline int KmerStates::kmerToIndex(const Kmer& kmer) {
 	return ind;
 }
 
+/** Fill the value of Kmer object from its index in the internal array.
+ * @param ind - index
+ * @param kmer - output Kmer object
+ * This is a reverse operation to kmerToIndex() and has the same complexity. 
+ */
 
-inline void KmerStates::indexToKmer(int ind, Kmer& kmer) {
+inline void KmerStates::indexToKmer(int ind, Kmer& kmer) const {
 	int iBlock = 0;
 	for(; iBlock < m_kmerLen; iBlock++) {
 		if( m_blockStart[iBlock] > ind ) {
@@ -408,8 +553,8 @@ inline void KmerStates::indexToKmer(int ind, Kmer& kmer) {
 	iBlock -= 1;
 	int ndim = iBlock; // iBlock == number of non-0 dimensions
 	int indBlock = ind - m_blockStart[ndim];
-	int extent = m_nAbc;
-	int stride = m_nAbc; 
+	int extent = m_pAbcConv->nAbc();
+	int stride = extent; 
 	for( int i = m_kmerLen - ndim; i < m_kmerLen; i++ ) {
 		kmer[i] = indBlock % stride;
 		stride *= extent;
@@ -427,12 +572,10 @@ inline void KmerCounter::doCNuc(CNuc cnuc) {
 
 
 /** This method is called for each element of an input sequence (through
- * KmerCounter::doCNuc() wrapper method).  
+ * KmerCounter::doCNuc() wrapper method).
  * @todo make sure that reverse-complement pointers work correctly
  * for degenerate k-mer states and palyndromic states.
- * @todo for degenerates, we can create a separate dummy KmerStateData
- * object, and point all such states to it. That will 
- * leave only valid output counts in the main data array.*/
+*/
 
 inline void KmerCounter::doINuc(INuc inuc) {
 	m_pSt = m_pStates->nextState(m_pSt,inuc);
@@ -446,7 +589,6 @@ inline void KmerCounter::doINuc(INuc inuc) {
 	}
 	pDat->count++;
 }
-
 
 inline int KmerCounter::numKmers() const {
 	return m_iDataEnd;
@@ -473,7 +615,7 @@ inline ULong KmerCounter::getKmerCount() const {
 }
 
 inline int KmerCounter::getKmerId() const {
-	return m_pStates->idState(m_data[m_iDataExtr].getState())
+	return m_pStates->idState(m_data[m_iDataExtr].getState());
 }
  
 inline std::string KmerCounter::getKmerStr() const {
@@ -484,8 +626,11 @@ inline void KmerCounter::finishKmer() {
 	//clean up the remaining dirty KmerStateData
 	for( ; m_iDataExtr < m_iDataEnd; nextKmer() )
 	{}
+	m_dataDegen.count = 0;
 	m_iDataEnd = 0;
 	m_iDataExtr = 0;
+	//set current state to be the first state
+	m_pSt = m_pStates->firstState();	
 }
 
 

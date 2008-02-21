@@ -2,7 +2,15 @@
 
 namespace MGT {
 
-KmerStates::KmerStates(int kmerLen, int nAbc) {
+/** Constructor.
+ * @param kmerLen - length of k-mers
+ * @param pAbcConv - pointer to AbcConvCharToInt alphabet convertor object 
+ * (stored inside this KmerStates object but not managed)
+ */
+
+KmerStates::KmerStates(int kmerLen, const AbcConvCharToInt  *pAbcConv) {
+	m_pAbcConv = pAbcConv;
+	int nAbc = m_pAbcConv->nAbc();
 	if( kmerLen > g_maxKmerLen ) {
 		throw KmerErrorLimits("kmerLen is too large");
 	}
@@ -10,15 +18,13 @@ KmerStates::KmerStates(int kmerLen, int nAbc) {
 		throw KmerErrorLimits("nAbc is too large");
 	}
 	m_kmerLen = kmerLen;
-	m_nAbc = nAbc;
-	m_nCodes = nAbc + 1;
 	m_blockSize.resize(kmerLen+1);
 	m_blockStart.resize(kmerLen+1);
-	int nAbcKmers = ipow(m_nAbc,kmerLen);
+	int nAbcKmers = ipow(nAbc,kmerLen);
 	int nKmers = nAbcKmers;
 	for(int i = kmerLen, nPreKmers = nAbcKmers; i > 0; i--) {
 		m_blockSize[i] = nPreKmers;
-		nPreKmers /= m_nAbc;		
+		nPreKmers /= nAbc;		
 		nKmers += nPreKmers;
 	}
 	m_blockStart[0] = 0;
@@ -29,22 +35,25 @@ KmerStates::KmerStates(int kmerLen, int nAbc) {
 	m_kmers.resize(nKmers);
 }
 
+
+/** Initialize all KmerState and Kmer objects.*/
+
 void KmerStates::initAllKmers() {
+	int nCodes = m_pAbcConv->nCodes();	
 	PKmerState pStateFirst = &m_states[0];
-	PKmerState pState = pStateFirst;
 	for(int iState = 0; iState < m_states.size(); iState++) {
 		PKmerState pState = &m_states[iState];
 		Kmer& cKmer = m_kmers[iState];
 		indexToKmer(iState,cKmer);
 		//TODO: make assertion here that indexToKmer returns the same as
 		//the content of cKmer if it was initialized before
-		for(INuc c = 0; c < m_nAbc; c++) {
+		for(INuc c = 0; c < nCodes; c++) {
 			Kmer nKmer;
 			nextKmer(cKmer,c,nKmer);
 			PKmerState pStateNext = kmerToState(nKmer);
 			pState->m_next[c] = pStateNext;
 			if( pStateNext > pState ) {
-				// all kmers that are like a0bc and not like 00ab or abcd
+				// all omitted kmers (like a0bc and not like 00ab or abcd)
 				// will have pStateNext pointing to the 0 position State,
 				// so everything else must be stored to be processed in some next
 				// iState loop iteration
@@ -55,21 +64,66 @@ void KmerStates::initAllKmers() {
 }
 
 
+/** Initialize reverse-complement links in KmerState objects.*/
+
+void KmerStates::initRevCompl() {
+	PKmerState pStateFirst = &m_states[0];
+	for(int iState = 0; iState < m_states.size(); iState++) {
+		PKmerState pState = &m_states[iState];
+		Kmer& cKmer = m_kmers[iState];
+		if( isDegenState(pState) ) {
+			pState->m_revComp = pStateFirst;
+			pState->m_isRevComp = true;
+		}
+		else {
+			Kmer rKmer;
+			kmerToRevCompl(cKmer, m_kmerLen, m_pAbcConv, rKmer);
+			PKmerState pStateRC = kmerToState(rKmer);
+			// We intentionally do a redundant pass through all rev-comp
+			// pairs to use the following asserts as a sanity check on our
+			// k-mer calculation code.
+			if( pState->m_revComp ){
+				assert(pState->m_revComp == pStateRC);
+			}
+			if( pStateRC->m_revComp ){
+				assert(pStateRC->m_revComp == pState);
+			} 
+			pState->m_revComp = pStateRC;
+			pStateRC->m_revComp = pState;
+			if( pState <= pStateRC ) {
+				pState->m_isRevComp = false;
+				pStateRC->m_isRevComp = true;
+			}
+			else {
+				pState->m_isRevComp = true;
+				pStateRC->m_isRevComp = false;
+			}
+		}
+	}
+	pStateFirst->m_isRevComp = false;
+}
+
+
 /**A constructor.
- * @param abc is a sequence of allowed non-degenerate character alphabet symbolsal (e.g. ATGC),
+ * @param abc - a sequence of allowed non-degenerate character alphabet symbols (such as ACGT),
  * anything else that will be seen in the future sequence input
- * will be treated as degenerate symbols, equal to each other. 
+ * will be treated as degenerate symbols, equal to each other.
+ * The index representation of degenerates is always 0.
+ * @param abcRevCompl - a sequence of reverse-complement symbols for each element of abc (such as TGCA).
 */
 
-AbcConvCharToInt::AbcConvCharToInt(const std::string& abc) {
+AbcConvCharToInt::AbcConvCharToInt(const std::string& abc, const std::string& abcRevCompl) {
 	m_abcExt = "N"+abc;
 	int nAbc = abc.size();
 	if( nAbc > g_maxINuc - 1 ) {
 		throw KmerBadAlphabet();
 	}
-	m_CNucToINuc = new CNuc[g_maxCNuc];
+	if( abc.size() != abcRevCompl.size() ) {
+		throw KmerBadAlphabet();
+	}
+
 	for(int i = 0; i < g_maxCNuc; i++) {
-		m_CNucToINuc[i] = 0;
+		m_CNucToINuc[i] = I_DEGEN;
 	}
 	for(int i = 0, ind = 1; i < nAbc; i++) {
 		CNuc cnuc = abc[i];
@@ -79,26 +133,46 @@ AbcConvCharToInt::AbcConvCharToInt(const std::string& abc) {
 		m_CNucToINuc[cnuc] = ind++;
 	}
 	m_nAbc = nAbc;
-	m_nINuc = nAbc + 1;
+	m_nCodes = nAbc + 1;
+	
+	// Init rev-compl index map
+	
+	for(int i = 0; i < g_maxINuc; i++) { 
+		m_iNucRevCompl[i] = I_DEGEN;
+	}
+
+	for(int i = 0; i < nAbc; i++) {
+		CNuc cnuc = abc[i];
+		CNuc rcnuc = abcRevCompl[i];
+		m_iNucRevCompl[toINuc(cnuc)] = toINuc(rcnuc);
+	}
 }
 
-AbcConvCharToInt::~AbcConvCharToInt() {
-	delete [] m_CNucToINuc;
-}
 
+/** Default value for nucleotide alphabet */
+std::string defNucAbc = "ACGT";
+
+/** Default value for reverse complement of nucleotide alphabet */
+std::string defNucAbcRevCompl = "TGCA";
 
 /** A constructor.
  * @param kmerLen is a length of a k-mer. In the current implementation, all kmers are
  * precalculated and stored in memory, so be reasonable with this parameter.
- * @param abc is a parameter for AbcConvCharToInt::AbcConvCharToInt() constructor.
+ * @param pAbcConv is a to AbcConvCharToInt alphabet convertor
+ * (stored inside this KmerCounter object but not managed).
 */
 
-KmerCounter::KmerCounter(int kmerLen, const std::string& abc) {
-	m_pAbcConv = new AbcConvCharToInt(abc);
+KmerCounter::KmerCounter(int kmerLen, const AbcConvCharToInt  *pAbcConv) {
+	m_pAbcConv = pAbcConv;
 	ctorKmerArray(kmerLen);
 	m_data.resize(m_pStates->numStates())
+	PKmerState pStateZero = m_pStates->firstState();
+	m_dataDegen.setState(pStateZero);
+	m_pStates->setData(pStateZero,&m_dataDegen);
 	m_iDataEnd = 0;
 	m_iDataExtr = 0;
+	//set current state to be the first state
+	m_pSt = m_pStates->firstState();	
 }
 
 void KmerCounter::ctorKmerArray(int kmerLen) {
@@ -111,7 +185,7 @@ void KmerCounter::ctorKmerArray(int kmerLen) {
 		
 
 KmerCounter::~KmerCounter() {
-	delete m_abcConv;
+	
 }
 
 
