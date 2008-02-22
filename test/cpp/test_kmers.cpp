@@ -5,7 +5,7 @@
 namespace {
 
 bool test_KmerCounter() {
-	MGT::KmerCounter counter(7);
+	MGT::KmerCounter counter(2);
 }
 
 }

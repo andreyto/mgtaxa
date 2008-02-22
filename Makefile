@@ -1,7 +1,7 @@
 CC := $(shell which gcc)
 CFLAGS := -O3
 CXX := $(shell which g++)
-CXXFLAGS :=
+CXXFLAGS := -g
 MAKE := make
 AR := $(shell which ar)
 ARFLAGS := -rvs

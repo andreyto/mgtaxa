@@ -69,6 +69,7 @@ void KmerStates::initAllKmers() {
 /** Initialize reverse-complement links in KmerState objects.*/
 
 void KmerStates::initRevCompl() {
+	int idState = 0;
 	PKmerState pStateFirst = &m_states[0];
 	for(int iState = 0; iState < m_states.size(); iState++) {
 		PKmerState pState = &m_states[iState];
@@ -95,6 +96,9 @@ void KmerStates::initRevCompl() {
 			if( pState <= pStateRC ) {
 				pState->m_isRevComp = false;
 				pStateRC->m_isRevComp = true;
+				// All other m_id are left to be 0 because we
+				// should never see them in the output
+				pState->m_id = idState++;
 			}
 			else {
 				pState->m_isRevComp = true;
