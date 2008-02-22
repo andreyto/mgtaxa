@@ -12,6 +12,16 @@
 #include "assert.h"
 
 namespace MGT {
+	
+inline int ipow(int base, int power) throw (std::domain_error) {
+	if (power < 0) throw std::domain_error("power must be non-negative integer");
+	if (power == 0) return 1;
+	if (power == 1) return base;
+	if (power % 2 == 0) return ipow(base * base, power / 2);
+	if (power % 2 == 1) return base * ipow(base * base, power / 2);
+}
+
+	
 
 /** Alphabet convertor from one-letter character to integer index.*/
  
@@ -34,7 +44,7 @@ class AbcConvCharToInt {
 	protected:
 
 	/**If abc is 'ACTG', then m_CNucToINuc['A'] => 1, m_CNucToINuc['C'] => 2 and so on. 0 is reserved for 'N'*/
-	const CNuc m_CNucToINuc[g_maxCNuc];
+	CNuc m_CNucToINuc[g_maxCNuc];
 	
 	/**Extended alphabet, e.g. - 'NACGT'*/ 
 	std::string m_abcExt;
@@ -45,13 +55,14 @@ class AbcConvCharToInt {
 	int m_nCodes;
 	
 	/**maps INuc index into reverse-complement INuc index.*/
-	const INuc m_iNucRevCompl[g_maxINuc];
+	INuc m_iNucRevCompl[g_maxINuc];
 
 };		
 
 
-extern std::string defNucAbc;
-extern std::string defNucAbcRevComp;
+extern std::string g_defNucAbc;
+extern std::string g_defNucAbcRevComp;
+extern AbcConvCharToInt g_defAbcConvCharToInt;
 
 /** Class that describes a k-mer in integer index representation.
  * We expect to create many k-mer objects for the same k, so k
@@ -253,7 +264,7 @@ class KmerCounter {
 	
 	public:
 	
-	KmerCounter(int kmerLen, const AbcConvCharToInt *pAbcConv);
+	KmerCounter(int kmerLen, const AbcConvCharToInt *pAbcConv = 0);
 	~KmerCounter();
 	
 	void doCNuc(CNuc cnuc);
@@ -296,7 +307,7 @@ class KmerCounter {
 	
 	protected:
 
-	AbcConvCharToInt *m_pAbcConv;
+	const AbcConvCharToInt *m_pAbcConv;
 	
 	PKmerState m_pSt;
 	KmerStates *m_pStates;
@@ -466,6 +477,13 @@ inline bool KmerStates::isRevComp(PKmerState pState) const {
 	return pState->m_isRevComp;
 }
 
+
+/** Return true if a given state corresponds to a degenerate k-mer.*/
+
+inline bool KmerStates::isDegenState(PKmerState pState) const {
+	return pState - firstState() < m_blockStart.back();
+}
+
 /** Return pointer to KmerStateData object linked to the given state.
  * @param pState - current state
  * */ 
@@ -509,6 +527,20 @@ inline KmerId KmerStates::idState(PKmerState pState) const {
 inline PKmerState KmerStates::kmerToState(const Kmer& kmer) const {
 	int ind = kmerToIndex(kmer);
 	return const_cast<const PKmerState>(& m_states[ind]); 
+}
+
+/** Fill next Kmer object based on current Kmer and incoming nucleotide code.
+ * @param currKmer - current Kmer
+ * @param c - nucleotide code
+ * @param nextKmer - output Kmer
+ */ 
+
+inline void KmerStates::nextKmer(const Kmer& currKmer, INuc c, Kmer& nextKmer) const {
+	int i = 0;
+	for( ; i < m_kmerLen - 1; i++) {
+		nextKmer[i] = currKmer[i+1];
+	}
+	nextKmer[i] = c;
 }
 
 /** Return position of Kmer object in internal array.

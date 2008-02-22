@@ -3,7 +3,7 @@
 
 #include "mgtaxa/types.hpp"
 
-#include <exception>
+#include <stdexcept>
 
 namespace MGT {
 
@@ -51,7 +51,7 @@ public:
 
 class KmerBadNuc: public KmerError
 {
-  
+  public:
   KmerBadNuc(CNuc cnuc) 
   {
   	m_msg[0] = cnuc;

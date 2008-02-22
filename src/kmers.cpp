@@ -33,6 +33,8 @@ KmerStates::KmerStates(int kmerLen, const AbcConvCharToInt  *pAbcConv) {
 	}
 	m_states.resize(nKmers);
 	m_kmers.resize(nKmers);
+	initAllKmers();
+	initRevCompl();
 }
 
 
@@ -77,7 +79,7 @@ void KmerStates::initRevCompl() {
 		}
 		else {
 			Kmer rKmer;
-			kmerToRevCompl(cKmer, m_kmerLen, m_pAbcConv, rKmer);
+			kmerToRevCompl(cKmer, m_kmerLen, *m_pAbcConv, rKmer);
 			PKmerState pStateRC = kmerToState(rKmer);
 			// We intentionally do a redundant pass through all rev-comp
 			// pairs to use the following asserts as a sanity check on our
@@ -127,7 +129,7 @@ AbcConvCharToInt::AbcConvCharToInt(const std::string& abc, const std::string& ab
 	}
 	for(int i = 0, ind = 1; i < nAbc; i++) {
 		CNuc cnuc = abc[i];
-		if( cnuc > g_maxCNuc || cnuc < 1 ) {
+		if( int(cnuc) > g_maxCNuc || cnuc < 1 ) {
 			throw KmerBadNuc(cnuc);
 		}
 		m_CNucToINuc[cnuc] = ind++;
@@ -150,10 +152,12 @@ AbcConvCharToInt::AbcConvCharToInt(const std::string& abc, const std::string& ab
 
 
 /** Default value for nucleotide alphabet */
-std::string defNucAbc = "ACGT";
+std::string g_defNucAbc = "ACGT";
 
 /** Default value for reverse complement of nucleotide alphabet */
-std::string defNucAbcRevCompl = "TGCA";
+std::string g_defNucAbcRevCompl = "TGCA";
+
+AbcConvCharToInt g_defAbcConvCharToInt(g_defNucAbc,g_defNucAbcRevCompl);
 
 /** A constructor.
  * @param kmerLen is a length of a k-mer. In the current implementation, all kmers are
@@ -163,9 +167,13 @@ std::string defNucAbcRevCompl = "TGCA";
 */
 
 KmerCounter::KmerCounter(int kmerLen, const AbcConvCharToInt  *pAbcConv) {
+	if( pAbcConv == 0 ) {
+		pAbcConv = & g_defAbcConvCharToInt;
+	}
 	m_pAbcConv = pAbcConv;
-	ctorKmerArray(kmerLen);
-	m_data.resize(m_pStates->numStates())
+	m_kmerLen = kmerLen;
+	m_pStates = new KmerStates(kmerLen,pAbcConv);
+	m_data.resize(m_pStates->numStates());
 	PKmerState pStateZero = m_pStates->firstState();
 	m_dataDegen.setState(pStateZero);
 	m_pStates->setData(pStateZero,&m_dataDegen);
@@ -175,17 +183,8 @@ KmerCounter::KmerCounter(int kmerLen, const AbcConvCharToInt  *pAbcConv) {
 	m_pSt = m_pStates->firstState();	
 }
 
-void KmerCounter::ctorKmerArray(int kmerLen) {
-	m_kmerLen = kmerLen;
-	//n-dim array iterator ndim = kmerLen, extent = m_nAbc
-	//easier to use inverted iterator: i goes along entire flat array,
-	//and we calculate n-dim index for each point
-	for(int i = arr.beginPos(); i < arr.endPos(); i++) {}
-}
-		
-
 KmerCounter::~KmerCounter() {
-	
+	delete m_pStates;	
 }
 
 

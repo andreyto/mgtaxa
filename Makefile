@@ -1,14 +1,15 @@
 CC := $(shell which gcc)
-CFLAGS = -O3
+CFLAGS := -O3
 CXX := $(shell which g++)
-CXXFLAGS=
-MAKE=make
-AR=/usr/bin/ar
-ARFLAGS=-rvs
-DOXYGEN=$(shell which doxygen)
+CXXFLAGS :=
+MAKE := make
+AR := $(shell which ar)
+ARFLAGS := -rvs
+DOXYGEN := $(shell which doxygen)
 MAKEDEPEND = mkdir -p $(DEP_DIR); $(CXX) $(CXXFLAGS) $(EXTRA_CXXFLAGS) -MM -o $(DEP_DIR)/$*.d $<
 
 PROGRAMS  := test_kmers
+LIBRARIES := libMGT.a
 EXTRA_CXXFLAGS = -I$(PROJ_DIR)/include
 
 ## How we generate autodependencies:
@@ -44,10 +45,6 @@ DEP_DIR := $(BUILD_DIR)/.deps
 
 SRC_DIRS := $(SRC_DIR) $(TEST_SRC_DIR)
 PY_DIRS := $(PY_DIR) $(TEST_PY_DIR)
-
-#EXTRA_LIBS = -L/usr/X11R6/lib -L/usr/local/lib -lX11 -lgzstream -lz -lm
-
-#EXTRA_LIBS = -L/usr/X11R6/lib -L/home/syooseph/gzstream_bioinfo/gzstream -lX11 -lgzstream -lz -lm
 
 vpath %.h $(INC_DIR)
 vpath %.hpp $(INC_DIR)
@@ -107,13 +104,21 @@ endef
 
 # Define macro for executable linking
 define LINK_EXE
-$(CXX) $(CXXFLAGS) $(EXTRA_CXXFLAGS) $(LDFLAGS) $(EXTRA_LIBS) -lm -o $@ $<
+$(CXX) $(CXXFLAGS) $(EXTRA_CXXFLAGS) $(LDFLAGS) $(EXTRA_LIBS) -lm -o $@ $^
+endef
+
+# Define macro for library building
+define BUILD_LIB
+$(AR) $(ARFLAGS) $@ $?
 endef
 
 #####################################################################################
 #### Define each target, adding custom libs and options after LINK_EXE as needed ####
 
-test_kmers: test_kmers.o
+libMGT.a: kmers.o
+	$(BUILD_LIB)
+
+test_kmers: test_kmers.o libMGT.a
 	$(LINK_EXE)
 
 ########################## End target definitions ###################################
