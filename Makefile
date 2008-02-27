@@ -1,7 +1,15 @@
 CC := $(shell which gcc)
-CFLAGS := -O3
+CFLAGS := -O0
 CXX := $(shell which g++)
-CXXFLAGS := -g
+#To avoid "undefined symbols" message from gdb print command
+#even when all optimization is off,
+#use -gdwarf-2 or -gstabs compiler option that sets debug info
+#format.
+#-ggdb is essential for STL data structures to show in debugger
+#and for STL gdb macros to work (from ~/.gdb/stl_views).
+#It's a little odd that we need to tell GCC to produce gdb
+#specific debugging data on a linux system...
+CXXFLAGS := -g -gstabs -ggdb -O0
 MAKE := make
 AR := $(shell which ar)
 ARFLAGS := -rvs

@@ -2,6 +2,20 @@
 
 namespace MGT {
 
+/** Print KmerState object for debugging.
+@param pFirstState - pointer to the first KmerState, used here to convert internal pointers to indices
+*/
+
+std::ostream& KmerState::print(std::ostream& out, const PKmerState pFirstState) const {
+	for(int i = 0; i < g_maxINuc; i++) {
+		out << (m_next[i] - pFirstState) << '\t';
+	}
+	out << m_pData << '\t';
+	out << (m_revComp - pFirstState) << '\t';
+	out << m_isRevComp << '\t' << m_id << '\n';
+	return out;
+}
+
 /** Constructor.
  * @param kmerLen - length of k-mers
  * @param pAbcConv - pointer to AbcConvCharToInt alphabet convertor object 
@@ -22,13 +36,13 @@ KmerStates::KmerStates(int kmerLen, const AbcConvCharToInt  *pAbcConv) {
 	m_blockStart.resize(kmerLen+1);
 	int nAbcKmers = ipow(nAbc,kmerLen);
 	int nKmers = nAbcKmers;
-	for(int i = kmerLen, nPreKmers = nAbcKmers; i > 0; i--) {
+	for(int i = kmerLen, nPreKmers = nAbcKmers; i >= 0; i--) {
 		m_blockSize[i] = nPreKmers;
 		nPreKmers /= nAbc;		
 		nKmers += nPreKmers;
 	}
 	m_blockStart[0] = 0;
-	for(int i = 1; i < kmerLen; i++) {
+	for(int i = 1; i <= kmerLen; i++) {
 		m_blockStart[i] = m_blockSize[i-1] + m_blockStart[i-1];
 	}
 	m_states.resize(nKmers);
@@ -46,9 +60,31 @@ void KmerStates::initAllKmers() {
 	for(int iState = 0; iState < m_states.size(); iState++) {
 		PKmerState pState = &m_states[iState];
 		Kmer& cKmer = m_kmers[iState];
+#if ADT_DBG_LEVEL >= 4
+		Kmer cKmerBak = cKmer;
+#endif
 		indexToKmer(iState,cKmer);
-		//TODO: make assertion here that indexToKmer returns the same as
-		//the content of cKmer if it was initialized before
+#if ADT_DBG_LEVEL >= 4
+		int iStateCheck = kmerToIndex(cKmer);
+		//cKmer.print(std::cerr) << "iState = " << iState << '\n';
+		assert(iStateCheck == iState);
+		//if the kMer was already non-zero, we assert that
+		//the last call to indexToKmer did not change it:
+		bool isNonZeroKmer = false;
+		for(int i = 0; i < m_kmerLen; i++) {
+			if( cKmerBak[i] != I_DEGEN ) {
+				isNonZeroKmer = true;
+				break;
+			}
+		}
+		if( isNonZeroKmer ) {
+			if(! (cKmer == cKmerBak) ) {
+				ADT_LOG << "Previously filled k-mer content does not match: " <<
+					ADT_OUTVAR(cKmer) << "  :  " << ADT_OUTVAR(cKmerBak) << "\n";
+				ADT_ALWAYS(0);
+			}
+		}
+#endif
 		for(INuc c = 0; c < nCodes; c++) {
 			Kmer nKmer;
 			nextKmer(cKmer,c,nKmer);
@@ -109,6 +145,20 @@ void KmerStates::initRevCompl() {
 	pStateFirst->m_isRevComp = false;
 }
 
+/** Print KmerStates object for debugging.*/
+
+std::ostream& KmerStates::print(std::ostream& out) const {
+	out << ADT_OUTVAR(m_kmerLen) << ADT_OUTVAR(m_states.size()) << "\n";
+	PKmerState pFirstState = firstState();
+	for(int iState = 0; iState < m_states.size(); iState++) {
+		const PKmerState pState = const_cast<const PKmerState>(&m_states[iState]);
+		const Kmer& cKmer = m_kmers[iState];
+		out << ADT_OUTVAR(iState);
+		out << "State: " << pState->print(out,pFirstState) << '\t' << ADT_OUTVAR(cKmer) 
+				<< kmerToStr(cKmer,m_kmerLen,*m_pAbcConv) << "\n";
+	}
+	return out;
+}
 
 /**A constructor.
  * @param abc - a sequence of allowed non-degenerate character alphabet symbols (such as ACGT),
@@ -184,7 +234,8 @@ KmerCounter::KmerCounter(int kmerLen, const AbcConvCharToInt  *pAbcConv) {
 	m_iDataEnd = 0;
 	m_iDataExtr = 0;
 	//set current state to be the first state
-	m_pSt = m_pStates->firstState();	
+	m_pSt = m_pStates->firstState();
+	m_pStates->print(ADT_LOG);
 }
 
 KmerCounter::~KmerCounter() {

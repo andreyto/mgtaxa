@@ -3,13 +3,13 @@
 
 #include "mgtaxa/types.hpp"
 #include "mgtaxa/exceptions.hpp"
+#include "mgtaxa/debug.hpp"
 
 #include <vector>
 #include <iostream>
+#include <iomanip>
 #include <cmath>
 #include <string>
-
-#include "assert.h"
 
 namespace MGT {
 	
@@ -21,7 +21,11 @@ inline int ipow(int base, int power) throw (std::domain_error) {
 	if (power % 2 == 1) return base * ipow(base * base, power / 2);
 }
 
-	
+/** @enum I_DEGEN Integer code for degenerate nucleotide.
+It has to be zero. The enum mnemonic is created mainly for
+better readability of the program source.*/
+
+enum { I_DEGEN = 0 };	
 
 /** Alphabet convertor from one-letter character to integer index.*/
  
@@ -29,7 +33,7 @@ class AbcConvCharToInt {
 
 	public:
 	
-	enum { I_DEGEN = 0 };
+	enum { I_DEGEN = MGT::I_DEGEN };
 
 	AbcConvCharToInt(const std::string& abc, const std::string& abcRevCompl);
 	
@@ -76,8 +80,12 @@ class Kmer {
 	INuc m_data[g_maxKmerLen];
 	inline INuc& operator[](int i) { return m_data[i]; }
 	inline const INuc& operator[](int i) const { return m_data[i]; }	
+	std::ostream& print(std::ostream& out, int kmerLen = g_maxKmerLen) const;
 };
 
+bool operator==(const Kmer& x, const Kmer& y);
+
+std::ostream& operator<< (std::ostream& out, const Kmer& kmer);
 
 std::string kmerToStr(const Kmer& kmer, int kmerLen, const AbcConvCharToInt& conv);
 
@@ -106,6 +114,8 @@ class KmerState {
 	KmerState();
 
 	typedef KmerState* PKmerState;
+	
+	std::ostream& print(std::ostream& out, const PKmerState pFirstState) const;
 
 	public:
 
@@ -232,6 +242,7 @@ class KmerStates {
 		PKmerStateData getData(PKmerState pState);
 		void setData(PKmerState pState,PKmerStateData pStateData);
 		const Kmer& kmerState(PKmerState pState) const;
+		std::ostream& print(std::ostream& out) const;
 	protected:
 		PKmerState kmerToState(const Kmer& kmer) const; 
 		void nextKmer(const Kmer& currKmer, INuc c, Kmer& nextKmer) const;
@@ -384,6 +395,28 @@ inline INuc AbcConvCharToInt::revCompl(INuc i) const {
 	return m_iNucRevCompl[i]; 
 }	
 
+/** Print this Kmer object into ostream for debugging.*/
+
+inline std::ostream& Kmer::print(std::ostream& out, int kmerLen) const {
+	for(int i = 0; i < kmerLen; i++) {
+		out << std::setw(2) << int((*this)[i]) << '\t';
+	}
+	return out;
+}
+
+
+/** Equality operator for Kmer.*/
+
+inline bool operator==(const Kmer& x, const Kmer& y) {
+	for(int i = 0; i < g_maxKmerLen; i++) {
+		if( ! x[i] == y[i] ) return false;
+	}
+	return true;
+}
+
+inline std::ostream& operator<< (std::ostream& out, const Kmer& kmer) {
+	return kmer.print(out);
+}
 
 /** Return character string representation of Kmer */
 
@@ -530,17 +563,25 @@ inline PKmerState KmerStates::kmerToState(const Kmer& kmer) const {
 }
 
 /** Fill next Kmer object based on current Kmer and incoming nucleotide code.
+ * If c is a degenerate code, always output the first (zero) k-mer.
  * @param currKmer - current Kmer
  * @param c - nucleotide code
  * @param nextKmer - output Kmer
  */ 
 
 inline void KmerStates::nextKmer(const Kmer& currKmer, INuc c, Kmer& nextKmer) const {
-	int i = 0;
-	for( ; i < m_kmerLen - 1; i++) {
-		nextKmer[i] = currKmer[i+1];
+	if( c == I_DEGEN ) {
+		for(int i = 0; i < m_kmerLen; i++) {
+			nextKmer[i] = I_DEGEN;
+		}
 	}
-	nextKmer[i] = c;
+	else {
+		int i = 0;
+		for( ; i < m_kmerLen - 1; i++) {
+			nextKmer[i] = currKmer[i+1];
+		}
+		nextKmer[i] = c;
+	}
 }
 
 /** Return position of Kmer object in internal array.
@@ -563,7 +604,8 @@ inline int KmerStates::kmerToIndex(const Kmer& kmer) const {
 	int stride = 1;
 	int ind = blockStart;
 	for(; i < m_kmerLen; i++) {
-		ind += kmer[i] * stride;
+		// block is indexed with non-0 codes
+		ind += (kmer[i] - 1)* stride;
 		stride *= extent;
 	}
 	return ind;
@@ -572,12 +614,13 @@ inline int KmerStates::kmerToIndex(const Kmer& kmer) const {
 /** Fill the value of Kmer object from its index in the internal array.
  * @param ind - index
  * @param kmer - output Kmer object
- * This is a reverse operation to kmerToIndex() and has the same complexity. 
+ * This is a reverse operation to kmerToIndex() and has the same complexity.
+ * @pre kmer initialized with 0s
  */
 
 inline void KmerStates::indexToKmer(int ind, Kmer& kmer) const {
 	int iBlock = 0;
-	for(; iBlock < m_kmerLen; iBlock++) {
+	for(; iBlock < m_blockStart.size(); iBlock++) {
 		if( m_blockStart[iBlock] > ind ) {
 			break;
 		}
@@ -586,10 +629,17 @@ inline void KmerStates::indexToKmer(int ind, Kmer& kmer) const {
 	int ndim = iBlock; // iBlock == number of non-0 dimensions
 	int indBlock = ind - m_blockStart[ndim];
 	int extent = m_pAbcConv->nAbc();
-	int stride = extent; 
-	for( int i = m_kmerLen - ndim; i < m_kmerLen; i++ ) {
-		kmer[i] = indBlock % stride;
-		stride *= extent;
+	int iKmerNonZero = m_kmerLen - ndim;
+#if ADT_DBG_LEVEL >= 4
+	for( int i = 0; i < iKmerNonZero; i++ ) {
+		ADT_ALWAYS(kmer[i] == I_DEGEN);
+	}
+#endif
+	for( int i = iKmerNonZero; i < m_kmerLen; i++ ) {
+		//block is indexed with non-0 codes, so we add 1:
+		int coord = indBlock % extent + 1;
+		kmer[i] = coord; 
+		indBlock /= extent;
 	}
 }
 
