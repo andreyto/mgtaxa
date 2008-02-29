@@ -243,6 +243,11 @@ class KmerStates {
 		void setData(PKmerState pState,PKmerStateData pStateData);
 		const Kmer& kmerState(PKmerState pState) const;
 		std::ostream& print(std::ostream& out) const;
+	private:
+	/** Private copy constructor makes instances non-copyable.*/
+    KmerStates( const KmerStates& );
+    /** Private assignment operator makes instances non-copyable.*/
+    const KmerStates& operator=( const KmerStates& );
 	protected:
 		PKmerState kmerToState(const Kmer& kmer) const; 
 		void nextKmer(const Kmer& currKmer, INuc c, Kmer& nextKmer) const;
@@ -292,7 +297,7 @@ class KmerCounter {
  	* @code
  	* int n = o.numKmers();
  	* o.startKmer();
- 	* for(int i = n; i < n; i++,o.nextKmer()) {
+ 	* for(int i = 0; i < n; i++,o.nextKmer()) {
  	*     cout << o.getKmerId() << ":" << o.getKmerCount() << "\n";
  	* }
  	* o.finishKmer();
@@ -316,6 +321,12 @@ class KmerCounter {
 	void finishKmer();
 	/*@}*/ 
 	
+	private:
+	/** Private copy constructor makes instances non-copyable.*/
+    KmerCounter( const KmerCounter& );
+    /** Private assignment operator makes instances non-copyable.*/
+    const KmerCounter& operator=( const KmerCounter& );
+    
 	protected:
 
 	const AbcConvCharToInt *m_pAbcConv;

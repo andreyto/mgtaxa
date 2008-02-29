@@ -235,7 +235,6 @@ KmerCounter::KmerCounter(int kmerLen, const AbcConvCharToInt  *pAbcConv) {
 	m_iDataExtr = 0;
 	//set current state to be the first state
 	m_pSt = m_pStates->firstState();
-	m_pStates->print(ADT_LOG);
 }
 
 KmerCounter::~KmerCounter() {
