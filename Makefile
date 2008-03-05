@@ -1,3 +1,25 @@
+## Installation directories.
+## We support a "home" type installation,
+## where everything for our application is installed under
+## application's own subdirectory 
+## (or possibly two - one for arch dependent and another for arch independent files).
+## This makes it easier making test installs as opposed to
+## "prefix" type installation (where executables for all applications go
+## into a single common prefix/bin etc). The installation variables
+## are still called 'prefix' and such, and are low case.
+
+prefix := $(INST)/mgtaxa
+exec_prefix := $(INSTMACH)/mgtaxa
+## Scripts go here
+bindir := $(prefix)/bin
+## Binary executables go here
+exec_bindir := $(exec_prefix)/bin
+## Binary libraries go here
+libdir := $(exec_prefix)/lib
+## profile to source goes here
+sysconfdir := $(prefix)/etc
+docdir := $(prefix)/doc
+
 CC := $(shell which gcc)
 CFLAGS := -O0
 CXX := $(shell which g++)
@@ -9,16 +31,34 @@ CXX := $(shell which g++)
 #and for STL gdb macros to work (from ~/.gdb/stl_views).
 #It's a little odd that we need to tell GCC to produce gdb
 #specific debugging data on a linux system...
-CXXFLAGS := -g -gstabs -ggdb -O0
+CXXFLAGS := -g -gstabs -ggdb -O0 -fPIC
+PYTHON := $(shell which python)
 MAKE := make
 AR := $(shell which ar)
 ARFLAGS := -rvs
 DOXYGEN := $(shell which doxygen)
-MAKEDEPEND = mkdir -p $(DEP_DIR); $(CXX) $(CXXFLAGS) $(EXTRA_CXXFLAGS) -MM -o $(DEP_DIR)/$*.d $<
+CPR := cp -dR
+MKDIRP := mkdir -p
+RMRF := rm -rf
+MAKEDEPEND = $(MKDIRP) $(DEP_DIR); $(CXX) $(CXXFLAGS) $(EXTRA_CXXFLAGS) -MM -o $(DEP_DIR)/$*.d $<
 
-PROGRAMS  := test_kmers
-LIBRARIES := libMGT.a
-EXTRA_CXXFLAGS = -I$(PROJ_DIR)/include
+PROGRAMS       := 
+PROGRAMS_TEST  := test_kmers
+LIBRARIES      := libMGT.a
+#This should list only extensions that are to be installed, and omit testing ones
+PYEXT          := MGT/sample_boost.so
+PYEXT_TEST     := test_sample_boostx.so
+
+EXTRA_CXXFLAGS = -I$(PROJ_DIR)/include -I$(BOOST_INC_DIR) -I$(PY_INC_DIR)
+
+## Installation subdirectories
+
+# Python extensions will be here. $(libdir) must be added to PYTHONPATH,
+# so that the extensions can be 'import MGT.<extmodule>' just like
+# regular modules. This makes moving the implementation from
+# pure Python to extension to be transparent to the user.
+
+extdir := $(libdir)/MGT
 
 ## How we generate autodependencies:
 ## Dependency autogeneration code is taken from:
@@ -36,12 +76,14 @@ EXTRA_CXXFLAGS = -I$(PROJ_DIR)/include
 ## .o file does not exist either, in which case source compilation is done anyway.
 ## Compared to generating a list of all source files through wildcard search,
 ## this approach has the benefit that we can have any malformed source files in our
-## source tree, as long as they are not involved in target compilation, and make
+## source tree, as long as they are not involved in target compilation, and 'make'
 ## will still succeed.
 
 PROJ_DIR := $(HOME)/work/mgtaxa
 BUILD_DIR := $(PROJ_DIR)/build/$(MACH)
+BUILD_EXT_DIR := $(BUILD_DIR)/MGT
 SRC_DIR := $(PROJ_DIR)/src
+EXT_DIR := $(PROJ_DIR)/ext
 PY_DIR := $(PROJ_DIR)/MGT
 INC_DIR := $(PROJ_DIR)/include
 TEST_DIR := $(PROJ_DIR)/test
@@ -51,7 +93,7 @@ DOC_DIR := $(PROJ_DIR)/doc
 
 DEP_DIR := $(BUILD_DIR)/.deps
 
-SRC_DIRS := $(SRC_DIR) $(TEST_SRC_DIR)
+SRC_DIRS := $(SRC_DIR) $(EXT_DIR) $(TEST_SRC_DIR)
 PY_DIRS := $(PY_DIR) $(TEST_PY_DIR)
 
 vpath %.h $(INC_DIR)
@@ -59,10 +101,53 @@ vpath %.hpp $(INC_DIR)
 vpath %.cpp $(SRC_DIRS)
 vpath %.py $(PY_DIRS)
 
+####################### Support for building Python extensions ############
+
+PY_INC_DIR := $(shell $(PYTHON) -c 'from distutils.sysconfig import *; print get_python_inc()')
+## As per distutils documentation,
+## get_config_var() might not be portable.
+PY_LIB_DIR := $(shell $(PYTHON) -c 'from distutils.sysconfig import *; print get_config_var("LIBPL")')
+PY_LIB := $(shell $(PYTHON) -c 'from distutils.sysconfig import *; print get_config_var("LIBRARY")')
+
+#We build a single Python extension with Boost interface library, and therefore
+#use the static liboost_python.a. This saves a lot of grief with
+#finicky -Wl<xx> linker options, especially if those are already used
+#by custom gcc installation. As far as I remember, cross-module support in
+#Boost.python would require linking with a shared boost library.
+
+ifeq ($(BOOST_OS),YES)
+ifeq ($(MACH),x86_32)
+BOOST_LIB_DIR := /usr/lib
+else 
+ifeq ($(MACH),x86_64)
+BOOST_LIB_DIR := /usr/lib64
+else
+$(error "Unknown MACH variable value: $(MACH))
+endif
+BOOST_INC_DIR := /usr/include
+BOOST_PY_LIB := libboost_python.a
+endif
+else
+BOOST_INC_DIR := $(INST)/include/boost-1_34
+BOOST_LIB_DIR := $(INSTMACH)/lib
+BOOST_PY_LIB := libboost_python-gcc41-1_34.a
+endif
+
+BOOST_PY_LINK := $(BOOST_LIB_DIR)/$(BOOST_PY_LIB)
+
+#Example of debugging the make process.
+#Debugging using 'echo' outside of target definition works fine as 
+#long as we redirect all output to a file.
+$(shell echo $(PY_INC_DIR) &> make.log)
+$(info $(PY_INC_DIR))
+
 ####################### .PHONY Target Definitions #########################
 
 .PHONY: all
-all: $(PROGRAMS) $(LIBRARIES) doc
+all: build doc
+
+.PHONY: build
+build: $(PROGRAMS) $(PROGRAMS_TEST) $(LIBRARIES) $(PYEXT) $(PYEXT_TEST) mgtaxa.cshrc
 
 .PHONY: doc
 doc: $(DOC_DIR)/html
@@ -71,11 +156,45 @@ $(DOC_DIR)/html: $(SRC) $(PY) $(DOC_DIR)/Doxyfile
 	@echo && echo "Running Doxygen" && echo
 	cd $(PROJ_DIR) && $(DOXYGEN) $(DOC_DIR)/Doxyfile > /dev/null
 
+## Testing is done "in place", before the "install" target is made.
+## Still, we can run Python tests as though they call the installed
+## application modules due to our directory structure. In particular,
+## Python extensions are built into a subdirectory MGT, and so can be
+## "import MGT.<extension_name>"
+
+test: build
+	rm -rf .testrun; mkdir .testrun
+	echo "#!/bin/sh"
+	echo "export PYTHONPATH=$(TEST_PY_DIR):$(BUILD_DIR):$(PROJ_DIR):$(PYTHONPATH)" >> .testrun/run
+	echo "../test_kmers" >> .testrun/run
+	echo "$(PYTHON) $(TEST_PY_DIR)/main.py" >> .testrun/run
+	chmod +x .testrun/run
+	cd .testrun && ./run
+
+.PHONY: install
+install: all
+	install -d $(bindir)
+	install -d $(exec_bindir)
+	install -d $(extdir)
+	install -d $(docdir)
+	install -d $(sysconfdir)
+	$(CPR) $(PY_DIR) $(prefix)
+	install -t $(extdir) $(PYEXT)
+	$(CPR) $(DOC_DIR)/html $(docdir)
+	install -t $(sysconfdir) mgtaxa.cshrc
+	#install -t $(exec_bindir) $(PROGRAMS)
+
 .PHONY: clean
 clean:		
-	rm -f $(PROGRAMS) $(LIBRARIES) *.o *.pyc *.pyo $(DEP_DIR)/*.P
-	rm -rf $(DOC_DIR)/html $(DOC_DIR)/tex
+	$(RMRF) $(PROGRAMS) $(PROGRAMS_TEST) $(LIBRARIES) $(BUILD_EXT_DIR) *.o *.so *.pyc *.pyo $(DEP_DIR)/*.P
+	$(RMRF) $(DOC_DIR)/html $(DOC_DIR)/tex
 
+
+mgtaxa.cshrc:
+	sed -e 's|__MGT_BIN__|$(bindir)|' \
+	    -e 's|__MGT_EXEC_BIN__|$(exec_bindir)|' \
+	    -e 's|__MGT_PY_PATH__|$(prefix):$(libdir)|' \
+	    $(PROJ_DIR)/etc/mgtaxa.cshrc.in > mgtaxa.cshrc || rm mgtaxa.cshrc
 
 ############################ Compilation Rules #############################
 
@@ -115,10 +234,22 @@ define LINK_EXE
 $(CXX) $(CXXFLAGS) $(EXTRA_CXXFLAGS) $(LDFLAGS) $(EXTRA_LIBS) -lm -o $@ $^
 endef
 
-# Define macro for library building
+# Define macro for static library building
 define BUILD_LIB
 $(AR) $(ARFLAGS) $@ $?
 endef
+
+# Define macro for shared library linking
+define LINK_SO
+$(CXX) $(CXXFLAGS) $(EXTRA_CXXFLAGS) $(LDFLAGS) $(EXTRA_LIBS) -shared -lm -o $@ $^
+endef
+
+# Define macro for Python extension linking with Boost.Python
+define LINK_EXT
+install -d $(BUILD_EXT_DIR)
+$(LINK_SO) $(BOOST_PY_LINK)
+endef
+
 
 #####################################################################################
 #### Define each target, adding custom libs and options after LINK_EXE as needed ####
@@ -128,6 +259,13 @@ libMGT.a: kmers.o
 
 test_kmers: test_kmers.o libMGT.a
 	$(LINK_EXE)
+
+MGT/sample_boost.so: sample_boost.o
+	$(LINK_EXT)
+
+test_sample_boostx.so: test_sample_boostx.o
+	$(LINK_EXT)
+
 
 ########################## End target definitions ###################################
 #####################################################################################

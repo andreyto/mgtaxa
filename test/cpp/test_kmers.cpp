@@ -136,10 +136,10 @@ bool test_KmerCounterNaive() {
 	int kmerLen = 8;
 	std::string testSeq = g_testingSeq.substr(0,g_testingSeq.size());
 	for(int i = 0; i < testSeq.size() - 2; i += 37) { testSeq[i] = 'N'; testSeq[i+1] = 'N'; }
-	ADT_LOG << "testSeq : \n" << testSeq << "\n";
+	//ADT_LOG << "testSeq : \n" << testSeq << "\n";
 	std::string testSeqRC = testSeq;
 	g_revComp(testSeqRC);
-	ADT_LOG << "testSeqRC : \n" << testSeqRC << "\n";	
+	//ADT_LOG << "testSeqRC : \n" << testSeqRC << "\n";	
 	KmerCounterNaive counterNaive;
 	counterNaive.fillFromSeq(testSeq,kmerLen);
 	//ADT_LOG << "counterNaive : \n";
@@ -157,19 +157,19 @@ bool test_KmerCounterNaive() {
 	compareMaps(cntMgt,cntNai,cntAbsMgtNai, cntDiff);
 	bool ret = true;
 	if( cntAbsNaiMgt.size() ) {
-		ADT_LOG << ADT_OUTVAR(cntAbsNaiMgt.size()) << '\n';
+		//ADT_LOG << ADT_OUTVAR(cntAbsNaiMgt.size()) << '\n';
 		ret = false;
 	}
 	if( cntAbsMgtNai.size() ) {
-		ADT_LOG << ADT_OUTVAR(cntAbsMgtNai.size()) << '\n';
+		//ADT_LOG << ADT_OUTVAR(cntAbsMgtNai.size()) << '\n';
 		ret = false;
 	}
 	if( cntDiff.size() ) {
 		ADT_LOG << ADT_OUTVAR(cntDiff.size()) << '\n';
 		ret = false;
 	}
-	ADT_LOG << ADT_OUTVAR(cntNai.size()) << '\n';
-	ADT_LOG << ADT_OUTVAR(cntMgt.size()) << '\n';	
+	//ADT_LOG << ADT_OUTVAR(cntNai.size()) << '\n';
+	//ADT_LOG << ADT_OUTVAR(cntMgt.size()) << '\n';	
 	return ret;
 }
 
