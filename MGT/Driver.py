@@ -1,14 +1,15 @@
 #!/usr/bin/env python
 import sys, os
-sys.path.append(os.environ['CA_BINDIR'])
+#sys.path.append(os.environ['CA_BINDIR'])
 
 from MGT.Db import *
 from MGT.Svm import *
 
-#dbSql = createDbSQL()
+dbSql = createDbSQL()
 #
-#db = DbSeqSource(dbSql=dbSql)
-#db.loadSeq()
+db = DbSeqSource(dbSql=dbSql)
+db.loadGiTaxNumpy()
+db.loadSeq()
 #db.loadTaxCategories()
 #db.loadTaxNodes()
 #db.loadTaxNodesMem()
@@ -17,6 +18,7 @@ from MGT.Svm import *
 #db.mergeSelWithSeq(skipSeq=False)
 #db.loadGiTaxSql()
 #db.loadGiTaxNumpy()
+sys.exit(0)
 
 nrnd.seed(1)
 taxaSampler = TaxaSampler()

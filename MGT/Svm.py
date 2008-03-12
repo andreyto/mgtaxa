@@ -591,9 +591,11 @@ class SVMLibLinear:
         
 
 class SVMLib:
-    import svm
-    import cross_validation
     def __init__(self):
+        import svm
+        import cross_validation
+        self.svm = svm
+        self.cross_validation = cross_validation
         self.param = self.svm.svm_parameter(svm_type = self.svm.C_SVC, 
                                             kernel_type = self.svm.LINEAR, #self.svm.RBF,
                                             C = 2, gamma = 2, 

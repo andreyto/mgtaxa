@@ -1,4 +1,4 @@
-from AS_SCM_util import *
+from MGT.Util import *
 
 import numpy
 import numpy.random as nrnd
@@ -18,13 +18,13 @@ class PhyOptions:
         self.selFastaFile = 'phyla_sel.fasta.gz'
         self.srcDbNameAlias = 'phyla'
         self.taxaDataDir = 'taxonomy'
-        self.taxaCatFile = os.path.join(self.taxaDataDir,'taxcat','categories.dmp')
-        self.taxaGiFile = os.path.join(self.taxaDataDir,'gi_taxid_nucl.dmp') 
-        self.taxaDumpDir = os.path.join(self.taxaDataDir,'taxdump')
+        self.taxaCatFile = os.path.join(self.taxaDataDir,'categories.dmp')
+        self.taxaGiFile = os.path.join(self.taxaDataDir,'gi_taxid_nucl.dmp.gz') 
+        self.taxaDumpDir = self.taxaDataDir
         self.taxaNodesFile = os.path.join(self.taxaDumpDir,'nodes.dmp')
         self.taxaDivisionFile = os.path.join(self.taxaDumpDir,'division.dmp')
-        self.kmerTxtDir = os.environ['PHYLA_KMERS']
-        self.kmerTestFile = os.path.join(self.kmerTxtDir,'6mers_1K.gz')
+        #self.kmerTxtDir = os.environ['PHYLA_KMERS']
+        #self.kmerTestFile = os.path.join(self.kmerTxtDir,'6mers_1K.gz')
 
 
 def masksToInd(maskVal,maskInd):

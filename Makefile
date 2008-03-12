@@ -36,7 +36,7 @@ PYTHON := $(shell which python)
 MAKE := make
 AR := $(shell which ar)
 ARFLAGS := -rvs
-DOXYGEN := $(shell which doxygen)
+DOXYGEN := $(INST)/x86_32/bin/doxygen
 CPR := cp -dR
 MKDIRP := mkdir -p
 RMRF := rm -rf
@@ -47,7 +47,7 @@ PROGRAMS_TEST  := test_kmers
 LIBRARIES      := libMGT.a
 #This should list only extensions that are to be installed, and omit testing ones
 PYEXT          := MGT/sample_boost.so
-PYEXT_TEST     := test_sample_boostx.so
+PYEXT_TEST     := test_sample_boostx.so test_numpy_boostx.so
 
 EXTRA_CXXFLAGS = -I$(PROJ_DIR)/include -I$(BOOST_INC_DIR) -I$(PY_INC_DIR)
 
@@ -125,15 +125,21 @@ else
 $(error "Unknown MACH variable value: $(MACH))
 endif
 BOOST_INC_DIR := /usr/include
-BOOST_PY_LIB := libboost_python.a
+BOOST_PY_ST_LIB := libboost_python.a
+BOOST_PY_SH_LIB := boost_python
 endif
 else
 BOOST_INC_DIR := $(INST)/include/boost-1_34
 BOOST_LIB_DIR := $(INSTMACH)/lib
-BOOST_PY_LIB := libboost_python-gcc41-1_34.a
+BOOST_PY_ST_LIB := libboost_python-gcc41-1_34.a
+BOOST_PY_SH_LIB := boost_python-gcc41
 endif
 
-BOOST_PY_LINK := $(BOOST_LIB_DIR)/$(BOOST_PY_LIB)
+ifdef ($BOOST_STATIC)
+BOOST_PY_LINK := $(BOOST_LIB_DIR)/$(BOOST_PY_ST_LIB)
+else
+BOOST_PY_LINK := -L$(BOOST_LIB_DIR) -l$(BOOST_PY_SH_LIB)
+endif
 
 #Example of debugging the make process.
 #Debugging using 'echo' outside of target definition works fine as 
@@ -147,7 +153,7 @@ $(info $(PY_INC_DIR))
 all: build doc
 
 .PHONY: build
-build: $(PROGRAMS) $(PROGRAMS_TEST) $(LIBRARIES) $(PYEXT) $(PYEXT_TEST) mgtaxa.cshrc
+build: $(PROGRAMS) $(PROGRAMS_TEST) $(LIBRARIES) $(PYEXT) $(PYEXT_TEST) mgtaxa.cshrc mgtaxa.insrc.cshrc
 
 .PHONY: doc
 doc: $(DOC_DIR)/html
@@ -194,7 +200,14 @@ mgtaxa.cshrc:
 	sed -e 's|__MGT_BIN__|$(bindir)|' \
 	    -e 's|__MGT_EXEC_BIN__|$(exec_bindir)|' \
 	    -e 's|__MGT_PY_PATH__|$(prefix):$(libdir)|' \
-	    $(PROJ_DIR)/etc/mgtaxa.cshrc.in > mgtaxa.cshrc || rm mgtaxa.cshrc
+	    $(PROJ_DIR)/etc/mgtaxa.cshrc.in > $@ || rm $@
+
+mgtaxa.insrc.cshrc:
+	sed -e 's|__MGT_BIN__|$(BUILD_DIR)|' \
+	    -e 's|__MGT_EXEC_BIN__|$(BUILD_DIR)|' \
+	    -e 's|__MGT_PY_PATH__|$(PROJ_DIR):$(BUILD_DIR)|' \
+	    $(PROJ_DIR)/etc/mgtaxa.cshrc.in > $@ || rm $@
+
 
 ############################ Compilation Rules #############################
 
@@ -264,6 +277,9 @@ MGT/sample_boost.so: sample_boost.o
 	$(LINK_EXT)
 
 test_sample_boostx.so: test_sample_boostx.o
+	$(LINK_EXT)
+
+test_numpy_boostx.so: test_numpy_boostx.o
 	$(LINK_EXT)
 
 

@@ -54,9 +54,9 @@ class DbSQL:
    
 class DbSQLLite(DbSQL):
     
-    from pysqlite2 import dbapi2 as dbmod
-    
     def __init__(self,dbpath,strType=str,dryRun=False):
+        from pysqlite2 import dbapi2 as dbmod
+        self.dbmod = dbmod
         DbSQL.__init__(self)
         self.strType = strType
         self.dbpath = dbpath
@@ -73,9 +73,9 @@ class DbSQLLite(DbSQL):
 
 class DbSQLMy(DbSQL):
     
-    import MySQLdb as dbmod
-    
     def __init__(self,dryRun=False):
+        import MySQLdb as dbmod
+        self.dbmod = dbmod
         DbSQL.__init__(self)        
         #self.dbmod.server_init(("phyla","--defaults-file=my.cnf"),('server',))
         self.con = self.dbmod.connect(unix_socket="/tmp/atovtchi.mysql.sock",
@@ -94,10 +94,33 @@ class DbSQLMy(DbSQL):
         #self.dbmod.server_end()
 
 
+class DbSQLMonet(DbSQL):
+    
+#sql>CREATE USER "root" WITH PASSWORD 'OrangeN0' NAME 'Main User' SCHEMA "sys";
+#sql>CREATE SCHEMA "mgtaxa" AUTHORIZATION "root";
+#sql>ALTER USER "root" SET SCHEMA "mgtaxa";
+	
+    def __init__(self,dryRun=False):
+        import MonetSQLdb as dbmod
+        self.dbmod = dbmod
+        DbSQL.__init__(self)        
+        #self.dbmod.server_init(("phyla","--defaults-file=my.cnf"),('server',))
+        self.con = self.dbmod.connect(host = 'localhost',
+            dbname = 'mgtaxa',
+            user = 'root',
+            password = 'OrangeN0', 
+            lang = 'sql')
+
+    def close(self):
+        self.commit()
+        if hasattr(self,'con'):
+            self.con.close()
+        #self.dbmod.server_end()
+
 
 def createDbSQL():
     #db = DbSQLLite("/export/atovtchi/test_seq.db")
-    db = DbSQLMy()
+    db = DbSQLMonet()
     return db
 
 
@@ -121,357 +144,6 @@ class BulkInserter:
 
 
 
-class CountAggregateVisitor:
-    
-    def __call__(self,node):
-        for child in node.children:
-            node.data.kmerCnt += child.data.kmerCnt
-
-
-class KmerFreqRecord:
-    
-    def __init__(self,label,vals):
-        self.label = label
-        self.vals = vals
-        
-    def asStr(self):
-        """Return string representation accepted by both LibSVM and SVMLight binaries.
-        Example: 3 1:0.43 3:0.12 9284:0.2"""
-        return "%d " % (self.label,) + ' '.join( ( "%s:%s" % (i,v) for (i,v) in zip(range(1,len(self.vals)+1),self.vals) ) )
-    
-    def write(self,out):
-        """Return string representation accepted by both LibSVM and SVMLight binaries.
-        Example: 3 1:0.43 3:0.12 9284:0.2"""
-        out.write("%d " % (self.label,))
-        vals = self.vals
-        for i in xrange(len(vals)):
-            out.write("%s:%s " % (i+1,vals[i]))
-
-
-    def __str__(self):
-        return self.asStr()
-
-
-class KmerBinHeader:
-    def __init__(self,rootPath,nRec,nVal,recDtype):
-        self.rootPath=rootPath
-        self.nRec=nRec
-        self.nVal=nVal
-        self.recDtype=recDtype
-        self.valPath=rootPath+'.val.gz'
-
-#compatibility with older pickle dumps
-KmerBinData = KmerBinHeader
-
-class KmerBinReader:
-    
-    def __init__(self,rootPath):
-        self.hdr = loadObj(rootPath+'.hdr')
-        #numpy.fromfile does not recognize result of gzip.open() as a file object
-        self.inp = Popen(("gzip -cd %s" % (self.hdr.valPath,)).split(),env=os.environ, bufsize=2**16, stdout=PIPE, close_fds=True).stdout
-        #current input stream position in records
-        self.iRec = 0
-                         
-    
-    def readValues(self,debug=True,nRecDbg = 10**3):
-        print "DEBUG: ", self.valPath
-        inp = gzip.open(self.valPath,'r')
-        for iRec in xrange(self.nRec):
-            rec = numpy.fromfile(inp, dtype=self.recDtype, count=1)
-            if debug and iRec % nRecDbg == 0:
-                print "Read %s k-mer vectors" % (iRec,)
-            yield KmerFreqRecord(label=rec[0]['taxid'],vals=rec[0]['vals'])
-        inp.close()
-        
-    def readBatches(self,batchSize=10000):
-        recDtype = self.hdr.recDtype
-        nRec = self.hdr.nRec
-        while True:
-            if batchSize > nRec - self.iRec:
-                batchSize = nRec - self.iRec
-            if batchSize == 0:
-                break
-            recs = numpy.fromfile(self.inp, dtype=recDtype, count=batchSize)
-            self.iRec += batchSize
-            yield recs
-    
-    def posRec(self):
-        return self.iRec
-    
-    def numRec(self):
-        return self.hdr.nRec
-    
-    def close(self):
-        self.inp.close()
-    
-            
-
-class KmerBinWriter:
-    
-    def __init__(self,rootPath):
-        self.rootPath = rootPath
-        self.hdr = KmerBinHeader(rootPath=self.rootPath,nRec=0,nVal=0,recDtype=None)
-        self.out = None
-    
-    def writeBatch(self,recs):
-        if len(recs) > 0:
-            if self.out is None:
-                self.hdr.nVal = len(recs[0]['vals'])
-                self.hdr.recDtype = recs.dtype
-                self.out = Popen("gzip -6 > %s" % (self.hdr.valPath,), shell=True, env=os.environ, bufsize=2**16, stdin=PIPE, close_fds=True).stdin
-            recs.tofile(self.out)
-            self.hdr.nRec += len(recs)
-        
-    def posRec(self):
-        return self.hdr.nRec
-    
-    def numRec(self):
-        return self.posRec()
-        
-    def close(self):
-        self.out.close()
-        dumpObj(self.hdr,self.rootPath+'.hdr')
-
-
-class KmerTxtReader:
-    
-    def __init__(self,inpFile,debug = True, nRecDbg = 10**3):
-        self.debug = debug
-        self.nRecDbg = nRecDbg
-        self.inpFile = inpFile
-        self.inp = gzip.open(inpFile,'r')
-        self.countsFile = os.path.basename(inpFile)+".cnt"
-    
-    def readValues_new(self):
-        debug = self.debug
-        nRecDbg = self.nRecDbg
-        iRec = 0
-        valRank = -1
-        while True:
-            try:
-                if iRec > 0:
-                    vals = numpy.fromfile(self.inp, dtype=kmerDtype, count=valRank+5, sep=' ')
-                else:
-                    line = self.inp.readline()
-                    vals = numpy.fromstring(line, dtype=float, count=-1, sep=' ')
-                label = int(vals[0])
-                vals = vals[5:]
-                newRank = len(vals)
-                kmerDtype = float
-            except Exception, msg:
-                print msg, line[:80], vals
-                raise
-            if valRank < 0:
-                valRank = newRank
-            else:
-                assert valRank == newRank, "Old rank: %s, new rank %s" % (valRank,newRank)
-                valRank = newRank
-            iRec += 1
-            if debug and iRec % nRecDbg == 0:
-                print "Read %s k-mer vectors" % (iRec,)
-            yield KmerFreqRecord(label=label,vals=vals)
-        
-    def readValues(self):
-        debug = self.debug
-        nRecDbg = self.nRecDbg
-        iRec = 0
-        valRank = -1
-        for line in self.inp:
-            try:
-                vals = numpy.fromstring(line, dtype=float, count=-1, sep=' ')
-                label = int(vals[0])
-                vals = vals[5:]
-                #rec = line.split()
-                #label = int(rec[0])
-                #vals = numpy.fromstring(','.join(rec[5:]), dtype=float, count=-1, sep=',')
-                #vals = array(rec[5:],float)
-                #vals = [ float(x) for x in rec[5:] ]
-                newRank = len(vals)
-            except Exception, msg:
-                print msg, line[:80], vals
-                raise
-            if valRank < 0:
-                valRank = newRank
-            else:
-                assert valRank == newRank, "Old rank: %s, new rank %s" % (valRank,newRank)
-                valRank = newRank
-            iRec += 1
-            if debug and iRec % nRecDbg == 0:
-                print "Read %s k-mer vectors" % (iRec,)
-            yield KmerFreqRecord(label=label,vals=vals)
-        
-    def convertToBinary(self,debug=True,nRecDbg=10000):
-        inp = gzip.open(self.inpFile,'r')
-        #inp = sys.stdin
-        fileOutRoot = os.path.basename(self.inpFile)
-        if fileOutRoot[-3:] == '.gz':
-            fileOutRoot = fileOutRoot[:-3]
-        fileOut = fileOutRoot + '.val.gz'
-        #out = open(fileOut,'w')
-        out = Popen("gzip -6 > %s" % (fileOut,),
-                    shell=True, env=os.environ, bufsize=2**16, stdin=PIPE, close_fds=True).stdin
-        iRec = 0
-        line = inp.next()
-        vals = numpy.fromstring(line, dtype=numpy.float32, count=-1, sep=' ')
-        recDtype = numpy.dtype([('taxid','int32',1),
-                                ('vals','float32',len(vals)-5)]) 
-        recs = numpy.zeros(1,dtype=recDtype)
-        rec = recs[0]
-        while True:
-            #rec = numpy.rec.fromarrays([vals[0:1].astype(numpy.int32),vals[5:]], names='taxid, vals')  
-            rec['taxid'] = vals[0]
-            rec['vals'][:] = vals[5:]
-            rec.tofile(out)
-            iRec += 1
-            if debug and iRec % nRecDbg == 0:
-                print "Read %s k-mer vectors" % (iRec,)
-            #if iRec > 50000:
-            #    break
-            try:
-                line = inp.next()
-            except StopIteration:
-                break
-            vals = numpy.fromstring(line, dtype=numpy.float32, count=-1, sep=' ')
-            
-        out.close()
-        hdr = KmerBinHeader(rootPath=fileOutRoot,nRec=iRec,nVal=len(vals),recDtype=rec.dtype)
-        dumpObj(hdr,fileOutRoot+'.hdr')
-        
-            
-        
-    def countValues(self,save=True,load=True):
-        """If both 'save' and 'load' are True (the default), this will cache the results in a file."""
-        if load and os.path.isfile(self.countsFile):
-            return loadObj(self.countsFile)
-        debug = self.debug
-        nRecDbg = self.nRecDbg
-        iniTaxaCount = 10**6
-        count = numpy.zeros(iniTaxaCount,int)
-        iRec = 0
-        for line in self.inp:
-            taxid = int(line.split(' ',1)[0])
-            try:
-                count[taxid] += 1
-            except IndexError:
-                count.resize((taxid*2,))
-                count[taxid] += 1
-            iRec += 1
-            if debug and iRec % nRecDbg == 0:
-                print "Read %s k-mer vectors" % (iRec,)
-        if save:
-            dumpObj(count,self.countsFile)
-        return count
-    
-    def __del__(self):
-        self.close()
-    
-    def close(self):
-        self.inp.close()
-
-
-class TaxaSampler(PhyOptions):
-    def __init__(self):
-        PhyOptions.__init__(self)
-        #kmerTxt = KmerTxtReader(self.kmerTestFile)
-        #kmerTxt.convertToBinary()
-        self.viralRootTaxid = 10239
-        print "Loading taxonomy tree"
-        #Pickling the taxa tree goes wrong apparently - memory consumption grows ~ 2x, and it takes longer than 
-        #recreating from original flat file
-        #self.taxaTree = objectDiskCacher(TaxaTree,os.path.basename(self.taxaNodesFile)+'.pkl')(ncbiDumpFile=self.taxaNodesFile)
-        self.taxaTree = TaxaTree(ncbiDumpFile=self.taxaNodesFile,save=False,load=False)
-        #kmerCounts = self.kmers.countValues(save=True,load=True)
-        #print numpy.sum(kmerCounts)
-        #return
-        print "Finished loading taxonomy tree"
-        mask = self.taxaTree.buildSubtreeMask(self.viralRootTaxid)
-        kmers = KmerBinReader('6mers_3K')
-        kmersSel = KmerBinWriter('6mers_3K.vir')
-        for batch in kmers.readBatches(batchSize=10000):
-            sel = batch[numpy.where(mask.take(batch['taxid']) > 0)]
-            kmersSel.writeBatch(sel)
-            print "Read %s k-mer records out of %s, selected %s" % (kmers.posRec(),kmers.numRec(),kmersSel.numRec())
-        kmersSel.close()
-        kmers.close()
-        return
-        #kmers = self.kmers
-        for rec in kmers.readValues():
-            pass
-        #self.assignLeafCounts()        
-        #self.taxaTree.writeLineage(sys.stdout)
-        def node_printer(node):
-            if node.data.rank == 'family':
-                print node.data.kmerCnt, node.lineageRanksStr()
-        #self.taxaTree.visitDepthTop(lin_printer,self.viralRootTaxid)
-        viralRoot = self.taxaTree.getNode(self.viralRootTaxid)
-        #rank_faker = RankFakerVisitor(topNode=viralRoot,lineage=viralRanksTemplate)
-        #self.taxaTree.visitDepthTop(rank_faker,self.viralRootTaxid)
-        #rank_reducer = RankReducerVisitor()
-        #self.taxaTree.visitDepthTop(rank_reducer)
-        count_aggregator = CountAggregateVisitor()
-        self.taxaTree.visitDepthBottom(count_aggregator)
-        self.taxaTree.visitDepthTop(node_printer,self.viralRootTaxid)
-    
-    def assignLeafCounts(self):
-        kmerCounts = self.kmers.countValues(save=True,load=True)
-        nodes = self.taxaTree.getNodesDict()
-        for node in nodes.itervalues():
-            try:
-                x = kmerCounts[node.data.taxid]
-            except IndexError:
-                x = 0
-            node.data.kmerCnt = x
-        
-        
-
-class SVMLib:
-    import svm
-    def __init__(self):
-        self.param = self.svm.svm_parameter(kernel_type = self.svm.RBF,C = 10,cache_size=2000)
-    
-    def train(self,inpFile,modelFile,testMode=False,testRecNum=10000):
-    #tax_id, start on sequence, end on sequence, k-mer length, n of kmers, remaining columns are kmer frequencies 
-    #(for example, k=6 has 2080 remaining columns)
-        labels = []
-        samples = []
-        freqs = KmerFreqs(inpFile)
-        for rec in freqs.readValues():
-            labels.append(rec.label)
-            samples.append(rec.vals)
-            if testMode and len(labels) >= testRecNum:
-                break
-        freqs.close()
-        prob = self.svm.svm_problem(labels,samples)
-        print "Starting training with %s samples of rank %s" % (len(labels),len(samples[0]))
-        model = self.svm.svm_model(prob, self.param)
-        print "Finished training"
-        model.save(modelFile)
-
-class SVMMulticlass:
-    
-    def __init__(self,workDir='/export/tmp'):
-        self.workDir = workDir
-        self.sampleFileRel = "samples.svm"
-        self.modelFileRel = "model.svm"
-        makedir(workDir)
-        
-    def train(self,inpFile,modelFile,testMode=False,testRecNum=10000):
-        samples = open(os.path.join(self.workDir,self.sampleFileRel),'w', buffering=1024*1024)
-        iRec = 0
-        freqs = KmerFreqs(inpFile)    
-        for rec in freqs.readValues():
-            rec.write(samples)
-            #samples.write(rec.asStr())
-            samples.write("\n")
-            iRec = iRec + 1
-            if testMode and iRec >= testRecNum:
-                break
-        freqs.close()
-        #important to flush, otherwise training program does not see the last records:
-        samples.close()
-        print "Starting training with %s samples of rank %s" % (iRec,len(rec.vals))        
-        run(["svm_multiclass_learn","-c","1","-m","2000",self.sampleFileRel,self.modelFileRel], cwd=self.workDir)
-        print "Finished training"
 
 class DbSeqSource(PhyOptions):
     """Database of sequence source for training the classiffier"""
@@ -625,8 +297,8 @@ class DbSeqSource(PhyOptions):
 
     def loadSeq(self):
         self.loadGiTaxPickled()
-        #self.createTableSeq()
-        #self.loadSeqNCBI(self.ncbiDbs[0])
+        self.createTableSeq()
+        self.loadSeqNCBI(self.ncbiDbs[0])
         #self.loadSeqNCBI(self.ncbiDbs[1])
         #self.loadSeqNCBI(self.ncbiDbs[2])
         #self.loadSeqNCBI(self.ncbiDbs[3])
@@ -864,25 +536,10 @@ class DbSeqSource(PhyOptions):
         print sorted(((cnt,taxid) for (taxid,cnt) in taxaCnt.iteritems()))
 
     def loadGiTaxNumpy(self):
-        gi2taxa = numpy.zeros(200*10**6,numpy.int)
-        inp = file(self.taxaGiFile,'r')
-        iRow = 0
-        giMax = 0
-        for rec in (line.split() for line in inp):
-            gi2taxa[int(rec[0])] = int(rec[1])
-            if iRow % 1000000 == 0:
-                print rec, iRow
-            giMax = max(giMax,int(rec[0]))
-            iRow += 1
-        inp.close()
-        gi2taxa = numpy.resize(gi2taxa,giMax+1)
-        out = file(self.taxaPickled,'w')
-        dump(gi2taxa,out,-1)
-        out.close()
-        taxaCnt = {}
-        for taxid in gi2taxa:
-            taxaCnt[taxid] = taxaCnt.get(taxid,0) + 1
-        print sorted(((cnt,taxid) for (taxid,cnt) in taxaCnt.iteritems()))
+        inp = openGzip(self.taxaGiFile,'r')
+        gi2taxa = numpy.loadtxt(inp,dtype=numpy.int32)
+        print gi2taxa.shape 
+        dumpObj(gi2taxa,self.taxaPickled)
 
     def loadGiTaxPickled(self):
         inp = open(self.taxaPickled,'r')
