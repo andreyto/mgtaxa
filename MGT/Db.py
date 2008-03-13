@@ -18,26 +18,48 @@ class DbSQL:
             pass
         curs.close()
         
-    def ddl(self,*l,**kw):
-        curs = self.cursor()
-        curs.execute(*l,**kw)
-        curs.close()
+    def ddl(self,sql,ifDialect=None,dropList=tuple(),**kw):
+        if self.dialectMatch(ifDialect):
+            curs = self.cursor()
+            for dbobj in dropList:
+                try:
+                    curs.execute("drop %s" % (dbobj,))
+                except:
+                    pass
+            curs.execute(sql,**kw)
+            curs.close()
         
-    def execute(self,*l,**kw):
-        curs = self.cursor()
-        curs.execute(*l,**kw)
-        return curs
+    def execute(self,sql,ifDialect=None,**kw):
+        if self.dialectMatch(ifDialect):
+            curs = self.cursor()
+            curs.execute(sql,**kw)
+            return curs
+        else:
+            return None
 
-    def executemany(self,*l,**kw):
-        curs = self.cursor()
-        curs.executemany(*l,**kw)
-        curs.close()
+    def executemany(self,sql,data,ifDialect=None,**kw):
+        if self.dialectMatch(ifDialect):
+            curs = self.cursor()
+            curs.executemany(sql,data,**kw)
+            curs.close()
  
     def dropTable(self,name):
-        self.ddl("drop table if exists " + name)
+        try:
+            self.ddl("drop table " + name)
+        except:
+            pass
 
     def dropIndex(self,name,table):
-        self.ddl("drop index  if exists %s on %s" % (name,table))
+        try: 
+            self.ddl("drop index %s on %s" % (name,table))
+        except:
+            pass
+
+    def createColumnIndices(self,names,table):
+        """This can be specialized for MySQL and others that support ALTER TABLE ... ADD INDEX ... ADD INDEX"""
+        for name in names:
+            self.dropIndex(name,table)
+            self.ddl("create index %s on %s ( %s )" % (name,table,name))
 
     def connection(self):
         return self.con
@@ -51,6 +73,10 @@ class DbSQL:
 
     def close(self):
         pass
+
+    def dialectMatch(self,dialect):
+        return dialect is None
+        
    
 class DbSQLLite(DbSQL):
     
@@ -93,6 +119,16 @@ class DbSQLMy(DbSQL):
             self.con.close()
         #self.dbmod.server_end()
 
+    def dropTable(self,name):
+        self.ddl("drop table if exists " + name)
+
+    def dropIndex(self,name,table):
+        self.ddl("drop index  if exists %s on %s" % (name,table))
+
+    def dialectMatch(self,dialect):
+        return dialect is None or dialect == "mysql"
+
+
 
 class DbSQLMonet(DbSQL):
     
@@ -107,12 +143,11 @@ class DbSQLMonet(DbSQL):
         #self.dbmod.server_init(("phyla","--defaults-file=my.cnf"),('server',))
         self.con = self.dbmod.connect(host = 'localhost',
             dbname = 'mgtaxa',
-            user = 'root',
-            password = 'OrangeN0', 
-            lang = 'sql')
+            lang = 'sql')#,
+            #user = 'root',
+            #password = 'OrangeN0')
 
     def close(self):
-        self.commit()
         if hasattr(self,'con'):
             self.con.close()
         #self.dbmod.server_end()
@@ -122,6 +157,18 @@ def createDbSQL():
     #db = DbSQLLite("/export/atovtchi/test_seq.db")
     db = DbSQLMonet()
     return db
+
+
+class IntIdGenerator(object):
+    def __init__(self,start=1):
+        self.n = start - 1
+
+    def __call__(self):
+        self.n += 1
+        return self.n
+
+    def last(self):
+        return self.n
 
 
 class BulkInserter:
@@ -142,6 +189,52 @@ class BulkInserter:
             self.cursor.executemany(self.sql,self.buf)
             self.buf = []
 
+
+class BulkInserterFile:
+    
+    def __init__(self,cursor,sql,bufLen):
+        from cStringIO import StringIO
+        self.cursor = cursor
+        self.bufLen = bufLen
+        self.sql = sql
+        self.buf = StringIO()
+        self.n = 0
+        
+    def __call__(self,record):
+        buf = self.buf
+        #apparently it's ok for MonetDB to enclose any type in ""
+        escaped = '|'.join(['"%s"' % (x,) for x in record])
+        self.buf.write(escaped+'\n')
+        self.n += 1
+        if self.n == self.bufLen:
+            self.flush()
+            
+    def __call__old(self,record):
+        buf = self.buf
+        escaped = []
+        for x in record:
+            if isinstance(x,str):
+                escaped.append('"%s"' % (x,))
+            else:
+                escaped.append(str(x))
+        self.buf.write('|'.join(escaped)+'\n')
+        self.n += 1
+        if self.n == self.bufLen:
+            self.flush()
+            
+            
+    def flush(self):
+        if self.n > 0:
+            #self.buf.seek(0)
+            bulkFile = "/usr/local/scratch/atovtchi/bulk.tmp"
+            out = open(bulkFile,'w')
+            out.write(self.buf.getvalue())
+            out.close()
+            self.cursor.execute("copy into %s from '%s'" % (self.sql,bulkFile) )
+            os.remove(bulkFile)
+            self.n = 0
+            self.buf.close()
+            self.buf = StringIO()
 
 
 
@@ -298,21 +391,24 @@ class DbSeqSource(PhyOptions):
     def loadSeq(self):
         self.loadGiTaxPickled()
         self.createTableSeq()
+        self.idGenSeq = IntIdGenerator()
         self.loadSeqNCBI(self.ncbiDbs[0])
-        #self.loadSeqNCBI(self.ncbiDbs[1])
-        #self.loadSeqNCBI(self.ncbiDbs[2])
-        #self.loadSeqNCBI(self.ncbiDbs[3])
-        #self.loadSeqNCBI(self.ncbiDbs[4])
+        self.loadSeqNCBI(self.ncbiDbs[1])
+        self.loadSeqNCBI(self.ncbiDbs[2])
+        self.loadSeqNCBI(self.ncbiDbs[3])
+        self.loadSeqNCBI(self.ncbiDbs[4])
         #self.dbSql.ddl("create index taxid on seq(taxid)")
     
     def createTableSeq(self):
         self.dbSql.dropIndex("taxid","seq")
         self.dbSql.dropTable("seq")
+        # we removed "auto_increment primary key" from iid
+        # to speed up bulk load
         self.dbSql.execute(
         """
         create table seq
         (
-        iid integer auto_increment primary key ,
+        iid integer,
         gi bigint,
         taxid integer,
         src_db varchar(1),
@@ -322,28 +418,30 @@ class DbSeqSource(PhyOptions):
         kind varchar(2),
         seq_hdr varchar(%s)
         )
-        engine myisam
         """ % (self.fastaHdrSqlLen,))
         
     def loadSeqNCBI(self,db):
         pipe = Popen(("fastacmd -D 1 -d " + db.db).split(), cwd=self.blastDataDir, env=os.environ, bufsize=2**16, stdout=PIPE, close_fds=True).stdout
-        inp = readFastaRecords(pipe,readSeq=False)
+        #inp = readFastaRecords(pipe,readSeq=False)
+        inp = FastaReader(pipe)
         curs = self.dbSql.cursor()
         iRec = 0
-        bufLen = 500
+        bufLen = 5 #500
         sql = """
         insert into seq
-        (gi, taxid, src_db, project, seq_len, acc, kind, seq_hdr)
+        (iid, gi, taxid, src_db, project, seq_len, acc, kind, seq_hdr)
         values
-        (%s,%s,%s,%s,%s,%s,%s,%s)
+        (%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """
-        inserter = BulkInserter(cursor=curs,sql=sql,bufLen=bufLen)
-        for rec in inp:
-            (gifld,gi,accfld,acc,txt) = rec.title.split('|',4)
+        #inserter = BulkInserter(cursor=curs,sql=sql,bufLen=bufLen)
+        inserter = BulkInserterFile(cursor=curs,sql='seq',bufLen=500000)
+        for rec in inp.records():
+            title = rec.header()[1:-1] #remove '>' and '\n'
+            (gifld,gi,accfld,acc,txt) = title.split('|',4)
             assert gifld == 'gi'
             gi = int(gi)
             try:
-                taxid = self.gi2taxa[gi]
+                taxid = int(self.gi2taxa[gi])
             except KeyError:
                 print "Taxid not found for gi: "+gi
                 taxid = 0
@@ -358,21 +456,22 @@ class DbSeqSource(PhyOptions):
             project = ''
             if acc_sfx[:4].isalpha() and acc_sfx[5].isdigit():
                 project = acc_sfx[:4]
-            values = (gi,taxid,db.id,project,rec.seqLen(),acc,kind,rec.title[:self.fastaHdrSqlLen])
+            seqLen = rec.seqLen()
+            values = (self.idGenSeq(),gi,taxid,db.id,project,seqLen,acc,kind,title[:self.fastaHdrSqlLen])
             #values = [ str(x) for x in values ]
-            inserter(values)            
-            if iRec % 10000 == 0:
-                print rec.title, taxid, iRec
+            inserter(values)
+            if iRec % 50000 == 0:
+                print title, taxid, iRec, seqLen
             iRec += 1
         inserter.flush()
         curs.close()
+        inp.close()
 
     def loadRefseqAcc(self):
         self.dbSql.dropTable('refseq_acc')
         self.dbSql.ddl("""\
         create table refseq_acc
         (prefix varchar(2), acc varchar(40), molecule varchar(10), method varchar(15), descr varchar(400), index prefix(prefix))
-        engine myisam
         """)
         self.dbSql.executemany("""\
         insert into refseq_acc
@@ -386,7 +485,6 @@ class DbSeqSource(PhyOptions):
         self.dbSql.ddl("""\
         create table taxa_cat
         (cat char(1), taxid_ancestor integer, taxid integer)
-        engine myisam
         """)
         inp = open(self.taxaCatFile,'r')
         curs = self.dbSql.cursor()
@@ -430,7 +528,6 @@ class DbSeqSource(PhyOptions):
         hidsubtree bool,
         comments  varchar(40)
         )
-        engine myisam
         """)
         inp = open(self.taxaNodesFile,'r')
         curs = self.dbSql.cursor()
@@ -486,7 +583,6 @@ class DbSeqSource(PhyOptions):
         gi bigint,
         taxid integer
         )
-        engine myisam
         """)
         #self.dbSql.executemany("insert into gi_tax (gi,taxid) values (%s,%s)",[(1,2),(3,4)])
         #print "Test done"
@@ -496,7 +592,7 @@ class DbSeqSource(PhyOptions):
         bufLen = 100000
         sql = "insert into gi_taxa (gi,taxid) values (%s,%s)"
         curs = self.dbSql.cursor()        
-        inserter = BulkInserter(cursor=curs,sql=sql,bufLen=bufLen)        
+        inserter = BulkInserter(cursor=curs,sql=sql,bufLen=bufLen)
         print "Start insert"
         for record in inp:
             inserter(record.split())
@@ -537,15 +633,329 @@ class DbSeqSource(PhyOptions):
 
     def loadGiTaxNumpy(self):
         inp = openGzip(self.taxaGiFile,'r')
-        gi2taxa = numpy.loadtxt(inp,dtype=numpy.int32)
-        print gi2taxa.shape 
+        #inp = open("test_gi_taxid_nucl.dmp",'r')
+        #twocol = numpy.loadtxt(inp,dtype=numpy.int32)
+        twocol = numpy.fromfile(inp,dtype="i4",sep='\n')
+        twocol.shape = (twocol.shape[0]/2,2)
+        gi2taxa = fromWhereItems({'ind':twocol[:,0], 'val':twocol[:,1]})
+        print gi2taxa.shape, gi2taxa.dtype
         dumpObj(gi2taxa,self.taxaPickled)
+        #pdb.set_trace() 
+        sys.exit(0) 
 
     def loadGiTaxPickled(self):
-        inp = open(self.taxaPickled,'r')
-        self.gi2taxa = load(inp)
-        inp.close()
+        self.gi2taxa = loadObj(self.taxaPickled)
 
+
+    def selectTaxSet(self):
+        db = self.dbSql
+        db.ddl("""
+        CREATE TABLE taxa_src_1 AS
+            (SELECT taxid                ,
+                            src_db       ,
+                            kind         ,
+                            project      ,
+                            0            AS priority,
+                            COUNT(*)     AS cnt     ,
+                            SUM(seq_len) AS seq_len
+                    FROM    seq
+                    GROUP BY taxid ,
+                            src_db ,
+                            kind   ,
+                            project
+            )
+        WITH DATA
+        """,
+        dropList=["table taxa_src_1"])
+        
+        db.ddl("""
+        CREATE TABLE taxa_src AS
+                (SELECT *
+                        FROM    taxa_src_1
+                )
+        ORDER BY taxid ,
+                src_db ,
+                kind   ,
+                project
+        WITH DATA
+        """,
+        dropList=["table taxa_src"])
+        db.dropTable("taxa_src_1")
+        
+        db.ddl("""ALTER TABLE taxa_src ADD id INTEGER auto_increment PRIMARY KEY""")
+        db.ddl("""
+        ALTER TABLE taxa_src
+        ADD INDEX taxid(taxid)
+        ADD INDEX src_db(src_db)
+        ADD INDEX kind(kind)
+        ADD INDEX project(project)
+        """,
+        ifDialect="mysql")
+        
+        ## Drop "Alternative" full genomes (e.g. haplotypes)
+        db.ddl("""
+        DELETE
+        FROM    taxa_src
+        WHERE   kind = 'AC'
+        """)
+
+        db.ddl("""
+        CREATE TABLE wgs_src_1 AS
+        (SELECT *
+                FROM    taxa_src
+                WHERE   project <> ''
+                    AND kind    <> ''
+        )
+        WITH DATA
+        """,
+        dropList=["table wgs_src_1"])
+        
+        db.ddl("""
+        INSERT
+        INTO    wgs_src_1
+        SELECT  a.*
+        FROM    taxa_src a
+        WHERE   a.project   <> ''
+            AND a.taxid NOT IN
+                (SELECT taxid
+                FROM    wgs_src_1
+                )
+        """)
+
+        db.ddl("""
+        CREATE TABLE wgs_src_2 AS
+        (SELECT a.*
+                FROM    wgs_src_1 a
+                WHERE   a.seq_len >=
+                        (SELECT MAX(b.seq_len)
+                        FROM    wgs_src_1 b
+                        WHERE   a.taxid = b.taxid
+                        )
+        )
+        WITH DATA
+        """,
+        dropList=["table wgs_src_2"])
+
+        db.ddl("""
+        CREATE TABLE wgs_src_3 AS
+        (SELECT a.*
+                FROM    wgs_src_2 a
+                WHERE   a.id >=
+                        (SELECT MAX(b.id)
+                        FROM    wgs_src_2 b
+                        WHERE   a.taxid = b.taxid
+                        )
+        )
+        WITH DATA
+        """,
+        dropList=["table wgs_src_3"])
+        db.dropTable("wgs_src_2")
+
+        db.ddl("""
+        CREATE TABLE wgs_src_nr AS
+        (SELECT *
+                FROM    wgs_src_3
+        )
+        WITH DATA
+        """,
+        dropList=["table wgs_src_nr"])
+
+        db.ddl("""
+        CREATE TABLE nc_src_1 AS
+        (SELECT a.*
+                FROM    taxa_src a
+                WHERE   a.kind        = 'NC'
+                    AND a.seq_len * 2 >
+                        (SELECT MAX(b.seq_len)
+                        FROM    wgs_src_nr b
+                        WHERE   a.taxid = b.taxid
+                        )
+        )
+        WITH DATA
+        """,
+        dropList=["table nc_src_1"])
+        
+        db.ddl("""
+        CREATE TABLE htg_over_nc_src_1 AS
+        (SELECT a.*
+                FROM    taxa_src a,
+                        nc_src_1 b
+                WHERE   a.src_db     = 'h'
+                    AND a.kind      <> 'NC'
+                    AND a.taxid      = b.taxid
+                    AND a.seq_len    > b.seq_len * 5
+                    AND b.seq_len    < 500000
+                    AND a.taxid NOT IN
+                        (SELECT taxid
+                        FROM    wgs_src_nr
+                        )
+        )
+        WITH DATA
+        """,
+        dropList=["table htg_over_nc_src_1"])
+
+        db.ddl("""
+        CREATE TABLE nc_src_2 AS
+        (SELECT *
+                FROM    nc_src_1
+                WHERE   taxid NOT IN
+                        (SELECT taxid
+                        FROM    htg_over_nc_src_1
+                        )
+        )
+        WITH DATA
+        """,
+        dropList=["table nc_src_2"])
+        
+        db.ddl("""
+        CREATE TABLE nc_src_3 AS
+        (SELECT a.*
+                FROM    nc_src_2 a
+                WHERE   a.id >=
+                        (SELECT MAX(b.id)
+                        FROM    nc_src_2 b
+                        WHERE   a.taxid = b.taxid
+                        )
+        )
+        WITH DATA
+        """,
+        dropList=["table nc_src_3"])
+        
+        db.ddl("""
+        CREATE TABLE nc_src AS
+        (SELECT a.*,
+                        'nc' AS stage
+                FROM    nc_src_3 a
+        )
+        WITH DATA
+        """,
+        dropList=["table nc_src"])
+        
+        db.ddl("""
+        CREATE TABLE wgs_src AS
+        (SELECT a.*,
+                        'wg' AS stage
+                FROM    wgs_src_nr a
+                WHERE   taxid NOT IN
+                        (SELECT taxid
+                        FROM    nc_src
+                        )
+        )
+        WITH DATA
+        """,
+        dropList=["table wgs_src"])
+        
+        db.ddl("""
+        CREATE TABLE htg_src_1 AS
+        (SELECT *
+                FROM    taxa_src
+                WHERE ( src_db      = 'h'
+                     OR kind       <> '' )
+                    AND (taxid NOT IN
+                        (SELECT taxid
+                        FROM    nc_src
+                        )
+                    AND taxid NOT IN
+                        (SELECT taxid
+                        FROM    wgs_src
+                        ) )
+        )
+        WITH DATA
+        """,
+        dropList=["table htg_src_1"])
+        
+        db.ddl("""
+        CREATE TABLE htg_src AS
+        (SELECT a.*,
+                        'ht' AS stage
+                FROM    htg_src_1 a
+        )
+        WITH DATA
+        """,
+        dropList=["table htg_src"])
+        
+        db.ddl("""
+        CREATE TABLE gen_src AS
+        (SELECT *
+                FROM    nc_src
+        )
+        WITH DATA
+        """,
+        dropList=["table gen_src"])
+        
+        db.ddl("""
+        INSERT
+        INTO    gen_src
+        SELECT  *
+        FROM    wgs_src
+        
+        UNION
+        
+        SELECT  *
+        FROM    htg_src
+        """)
+
+        db.createColumnIndices(names=["taxid"],table="gen_src")
+        
+        db.ddl("""
+        CREATE TABLE nt_src AS
+        (SELECT a.*,
+                        'nt' AS stage
+                FROM    taxa_src a
+                WHERE   taxid NOT IN
+                        (SELECT taxid
+                        FROM    gen_src
+                        )
+        )
+        WITH DATA
+        """,
+        dropList=["table nt_src"])
+        return
+        
+        db.ddl("""
+        
+        """,
+        dropList=["table "])
+        
+        db.ddl("""
+        
+        """,
+        dropList=["table "])
+        
+        db.ddl("""
+        
+        """,
+        dropList=["table "])
+        
+        db.ddl("""
+        
+        """,
+        dropList=["table "])
+        
+        db.ddl("""
+        
+        """,
+        dropList=["table "])
+        
+        db.ddl("""
+        
+        """,
+        dropList=["table "])
+        
+        db.ddl("""
+        
+        """,
+        dropList=["table "])
+        
+        db.ddl("""
+        
+        """,
+        dropList=["table "])
+        
+        db.ddl("""
+        
+        """,
+        dropList=["table "])
 
 refseqAccFormat = \
 (

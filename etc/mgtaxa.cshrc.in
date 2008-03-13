@@ -1,3 +1,4 @@
+setenv MGT_HOME __MGT_HOME__
 setenv MGT_BIN __MGT_BIN__
 setenv MGT_EXEC_BIN __MGT_EXEC_BIN__
 setenv PYTHONPATH __MGT_PY_PATH__:${PYTHONPATH}

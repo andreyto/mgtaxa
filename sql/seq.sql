@@ -9,13 +9,7 @@
 
 DROP TABLE IF EXISTS taxa_src;
 CREATE TABLE taxa_src
-        (
-        INDEX taxid(taxid)  ,
-        INDEX src_db(src_db),
-        INDEX kind(kind)    ,
-        INDEX project(project)
-        )
-        engine myisam
+        AS
         (SELECT taxid        ,
                 src_db       ,
                 kind         ,
@@ -34,6 +28,23 @@ CREATE TABLE taxa_src
                 project
         );
 ALTER TABLE taxa_src ADD id INTEGER auto_increment PRIMARY KEY;
+CREATE INDEX taxid ON taxa_src
+        (
+        taxid
+        );
+CREATE INDEX src_db ON taxa_src
+        (
+        src_db
+        );
+CREATE INDEX kind ON taxa_src
+        (
+        kind
+        );
+CREATE INDEX project ON taxa_src
+        (
+        project
+        );
+
 DELETE
 FROM    taxa_src
 WHERE   kind = 'AC';

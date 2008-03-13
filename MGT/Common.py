@@ -10,7 +10,7 @@ import pdb
 
 class PhyOptions:
     def __init__(self):
-        self.taxaPickled = 'taxa.pkl'
+        self.taxaPickled = 'taxa.pkl.gz'
         self.fastaHdrSqlLen = 40
         self.blastDataDir = 'blast'
         self.selGiFile = 'phyla_sel.gi'
@@ -39,6 +39,14 @@ def masksToInd(maskVal,maskInd):
 def whereItems(arr,condition):
     wh = numpy.where(condition)
     return numpy.rec.fromarrays((wh[0],arr[wh]),names='ind,val')
+
+def fromWhereItems(whItems,defVal=0):
+    wh =  whItems['ind']
+    a = numpy.empty(numpy.max(wh) + 1, dtype = whItems['val'].dtype)
+    a[:] = defVal
+    a[wh] = whItems['val']
+    return a
+
 
 def taxidFromPhyFastaHeader(hdr):
     """Extract taxid from a FASTA header formatted for PHY database"""

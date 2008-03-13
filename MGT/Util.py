@@ -24,12 +24,12 @@ if defineCalledProcessError:
             self.returncode = returncode
 
 def dumpObj(obj,fileName):
-    out = file(fileName,'w')
+    out = openCompressed(fileName,'w')
     dump(obj,out,-1)
     out.close()
     
 def loadObj(fileName):
-    inp = open(fileName,'rb')
+    inp = openCompressed(fileName,'rb')
     ret = load(inp)
     inp.close()
     return ret
@@ -116,11 +116,17 @@ def strToFile(s,fileName,mode="w",dryRun=False):
         print "Write to file %s mode %s:" % (fileName,mode)
         print s
 
+def openCompressed(filename,mode,**kw):
+    if filename.endswith('.gz'):
+        return openGzip(filename,mode,**kw)
+    else:
+        return open(filename,mode,**kw)
+
 def openGzip(filename,mode,compresslevel=6):
     compresslevel = int(compresslevel)
-    if mode == "w":
+    if mode in ("w","wb"):
         return Popen("gzip -%s > %s" % (compresslevel,filename), shell=True, env=os.environ, bufsize=2**16, stdin=PIPE, close_fds=True).stdin
-    elif mode == "r":
+    elif mode in ("r","rb"):
         return Popen(("gzip -cd %s" % (filename,)).split(),env=os.environ, bufsize=2**16, stdout=PIPE, close_fds=True).stdout
     else:
         raise ValueError("'openGzip()' - Unsupported 'mode': " + mode)

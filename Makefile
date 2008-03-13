@@ -196,14 +196,16 @@ clean:
 	$(RMRF) $(DOC_DIR)/html $(DOC_DIR)/tex
 
 
-mgtaxa.cshrc:
-	sed -e 's|__MGT_BIN__|$(bindir)|' \
+mgtaxa.cshrc: $(PROJ_DIR)/etc/mgtaxa.cshrc.in
+	sed -e 's|__MGT_HOME__|$(prefix)|' \
+	    -e 's|__MGT_BIN__|$(bindir)|' \
 	    -e 's|__MGT_EXEC_BIN__|$(exec_bindir)|' \
 	    -e 's|__MGT_PY_PATH__|$(prefix):$(libdir)|' \
 	    $(PROJ_DIR)/etc/mgtaxa.cshrc.in > $@ || rm $@
 
-mgtaxa.insrc.cshrc:
-	sed -e 's|__MGT_BIN__|$(BUILD_DIR)|' \
+mgtaxa.insrc.cshrc: $(PROJ_DIR)/etc/mgtaxa.cshrc.in
+	sed -e 's|__MGT_HOME__|$(PROJ_DIR)|' \
+	    -e 's|__MGT_BIN__|$(BUILD_DIR)|' \
 	    -e 's|__MGT_EXEC_BIN__|$(BUILD_DIR)|' \
 	    -e 's|__MGT_PY_PATH__|$(PROJ_DIR):$(BUILD_DIR)|' \
 	    $(PROJ_DIR)/etc/mgtaxa.cshrc.in > $@ || rm $@

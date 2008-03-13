@@ -8,8 +8,9 @@ from MGT.Svm import *
 dbSql = createDbSQL()
 #
 db = DbSeqSource(dbSql=dbSql)
-db.loadGiTaxNumpy()
-db.loadSeq()
+#db.loadGiTaxNumpy()
+#db.loadSeq()
+db.selectTaxSet()
 #db.loadTaxCategories()
 #db.loadTaxNodes()
 #db.loadTaxNodesMem()
