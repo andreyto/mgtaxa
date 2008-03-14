@@ -43,6 +43,12 @@ class DbSQL:
             curs.executemany(sql,data,**kw)
             curs.close()
  
+    def executeAndPrint(self,sql,**kw):
+        curs = self.execute(sql,**kw)
+        if curs in not None:
+            print curs.fetchall()
+            curs.close()
+ 
     def dropTable(self,name):
         try:
             self.ddl("drop table " + name)
@@ -680,6 +686,7 @@ class DbSeqSource(PhyOptions):
         WITH DATA
         """,
         dropList=["table taxa_src"])
+        
         db.dropTable("taxa_src_1")
         
         db.ddl("""ALTER TABLE taxa_src ADD id INTEGER auto_increment PRIMARY KEY""")
@@ -910,52 +917,246 @@ class DbSeqSource(PhyOptions):
         WITH DATA
         """,
         dropList=["table nt_src"])
-        return
+
         
         db.ddl("""
-        
+        CREATE TABLE all_src_1 AS
+        (SELECT a.*,
+                        'g' AS src_type
+                FROM    gen_src a
+        )
+        WITH DATA
         """,
-        dropList=["table "])
+        dropList=["table all_src_1"])
         
         db.ddl("""
-        
+        INSERT
+        INTO    all_src_1
+        SELECT  a.*,
+                'o' AS src_type
+        FROM    nt_src a
+        """)
+
+        db.ddl("""
+        CREATE TABLE all_src AS
+        (SELECT a.*            ,
+                        b.cat  ,
+                        c.divid,
+                        c.rank
+                FROM    all_src_1 a
+                        LEFT JOIN taxa_cat b
+                        ON      a.taxid = b.taxid,
+                        LEFT JOIN taxa_node c
+                        ON      a.taxid = c.taxid
+        )
+        WITH DATA
         """,
-        dropList=["table "])
+        dropList=["table all_src"])
+
+        db.createColumnIndices(names=["taxid","src_db","kind","project","cat","divid","rank"],
+            table="gen_src")
+        db.ddl("ALTER TABLE all_src ADD PRIMARY KEY id(id)")
+
+        ## Some tables to report statistics on data
+
+        ## Group into a single taxid entry per source database
         
         db.ddl("""
-        
+        CREATE TABLE src_db_stat AS
+        (SELECT src_db        ,
+                        taxid ,
+                        COUNT(*) AS cnt
+                FROM    all_src
+                GROUP BY src_db,
+                        taxid
+        )
+        WITH DATA
         """,
-        dropList=["table "])
+        dropList=["table src_db_stat"])
+
+        db.executeAndPrint("""
+        SELECT  src_db,
+                COUNT(*)
+        FROM    src_db_stat
+        GROUP BY src_db
+        """)
+
+        db.ddl("""
+        CREATE TABLE taxa_stat AS
+        (SELECT src_type     ,
+                        stage,
+                        taxid,
+                        cat  ,
+                        COUNT(*) AS cnt
+                FROM    all_src
+                GROUP BY src_type,
+                        stage    ,
+                        taxid    ,
+                        cat
+        )
+        WITH DATA
+        """,
+        dropList=["table taxa_stat"])
+        
+        db.executeAndPrint("""
+        SELECT  stage,
+                COUNT(*)
+        FROM    taxa_stat
+        GROUP BY stage
+        """)
+
+        db.executeAndPrint("""
+        SELECT  stage,
+                cat  ,
+                COUNT(*)
+        FROM    taxa_stat
+        GROUP BY stage,
+                cat
+        """)
+        
+        db.executeAndPrint("""
+        SELECT  src_type,
+                cat     ,
+                COUNT(*)
+        FROM    taxa_stat
+        GROUP BY src_type,
+                cat
+        """)
+        
+        db.executeAndPrint("""
+        SELECT  COUNT(*)
+        FROM    all_src
+        WHERE   kind = 'NC'
+        """)
+
+        ## Human must be in NC_ only
+        db.executeAndPrint("""
+        SELECT  *
+        FROM    all_src
+        WHERE   taxid = 9606
+        """)
+
+        db.ddl("""CREATE INDEX src ON seq (taxid,src_db,kind,project)""",
+        dropList=["index src on seq"])
         
         db.ddl("""
-        
+        CREATE TABLE seq_sel AS
+        (SELECT a.*                                                    ,
+                        b.cat                                          ,
+                        b.stage                                        ,
+                        b.src_type                                     ,
+                        SUBSTRING_INDEX( a.acc , '.', 1 ) AS acc_no_ver,
+                        b.divid                                        ,
+                        b.rank
+                FROM    seq a,
+                        all_src b
+                WHERE   a.taxid   = b.taxid
+                    AND a.src_db  = b.src_db
+                    AND a.kind    = b.kind
+                    AND a.project = b.project
+                    AND a.taxid  <> 0
+        )
+        WITH DATA
         """,
-        dropList=["table "])
+        dropList=["table seq_sel"])
+        
+        db.createColumnIndices(names=["taxid","src_db","kind","project","cat",
+            "stage","src_type","gi","acc","acc_no_ver","divid","rank"],
+            table="seq_sel")
+
+        db.ddl("ALTER TABLE seq_sel ADD PRIMARY KEY iid(iid)")
+
+        ## Proved to be essential in MySQL for efficient planning of queries
+        db.ddl("analyze table seq_sel",ifDialect="mysql")
+
+        db.executeAndPrint("""
+        SELECT  divid,
+                COUNT(*)
+        FROM    seq_sel
+        GROUP BY divid
+        """)
+
+        db.executeAndPrint("""
+        SELECT  rank,
+                COUNT(*)
+        FROM    seq_sel
+        GROUP BY rank
+        """)
+
+        ## Backup all records from seq_sel that are to be discarded in case we
+        ## want to analyze them later
         
         db.ddl("""
-        
+        CREATE TABLE seq_sel_del LIKE seq_sel
         """,
-        dropList=["table "])
+        dropList=["table seq_sel_del"])
+
+        db.ddl("ALTER TABLE seq_sel_del DISABLE KEYS",ifDialect="mysql")
         
         db.ddl("""
+        INSERT
+        INTO    seq_sel_del
+        SELECT  *
+        FROM    seq_sel
+        WHERE   taxid IS NULL
+            OR divid IS NULL
+            OR cat   IS NULL
+            OR divid IN (7,8,11)
+        """)
         
-        """,
-        dropList=["table "])
-        
-        db.ddl("""
-        
-        """,
-        dropList=["table "])
-        
-        db.ddl("""
-        
-        """,
-        dropList=["table "])
+        db.ddl("ALTER TABLE seq_sel_del ENABLE KEYS",ifDialect="mysql")
         
         db.ddl("""
+        DELETE
+        FROM    seq_sel
+        WHERE   iid IN
+                (SELECT iid
+                FROM    seq_sel_del
+                )
+        """)
+
+        db.ddl("ANALYZE TABLE seq_sel",ifDialect="mysql")
+
+        ## save gis only into a file to be used as gi list for NCBI alias db
         
-        """,
-        dropList=["table "])
+        db.ddl("""
+        SELECT  gi
+        INTO    OUTFILE '/home/atovtchi/scratch/mgtdata/phyla_sel.gi'
+        FIELDS TERMINATED BY ' '
+        LINES TERMINATED BY '\n'
+        FROM    seq_sel
+        ORDER BY taxid,
+                iid
+        """)
+
+        ## save all importand fields for selected seq records into a
+        ## flat file to be merged with
+        ## fasta sequence data extracted from blast databases
+        ## through just created gi list
+        ## the order must match the preceding 'select' for gis
+        ## Full csv format will have something like OPTIONALLY ENCLOSED BY '"'
+
+        db.ddl("""
+        SELECT  gi      ,
+                taxid   ,
+                src_db  ,
+                kind    ,
+                project ,
+                cat     ,
+                stage   ,
+                src_type,
+                iid     ,
+                seq_len ,
+                divid   ,
+                rank
+        INTO    OUTFILE '/home/atovtchi/scratch/mgtdata/phyla_sel.csv'
+        FIELDS TERMINATED BY ' '
+        LINES TERMINATED BY '\n'
+        FROM    seq_sel
+        ORDER BY taxid,
+                iid
+        """)
+
 
 refseqAccFormat = \
 (
