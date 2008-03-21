@@ -106,7 +106,14 @@ def makedir(path,dryRun=False):
 #perhaps use shutil.rmtree instead?    
 def rmdir(path,dryRun=False):
     run(["rm","-rf",path],dryRun=dryRun)
-    
+
+def chmod(path,mode,opts='',dryRun=False):
+    if isinstance(path,basestring):
+        path = [path]
+    else:
+        path = list(path)
+    run(["chmod"]+opts.split()+[mode]+path,dryRun=dryRun)
+
 def strToFile(s,fileName,mode="w",dryRun=False):
     if not dryRun:
         out = open(fileName,mode)

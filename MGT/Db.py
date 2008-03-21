@@ -1,13 +1,40 @@
 from MGT.Common import *
+import time
 
 def dbClose(dbObj):
     print "Running 'atexit()' handler"
     dbObj.close()
 
+class SqlResultAssertionError(StandardError):
+    
+    def __init__(self,receive,expect):
+        self.receive = receive
+        self.expect = expect
+    
+    def __str__(self):
+        return "SqlResultAssertionError\nReceived:\n%s\n\nExpected:\n%s\n" % (self.receive,self.expect)
+
+class SqlWatch:
+
+    def __init__(self,sql,debug):
+        self.debug = debug
+        if self.debug > 0:
+            ##time.clock() seems to be broken on SuSe 10 x86_64 Python 2.4
+            ##- always return the same value
+            self.start = time.time()
+            print sql
+
+    def __call__(self):
+        if self.debug > 0:
+            finish = time.time()
+            print "SQL finished in %.3f sec" % (finish-self.start)
+            self.start = finish
+
 class DbSQL:
     
     def __init__(self):
         atexit.register(dbClose, dbObj=self)
+        self.debug = 1
 
     def ddlIgnoreErr(self,*l,**kw):
         curs = self.cursor()
@@ -18,21 +45,41 @@ class DbSQL:
             pass
         curs.close()
         
-    def ddl(self,sql,ifDialect=None,dropList=tuple(),**kw):
+    def ddl(self,sql,ifDialect=None,dropList=tuple(),ignoreError=False,**kw):
         if self.dialectMatch(ifDialect):
             curs = self.cursor()
             for dbobj in dropList:
-                try:
-                    curs.execute("drop %s" % (dbobj,))
-                except:
-                    pass
-            curs.execute(sql,**kw)
+                words = [ x.strip().lower() for x in dbobj.strip().split() ]
+                if words[0] == 'index':
+                    assert words[2] == 'on'
+                    self.dropIndex(words[1],words[3],rawName=True)
+                else:
+                    try:
+                        dropSql = "drop %s" % (dbobj,)
+                        if self.debug > 0:
+                            print dropSql
+                        curs.execute(dropSql)
+                    except StandardError, msg:
+                        pass
+            watch = SqlWatch(sql,self.debug)
+            try:
+                curs.execute(sql,**kw)
+            except StandardError, msg:
+                if ignoreError:
+                    print msg
+                else:
+                    raise
+            watch()
             curs.close()
         
     def execute(self,sql,ifDialect=None,**kw):
+        #if not sql.strip().startswith("drop"):
+        #    return
         if self.dialectMatch(ifDialect):
             curs = self.cursor()
+            watch = SqlWatch(sql,self.debug)
             curs.execute(sql,**kw)
+            watch()
             return curs
         else:
             return None
@@ -40,32 +87,51 @@ class DbSQL:
     def executemany(self,sql,data,ifDialect=None,**kw):
         if self.dialectMatch(ifDialect):
             curs = self.cursor()
+            watch = SqlWatch(sql,self.debug)
             curs.executemany(sql,data,**kw)
+            watch()
             curs.close()
  
     def executeAndPrint(self,sql,**kw):
         curs = self.execute(sql,**kw)
-        if curs in not None:
+        if curs is not None:
             print curs.fetchall()
             curs.close()
+    
+    def executeAndAssert(self,sql,expect,**kw):
+        curs = self.execute(sql,**kw)
+        if curs is not None:
+            rows = curs.fetchall()
+            if len(rows) != len(expect):
+                raise SqlResultAssertionError(receive=rows,expect=expect)
+                for rowReceive, rowExpect in zip(rows,expect):
+                    if list(rowReceive) != list(rowExpect):
+                        raise SqlResultAssertionError(receive=rows,expect=expect)
+            curs.close()
+ 
  
     def dropTable(self,name):
         try:
             self.ddl("drop table " + name)
-        except:
+        except StandardError:
             pass
 
-    def dropIndex(self,name,table):
-        try: 
-            self.ddl("drop index %s on %s" % (name,table))
-        except:
+    def dropIndex(self,name,table,rawName=False):
+        """We always create and drop indices as tablename_indexname because in some DBMS (MonetDB) index names should be globally unique."""
+        try:
+            if rawName:
+                self.ddl("drop index %s on %s" % (name,table))
+            else:
+                self.ddl("drop index ix_%s_%s on %s" % (table,name,table))
+        except StandardError:
             pass
 
     def createColumnIndices(self,names,table):
-        """This can be specialized for MySQL and others that support ALTER TABLE ... ADD INDEX ... ADD INDEX"""
+        """We always create and drop indices as tablename_indexname because in some DBMS (MonetDB) index names should be globally unique.
+        This can be specialized for MySQL and others that support ALTER TABLE ... ADD INDEX ... ADD INDEX"""
         for name in names:
             self.dropIndex(name,table)
-            self.ddl("create index %s on %s ( %s )" % (name,table,name))
+            self.ddl("create index ix_%s_%s on %s ( %s )" % (table,name,table,name))
 
     def connection(self):
         return self.con
@@ -82,8 +148,33 @@ class DbSQL:
 
     def dialectMatch(self,dialect):
         return dialect is None
-        
+
+    def createTableAs(self,name,select):
+        """Insulate 'create table as (select ...) [order by ...] with data' from SQL dialect differences.
+        @param name - name of table to (re-)create
+        @param select - everything that should go between 'create table as' and 'with data'
+        Rational: MonetDB Feb2008 requires 'with data' at the end, MySQL 5 does not recognize 'with data'"""
+
+        self.ddl("""
+        CREATE TABLE %s AS
+        """ % (name,) + select + """
+        WITH DATA
+        """,
+        dropList=["table %s" % (name,)])
+        if self.debug:
+            curs = self.execute("select count(*) from %s" % (name,))
+            if curs is not None:
+                print "%s rows created in table %s" % (curs.fetchall(),name)
+                curs.close()
+
+
+    def makeBulkInserterFile(self,*l,**kw):
+        return BulkInserterFile(self,*l,**kw)
    
+    def makeBulkInserter(self,*l,**kw):
+        return BulkInserter(self,*l,**kw)
+
+
 class DbSQLLite(DbSQL):
     
     def __init__(self,dbpath,strType=str,dryRun=False):
@@ -112,7 +203,7 @@ class DbSQLMy(DbSQL):
         #self.dbmod.server_init(("phyla","--defaults-file=my.cnf"),('server',))
         self.con = self.dbmod.connect(unix_socket="/tmp/atovtchi.mysql.sock",
                                       host="localhost",
-                                      db="phyla",
+                                      db="mgtaxa",
                                       user="root",
                                       passwd="OrangeN0",
                                       read_default_file="my.cnf",
@@ -128,12 +219,26 @@ class DbSQLMy(DbSQL):
     def dropTable(self,name):
         self.ddl("drop table if exists " + name)
 
-    def dropIndex(self,name,table):
-        self.ddl("drop index  if exists %s on %s" % (name,table))
-
     def dialectMatch(self,dialect):
         return dialect is None or dialect == "mysql"
 
+    def createTableAs(self,name,select):
+        """Specialization.
+        MySQL does not recognize 'with data' suffix"""
+
+        self.ddl("""
+        CREATE TABLE %s AS
+        """ % (name,) + select + """
+        """,
+        dropList=["table %s" % (name,)])
+        if self.debug:
+            curs = self.execute("select count(*) from %s" % (name,))
+            if curs is not None:
+                print "%s rows created in table %s" % (curs.fetchall(),name)
+                curs.close()
+
+    def makeBulkInserterFile(self,*l,**kw):
+        return BulkInserterFileMy(self,*l,**kw)
 
 
 class DbSQLMonet(DbSQL):
@@ -148,20 +253,55 @@ class DbSQLMonet(DbSQL):
         DbSQL.__init__(self)        
         #self.dbmod.server_init(("phyla","--defaults-file=my.cnf"),('server',))
         self.con = self.dbmod.connect(host = 'localhost',
-            dbname = 'mgtaxa',
-            lang = 'sql')#,
+            dbname = 'mgtaxa')#,
             #user = 'root',
             #password = 'OrangeN0')
+        return
+        self.ddl("""
+        CREATE USER 'mgtuser'
+        WITH PASSWORD 'OrangeN0'
+        NAME 'Power user of MGTAXA'
+        SCHEMA 'sys'
+        """,
+        ignoreError=True)
+        self.ddl("""
+        CREATE SCHEMA "mgtschema" AUTHORIZATION "mgtuser";
+        """,
+        ignoreError=True)
+        self.ddl("""
+        ALTER USER "mgtuser" SET SCHEMA "mgtschema"
+        """,
+        ignoreError=True)
+        self.con.close()
+        self.con = self.dbmod.connect(host = 'localhost',
+            dbname = 'mgtaxa',
+            lang = 'sql',
+            user = 'mgtuser',
+            password = 'OrangeN0')
+        
 
     def close(self):
         if hasattr(self,'con'):
             self.con.close()
         #self.dbmod.server_end()
 
+    def dropIndex(self,name,table,rawName=False):
+        """MonetDB does not recognize the 'on <table name>' clause in 'drop index' command'"""
+        try:
+            if rawName:
+                self.ddl("drop index %s" % (name,))
+            else:
+                self.ddl("drop index ix_%s_%s" % (table,name))
+        except StandardError:
+            pass
+
+    def createColumnIndices(self,names,table):
+        pass
 
 def createDbSQL():
     #db = DbSQLLite("/export/atovtchi/test_seq.db")
     db = DbSQLMonet()
+    #db = DbSQLMy()
     return db
 
 
@@ -179,8 +319,8 @@ class IntIdGenerator(object):
 
 class BulkInserter:
     
-    def __init__(self,cursor,sql,bufLen):
-        self.cursor = cursor
+    def __init__(self,db,sql,bufLen):
+        self.db = db
         self.bufLen = bufLen
         self.sql = sql
         self.buf = []
@@ -189,24 +329,32 @@ class BulkInserter:
         self.buf.append(record)
         if len(self.buf) == self.bufLen:
             self.flush()
+
+    def __del__(self):
+        self.db = None
             
     def flush(self):
         if len(self.buf) > 0:
-            self.cursor.executemany(self.sql,self.buf)
+            self.db.executemany(self.sql,self.buf)
             self.buf = []
 
 
 class BulkInserterFile:
     
-    def __init__(self,cursor,sql,bufLen):
+    def __init__(self,db,sql,bufLen):
+        """Bulk loading from files is not part of SQL standard.
+        However, every DBMS seems to have a way to do it, and it is very fast
+        (100x for MonetDB) compared to plain 'insert' from 'executemany'.
+        This implementation should work for MonetDB and possibly PostgreSQL"""
         from cStringIO import StringIO
-        self.cursor = cursor
+        self.db = db
         self.bufLen = bufLen
         self.sql = sql
         self.buf = StringIO()
         self.n = 0
-        
-    def __call__(self,record):
+        self.bulkFile = "/usr/local/scratch/atovtchi/bulk.tmp"
+
+    def __call__new(self,record):
         buf = self.buf
         #apparently it's ok for MonetDB to enclose any type in ""
         escaped = '|'.join(['"%s"' % (x,) for x in record])
@@ -215,37 +363,95 @@ class BulkInserterFile:
         if self.n == self.bufLen:
             self.flush()
             
-    def __call__old(self,record):
+    def __call__(self,record):
         buf = self.buf
         escaped = []
         for x in record:
-            if isinstance(x,str):
+            if isinstance(x,basestring):
                 escaped.append('"%s"' % (x,))
             else:
                 escaped.append(str(x))
         self.buf.write('|'.join(escaped)+'\n')
         self.n += 1
-        if self.n == self.bufLen:
-            self.flush()
-            
+        ##TODO: until we convert this to using staging
+        ##table, just call 'flush()' once for the entire
+        ##input set
+        #if self.n == self.bufLen:
+        #    self.flush()
+
+    def __del__(self):
+        self.db = None
             
     def flush(self):
         if self.n > 0:
             #self.buf.seek(0)
-            bulkFile = "/usr/local/scratch/atovtchi/bulk.tmp"
-            out = open(bulkFile,'w')
-            out.write(self.buf.getvalue())
+            #if not hasattr(self,'prev_accum'):
+            #    self.prev_accum = debugTaxaCount(self.db)
+
+            s = self.buf.getvalue()
+            
+            out = open(self.bulkFile,'w')
+            out.write(s)
             out.close()
-            self.cursor.execute("copy into %s from '%s'" % (self.sql,bulkFile) )
-            os.remove(bulkFile)
-            self.n = 0
+
+            #out = open(self.bulkFile+'.append','a')
+            #out.write(s)
+            #out.close()
+
             self.buf.close()
             self.buf = StringIO()
 
+            self.db.ddl("copy into %s from '%s'" % (self.sql,self.bulkFile) )
+
+            #accum = debugTaxaCount(self.db)
+            #print "Flushed BulkInserter, now we have %s taxids" % (accum,)
+            #assert accum >= self.prev_accum
+            #self.prev_accum = accum
+            #pdb.set_trace()
+            os.remove(self.bulkFile)
+
+            self.n = 0
+
+
+def debugTaxaCount(db):
+    cursor = db.execute("""
+    select count(*) from (select taxid from mgt_seq group by taxid) a
+    """)
+    res = cursor.fetchall()
+    cursor.close()
+    return int(res[0][0])
+    
+
+class BulkInserterFileMy(BulkInserterFile):
+    """@todo MySQL either has to use 'load data local', with 'local' being enabled both at client and server config,
+    or file must be world-readable server-side, and accessible from the server. See MySQL reference for the security
+    implications of these alternatives."""
+    def flush(self):
+        if self.n > 0:
+            try:
+                out = open(self.bulkFile,'w')
+                outStr = self.buf.getvalue()
+                out.write(outStr)
+                print outStr[:200]
+                out.close()
+                chmod(self.bulkFile,'o+r')
+                sql = """
+                        load data infile '%s'
+                        into table %s
+                        fields
+                        terminated by '|'
+                        optionally enclosed by '"'
+                    """ % (self.bulkFile,self.sql)
+                self.db.ddl(sql)
+                self.n = 0
+                self.buf.close()
+                self.buf = StringIO()
+            finally:
+                os.remove(self.bulkFile)
 
 
 class DbSeqSource(PhyOptions):
-    """Database of sequence source for training the classiffier"""
+    """Database of sequence source for training the classifier"""
     
     def __init__(self,dbSql):
         
@@ -394,53 +600,82 @@ class DbSeqSource(PhyOptions):
                 print "%s mistamtch %s" % (gi,val)
 
 
+    def rebuild(self):
+        #self.loadGiTaxNumpy()
+        self.loadTaxCategories()
+        self.loadTaxNodes()
+        self.loadRefseqAcc()
+        self.loadSeq()
+        self.selectTaxSet()
+
     def loadSeq(self):
+        db = self.dbSql
         self.loadGiTaxPickled()
         self.createTableSeq()
-        self.idGenSeq = IntIdGenerator()
-        self.loadSeqNCBI(self.ncbiDbs[0])
-        self.loadSeqNCBI(self.ncbiDbs[1])
-        self.loadSeqNCBI(self.ncbiDbs[2])
-        self.loadSeqNCBI(self.ncbiDbs[3])
-        self.loadSeqNCBI(self.ncbiDbs[4])
-        #self.dbSql.ddl("create index taxid on seq(taxid)")
+        sql = """
+                load data infile '/usr/local/scratch/atovtchi.mgt_seq.bulk.tmp'
+                into table mgt_seq
+                fields
+                terminated by '|'
+                optionally enclosed by '"'
+        """
+        sql = """
+        copy into mgt_seq from '/usr/local/scratch/atovtchi.mgt_seq.bulk.tmp'
+        """
+        db.ddl(sql)
+
+        #self.idGenSeq = IntIdGenerator()
+        #inserter = db.makeBulkInserterFile(sql='mgt_seq',bufLen=500000)
+        #self.loadSeqNCBI(self.ncbiDbs[0],inserter)
+        #self.loadSeqNCBI(self.ncbiDbs[1],inserter)
+        #self.loadSeqNCBI(self.ncbiDbs[2],inserter)
+        #self.loadSeqNCBI(self.ncbiDbs[3],inserter)
+        #self.loadSeqNCBI(self.ncbiDbs[4],inserter)
+        #inserter.flush()
+        db.ddl("analyze table mgt_seq",ifDialect="mysql")
+        db.createColumnIndices(names=["taxid","src_db","kind","project"],table="mgt_seq")
+        self.clearGiTax()
+
+    def clearGiTax(self):
+        self.gi2taxa = None
     
     def createTableSeq(self):
-        self.dbSql.dropIndex("taxid","seq")
-        self.dbSql.dropTable("seq")
         # we removed "auto_increment primary key" from iid
         # to speed up bulk load
-        self.dbSql.execute(
-        """
-        create table seq
+        self.dbSql.ddl("""
+        create table mgt_seq
         (
         iid integer,
         gi bigint,
         taxid integer,
-        src_db varchar(1),
-        project varchar(4),
+        src_db char(1),
+        project char(4),
         seq_len bigint,
-        acc varchar(20),
-        kind varchar(2),
-        seq_hdr varchar(%s)
+        acc char(20),
+        kind char(2),
+        seq_hdr char(%s)
         )
-        """ % (self.fastaHdrSqlLen,))
+        """ % (self.fastaHdrSqlLen,),
+        dropList=["table mgt_seq"])
         
-    def loadSeqNCBI(self,db):
+    def loadSeqNCBI(self,db,inserter):
         pipe = Popen(("fastacmd -D 1 -d " + db.db).split(), cwd=self.blastDataDir, env=os.environ, bufsize=2**16, stdout=PIPE, close_fds=True).stdout
         #inp = readFastaRecords(pipe,readSeq=False)
         inp = FastaReader(pipe)
-        curs = self.dbSql.cursor()
+        #curs = self.dbSql.cursor()
         iRec = 0
-        bufLen = 5 #500
+        bufLen = 50000
         sql = """
-        insert into seq
+        insert into mgt_seq
         (iid, gi, taxid, src_db, project, seq_len, acc, kind, seq_hdr)
         values
         (%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """
-        #inserter = BulkInserter(cursor=curs,sql=sql,bufLen=bufLen)
-        inserter = BulkInserterFile(cursor=curs,sql='seq',bufLen=500000)
+        #inserter = self.dbSql.makeBulkInserter(sql=sql,bufLen=bufLen)
+        #inserter.n = 1
+        #inserter.flush()
+        #inp.close()
+        #return
         for rec in inp.records():
             title = rec.header()[1:-1] #remove '>' and '\n'
             (gifld,gi,accfld,acc,txt) = title.split('|',4)
@@ -467,62 +702,68 @@ class DbSeqSource(PhyOptions):
             #values = [ str(x) for x in values ]
             inserter(values)
             if iRec % 50000 == 0:
-                print title, taxid, iRec, seqLen
+                print db.db, title, taxid, iRec, seqLen
+                #if iRec >= 500000:
+                #    break
             iRec += 1
-        inserter.flush()
-        curs.close()
         inp.close()
 
     def loadRefseqAcc(self):
-        self.dbSql.dropTable('refseq_acc')
         self.dbSql.ddl("""\
-        create table refseq_acc
-        (prefix varchar(2), acc varchar(40), molecule varchar(10), method varchar(15), descr varchar(400), index prefix(prefix))
-        """)
+        create table mgt_refseq_acc
+        (
+        prefix char(2),
+        acc char(40),
+        molecule char(10),
+        method char(15),
+        descr varchar(400)
+        )
+        """,
+        dropList=["table mgt_refseq_acc"])
+        self.dbSql.createColumnIndices(names=["prefix"],table="mgt_refseq_acc")
+        
         self.dbSql.executemany("""\
-        insert into refseq_acc
+        insert into mgt_refseq_acc
         (prefix,acc,molecule,method,descr)
         values
         (%s,%s,%s,%s,%s)
         """,refseqAccFormat)
         
     def loadTaxCategories(self):
-        self.dbSql.dropTable('taxa_cat')
         self.dbSql.ddl("""\
-        create table taxa_cat
+        create table mgt_taxa_cat
         (cat char(1), taxid_ancestor integer, taxid integer)
-        """)
+        """,
+        dropList=["table mgt_taxa_cat"])
         inp = open(self.taxaCatFile,'r')
         curs = self.dbSql.cursor()
         iRec = 0
-        bufLen = 5000
+        bufLen = 500000
         sql = """\
-        insert into taxa_cat
+        insert into mgt_taxa_cat
         (cat,taxid_ancestor,taxid)
         values
         (%s,%s,%s)
         """
-        inserter = BulkInserter(cursor=curs,sql=sql,bufLen=bufLen)
+        inserter = self.dbSql.makeBulkInserterFile(sql="mgt_taxa_cat",bufLen=bufLen)
         for rec in inp:
-            inserter(rec.split())
+            vals = rec.split()
+            vals[1] = int(vals[1])
+            vals[2] = int(vals[2])
+            inserter(vals)
+        inp.close()
         inserter.flush()
         curs.close()
-        self.dbSql.ddl("""\
-        alter table taxa_cat  
-        ADD PRIMARY KEY taxid(taxid), 
-        add index cat(cat), 
-        add index taxid_ancestor(taxid_ancestor)
-        """)
-        inp.close()
+        self.dbSql.ddl("""alter table mgt_taxa_cat ADD PRIMARY KEY (taxid)""",ifDialect="mysql")
+        self.dbSql.createColumnIndices(names=["cat","taxid_ancestor"],table="mgt_taxa_cat")
 
     def loadTaxNodes(self):
-        self.dbSql.dropTable('taxa_node')
         self.dbSql.ddl("""\
-        create table taxa_node
+        create table mgt_taxa_node
         (
         taxid integer,
         partaxid integer,
-        rank varchar(20),
+        rank char(20),
         embl_code  char(2),
         divid  integer,
         inh_div  bool,
@@ -532,15 +773,16 @@ class DbSeqSource(PhyOptions):
         inhmgc  bool,
         gbhidden bool,
         hidsubtree bool,
-        comments  varchar(40)
+        comments  char(40)
         )
-        """)
+        """,
+        dropList=["table mgt_taxa_node"])
         inp = open(self.taxaNodesFile,'r')
         curs = self.dbSql.cursor()
         iRec = 0
-        bufLen = 5000
+        bufLen = 500000
         sql = """\
-        insert into taxa_node
+        insert into mgt_taxa_node
         (
         taxid,
         partaxid,
@@ -559,20 +801,17 @@ class DbSeqSource(PhyOptions):
         values
         (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """
-        inserter = BulkInserter(cursor=curs,sql=sql,bufLen=bufLen)
+        inserter = self.dbSql.makeBulkInserterFile(sql="mgt_taxa_node",bufLen=bufLen)
         for rec in inp:
-            inserter(rec.split('\t|\t'))
+            # The last '|' is behind the last field, so we cut it
+            inserter([ x.strip() for x in rec.split('|')][:-1])
         inserter.flush()
+        inp.close()
         curs.close()
         #Get rid of spaces in 'rank' field to simplify export of data later on
-        self.dbSql.execute("update taxa_node set rank = replace(rank,' ','_')").close()
-        self.dbSql.ddl("""\
-        alter table taxa_node
-        ADD PRIMARY KEY taxid(taxid), 
-        add index partaxid(partaxid), 
-        add index divid(divid)
-        """)
-        inp.close()
+        self.dbSql.execute("update mgt_taxa_node set rank = replace(rank,' ','_')").close()
+        self.dbSql.ddl("""alter table mgt_taxa_node ADD PRIMARY KEY (taxid)""",ifDialect="mysql")
+        self.dbSql.createColumnIndices(names=["partaxid","divid"],table="mgt_taxa_node")
 
 
     def loadTaxNodesMem(self):
@@ -597,8 +836,8 @@ class DbSeqSource(PhyOptions):
         iRow = 0
         bufLen = 100000
         sql = "insert into gi_taxa (gi,taxid) values (%s,%s)"
-        curs = self.dbSql.cursor()        
-        inserter = BulkInserter(cursor=curs,sql=sql,bufLen=bufLen)
+        curs = self.dbSql.cursor()
+        inserter = self.dbSql.makeBulkInserterFile(sql='gi_taxa',bufLen=bufLen)
         print "Start insert"
         for record in inp:
             inserter(record.split())
@@ -647,16 +886,16 @@ class DbSeqSource(PhyOptions):
         print gi2taxa.shape, gi2taxa.dtype
         dumpObj(gi2taxa,self.taxaPickled)
         #pdb.set_trace() 
-        sys.exit(0) 
+
 
     def loadGiTaxPickled(self):
         self.gi2taxa = loadObj(self.taxaPickled)
+        #pdb.set_trace()
 
 
     def selectTaxSet(self):
         db = self.dbSql
-        db.ddl("""
-        CREATE TABLE taxa_src_1 AS
+        db.createTableAs("mgt_taxa_src_1","""
             (SELECT taxid                ,
                             src_db       ,
                             kind         ,
@@ -664,129 +903,102 @@ class DbSeqSource(PhyOptions):
                             0            AS priority,
                             COUNT(*)     AS cnt     ,
                             SUM(seq_len) AS seq_len
-                    FROM    seq
+                    FROM    mgt_seq
                     GROUP BY taxid ,
                             src_db ,
                             kind   ,
                             project
             )
-        WITH DATA
-        """,
-        dropList=["table taxa_src_1"])
-        
-        db.ddl("""
-        CREATE TABLE taxa_src AS
+        """)
+
+        db.createTableAs("mgt_taxa_src","""
                 (SELECT *
-                        FROM    taxa_src_1
+                        FROM    mgt_taxa_src_1
                 )
         ORDER BY taxid ,
                 src_db ,
                 kind   ,
                 project
-        WITH DATA
-        """,
-        dropList=["table taxa_src"])
+        """)
         
-        db.dropTable("taxa_src_1")
+        db.dropTable("mgt_taxa_src_1")
         
-        db.ddl("""ALTER TABLE taxa_src ADD id INTEGER auto_increment PRIMARY KEY""")
-        db.ddl("""
-        ALTER TABLE taxa_src
-        ADD INDEX taxid(taxid)
-        ADD INDEX src_db(src_db)
-        ADD INDEX kind(kind)
-        ADD INDEX project(project)
-        """,
-        ifDialect="mysql")
+        #db.ddl("""ALTER TABLE mgt_taxa_src ADD id INTEGER auto_increment PRIMARY KEY""",ifDialect="mysql")
+        db.ddl("""ALTER TABLE mgt_taxa_src ADD id INTEGER auto_increment  PRIMARY KEY""")
+        db.createColumnIndices(names=["taxid","src_db","kind","project"],table="mgt_taxa_src")
         
         ## Drop "Alternative" full genomes (e.g. haplotypes)
         db.ddl("""
         DELETE
-        FROM    taxa_src
+        FROM    mgt_taxa_src
         WHERE   kind = 'AC'
         """)
 
-        db.ddl("""
-        CREATE TABLE wgs_src_1 AS
+        db.createTableAs("mgt_wgs_src_1","""
         (SELECT *
-                FROM    taxa_src
+                FROM    mgt_taxa_src
                 WHERE   project <> ''
                     AND kind    <> ''
         )
-        WITH DATA
-        """,
-        dropList=["table wgs_src_1"])
+        """)
         
         db.ddl("""
         INSERT
-        INTO    wgs_src_1
+        INTO    mgt_wgs_src_1
         SELECT  a.*
-        FROM    taxa_src a
+        FROM    mgt_taxa_src a
         WHERE   a.project   <> ''
             AND a.taxid NOT IN
                 (SELECT taxid
-                FROM    wgs_src_1
+                FROM    mgt_wgs_src_1
                 )
         """)
 
-        db.ddl("""
-        CREATE TABLE wgs_src_2 AS
+        db.createTableAs("mgt_wgs_src_2","""
         (SELECT a.*
-                FROM    wgs_src_1 a
+                FROM    mgt_wgs_src_1 a
                 WHERE   a.seq_len >=
                         (SELECT MAX(b.seq_len)
-                        FROM    wgs_src_1 b
+                        FROM    mgt_wgs_src_1 b
                         WHERE   a.taxid = b.taxid
                         )
         )
-        WITH DATA
-        """,
-        dropList=["table wgs_src_2"])
+        """)
 
-        db.ddl("""
-        CREATE TABLE wgs_src_3 AS
+        db.createTableAs("mgt_wgs_src_3","""
         (SELECT a.*
-                FROM    wgs_src_2 a
+                FROM    mgt_wgs_src_2 a
                 WHERE   a.id >=
                         (SELECT MAX(b.id)
-                        FROM    wgs_src_2 b
+                        FROM    mgt_wgs_src_2 b
                         WHERE   a.taxid = b.taxid
                         )
         )
-        WITH DATA
-        """,
-        dropList=["table wgs_src_3"])
-        db.dropTable("wgs_src_2")
+        """)
+        db.dropTable("mgt_wgs_src_2")
 
-        db.ddl("""
-        CREATE TABLE wgs_src_nr AS
+        db.createTableAs("mgt_wgs_src_nr","""
         (SELECT *
-                FROM    wgs_src_3
+                FROM    mgt_wgs_src_3
         )
-        WITH DATA
-        """,
-        dropList=["table wgs_src_nr"])
+        """)
 
-        db.ddl("""
-        CREATE TABLE nc_src_1 AS
+        db.createTableAs("mgt_nc_src_1","""
         (SELECT a.*
-                FROM    taxa_src a
+                FROM    mgt_taxa_src a
                 WHERE   a.kind        = 'NC'
                     AND a.seq_len * 2 >
                         (SELECT MAX(b.seq_len)
-                        FROM    wgs_src_nr b
+                        FROM    mgt_wgs_src_nr b
                         WHERE   a.taxid = b.taxid
                         )
         )
-        WITH DATA
-        """,
-        dropList=["table nc_src_1"])
+        """)
         
-        db.ddl("""
-        CREATE TABLE htg_over_nc_src_1 AS
+        db.createTableAs("mgt_htg_over_nc_src_1","""
         (SELECT a.*
-                FROM    taxa_src a,
-                        nc_src_1 b
+                FROM    mgt_taxa_src a,
+                        mgt_nc_src_1 b
                 WHERE   a.src_db     = 'h'
                     AND a.kind      <> 'NC'
                     AND a.taxid      = b.taxid
@@ -794,214 +1006,181 @@ class DbSeqSource(PhyOptions):
                     AND b.seq_len    < 500000
                     AND a.taxid NOT IN
                         (SELECT taxid
-                        FROM    wgs_src_nr
+                        FROM    mgt_wgs_src_nr
                         )
         )
-        WITH DATA
-        """,
-        dropList=["table htg_over_nc_src_1"])
+        """)
 
-        db.ddl("""
-        CREATE TABLE nc_src_2 AS
+        db.createTableAs("mgt_nc_src_2","""
         (SELECT *
-                FROM    nc_src_1
+                FROM    mgt_nc_src_1
                 WHERE   taxid NOT IN
                         (SELECT taxid
-                        FROM    htg_over_nc_src_1
+                        FROM    mgt_htg_over_nc_src_1
                         )
         )
-        WITH DATA
-        """,
-        dropList=["table nc_src_2"])
+        """)
         
-        db.ddl("""
-        CREATE TABLE nc_src_3 AS
+        db.createTableAs("mgt_nc_src_3","""
         (SELECT a.*
-                FROM    nc_src_2 a
+                FROM    mgt_nc_src_2 a
                 WHERE   a.id >=
                         (SELECT MAX(b.id)
-                        FROM    nc_src_2 b
+                        FROM    mgt_nc_src_2 b
                         WHERE   a.taxid = b.taxid
                         )
         )
-        WITH DATA
-        """,
-        dropList=["table nc_src_3"])
+        """)
         
-        db.ddl("""
-        CREATE TABLE nc_src AS
+        db.createTableAs("mgt_nc_src","""
         (SELECT a.*,
                         'nc' AS stage
-                FROM    nc_src_3 a
+                FROM    mgt_nc_src_3 a
         )
-        WITH DATA
-        """,
-        dropList=["table nc_src"])
+        """)
         
-        db.ddl("""
-        CREATE TABLE wgs_src AS
+        db.createTableAs("mgt_wgs_src","""
         (SELECT a.*,
                         'wg' AS stage
-                FROM    wgs_src_nr a
+                FROM    mgt_wgs_src_nr a
                 WHERE   taxid NOT IN
                         (SELECT taxid
-                        FROM    nc_src
+                        FROM    mgt_nc_src
                         )
         )
-        WITH DATA
-        """,
-        dropList=["table wgs_src"])
+        """)
         
-        db.ddl("""
-        CREATE TABLE htg_src_1 AS
+        db.createTableAs("mgt_htg_src_1","""
         (SELECT *
-                FROM    taxa_src
+                FROM    mgt_taxa_src
                 WHERE ( src_db      = 'h'
                      OR kind       <> '' )
                     AND (taxid NOT IN
                         (SELECT taxid
-                        FROM    nc_src
+                        FROM    mgt_nc_src
                         )
                     AND taxid NOT IN
                         (SELECT taxid
-                        FROM    wgs_src
+                        FROM    mgt_wgs_src
                         ) )
         )
-        WITH DATA
-        """,
-        dropList=["table htg_src_1"])
+        """)
         
-        db.ddl("""
-        CREATE TABLE htg_src AS
+        db.createTableAs("mgt_htg_src","""
         (SELECT a.*,
                         'ht' AS stage
-                FROM    htg_src_1 a
+                FROM    mgt_htg_src_1 a
         )
-        WITH DATA
-        """,
-        dropList=["table htg_src"])
+        """)
         
-        db.ddl("""
-        CREATE TABLE gen_src AS
+        db.createTableAs("mgt_gen_src","""
         (SELECT *
-                FROM    nc_src
+                FROM    mgt_nc_src
         )
-        WITH DATA
-        """,
-        dropList=["table gen_src"])
+        """)
         
         db.ddl("""
         INSERT
-        INTO    gen_src
+        INTO    mgt_gen_src
         SELECT  *
-        FROM    wgs_src
+        FROM    mgt_wgs_src
         
         UNION
         
         SELECT  *
-        FROM    htg_src
+        FROM    mgt_htg_src
         """)
 
-        db.createColumnIndices(names=["taxid"],table="gen_src")
+        db.createColumnIndices(names=["taxid"],table="mgt_gen_src")
         
-        db.ddl("""
-        CREATE TABLE nt_src AS
+        db.createTableAs("mgt_nt_src","""
         (SELECT a.*,
                         'nt' AS stage
-                FROM    taxa_src a
+                FROM    mgt_taxa_src a
                 WHERE   taxid NOT IN
                         (SELECT taxid
-                        FROM    gen_src
+                        FROM    mgt_gen_src
                         )
         )
-        WITH DATA
-        """,
-        dropList=["table nt_src"])
+        """)
 
-        
-        db.ddl("""
-        CREATE TABLE all_src_1 AS
+        db.createTableAs("mgt_all_src_1","""
         (SELECT a.*,
                         'g' AS src_type
-                FROM    gen_src a
+                FROM    mgt_gen_src a
         )
-        WITH DATA
-        """,
-        dropList=["table all_src_1"])
+        """)
         
         db.ddl("""
         INSERT
-        INTO    all_src_1
+        INTO    mgt_all_src_1
         SELECT  a.*,
                 'o' AS src_type
-        FROM    nt_src a
+        FROM    mgt_nt_src a
         """)
+    
+    #def selectTaxSet(self):
 
-        db.ddl("""
-        CREATE TABLE all_src AS
+        #db = self.dbSql
+        
+        db.createTableAs("mgt_all_src","""
         (SELECT a.*            ,
                         b.cat  ,
                         c.divid,
                         c.rank
-                FROM    all_src_1 a
-                        LEFT JOIN taxa_cat b
-                        ON      a.taxid = b.taxid,
-                        LEFT JOIN taxa_node c
+                FROM    mgt_all_src_1 a
+                        LEFT JOIN mgt_taxa_cat b
+                        ON      a.taxid = b.taxid
+                        LEFT JOIN mgt_taxa_node c
                         ON      a.taxid = c.taxid
         )
-        WITH DATA
-        """,
-        dropList=["table all_src"])
+        """)
 
         db.createColumnIndices(names=["taxid","src_db","kind","project","cat","divid","rank"],
-            table="gen_src")
-        db.ddl("ALTER TABLE all_src ADD PRIMARY KEY id(id)")
+            table="mgt_all_src")
+        db.ddl("ALTER TABLE mgt_all_src ADD PRIMARY KEY (id)",ifDialect="mysql")
+        db.ddl("""CREATE INDEX ix_mgt_all_src_src ON mgt_all_src (taxid,src_db,kind,project)""",
+            dropList=["index ix_mgt_all_src_src on mgt_all_src"],ifDialect="mysql")
 
         ## Some tables to report statistics on data
 
         ## Group into a single taxid entry per source database
         
-        db.ddl("""
-        CREATE TABLE src_db_stat AS
+        db.createTableAs("mgt_src_db_stat","""
         (SELECT src_db        ,
                         taxid ,
                         COUNT(*) AS cnt
-                FROM    all_src
+                FROM    mgt_all_src
                 GROUP BY src_db,
                         taxid
         )
-        WITH DATA
-        """,
-        dropList=["table src_db_stat"])
+        """)
 
         db.executeAndPrint("""
         SELECT  src_db,
                 COUNT(*)
-        FROM    src_db_stat
+        FROM    mgt_src_db_stat
         GROUP BY src_db
         """)
 
-        db.ddl("""
-        CREATE TABLE taxa_stat AS
+        db.createTableAs("mgt_taxa_stat","""
         (SELECT src_type     ,
                         stage,
                         taxid,
                         cat  ,
                         COUNT(*) AS cnt
-                FROM    all_src
+                FROM    mgt_all_src
                 GROUP BY src_type,
                         stage    ,
                         taxid    ,
                         cat
         )
-        WITH DATA
-        """,
-        dropList=["table taxa_stat"])
+        """)
         
         db.executeAndPrint("""
         SELECT  stage,
                 COUNT(*)
-        FROM    taxa_stat
+        FROM    mgt_taxa_stat
         GROUP BY stage
         """)
 
@@ -1009,7 +1188,7 @@ class DbSeqSource(PhyOptions):
         SELECT  stage,
                 cat  ,
                 COUNT(*)
-        FROM    taxa_stat
+        FROM    mgt_taxa_stat
         GROUP BY stage,
                 cat
         """)
@@ -1018,68 +1197,77 @@ class DbSeqSource(PhyOptions):
         SELECT  src_type,
                 cat     ,
                 COUNT(*)
-        FROM    taxa_stat
+        FROM    mgt_taxa_stat
         GROUP BY src_type,
                 cat
         """)
         
         db.executeAndPrint("""
         SELECT  COUNT(*)
-        FROM    all_src
+        FROM    mgt_all_src
         WHERE   kind = 'NC'
         """)
 
         ## Human must be in NC_ only
         db.executeAndPrint("""
         SELECT  *
-        FROM    all_src
+        FROM    mgt_all_src
         WHERE   taxid = 9606
         """)
 
-        db.ddl("""CREATE INDEX src ON seq (taxid,src_db,kind,project)""",
-        dropList=["index src on seq"])
+        return
+
+        db.ddl("""CREATE INDEX ix_mgt_seq_src ON mgt_seq (taxid,src_db,kind,project)""",
+            dropList=["index ix_mgt_seq_src on seq"],ifDialect="mysql")
+
+        ## in MySQL computation of acc_no_ver (ACC w/o '.X' suffix)
+        ## would be just SUBSTRING_INDEX( a.acc , '.', 1 ) AS acc_no_ver,
+        ## but we use SQL standard conforming expression
         
-        db.ddl("""
-        CREATE TABLE seq_sel AS
+        db.createTableAs("mgt_seq_sel","""
         (SELECT a.*                                                    ,
                         b.cat                                          ,
                         b.stage                                        ,
                         b.src_type                                     ,
-                        SUBSTRING_INDEX( a.acc , '.', 1 ) AS acc_no_ver,
+                        SUBSTRING(a.acc FROM 1 FOR
+                        CASE
+                           WHEN POSITION('.' IN a.acc) <> 0
+                           THEN POSITION('.' IN a.acc) - 1
+                           ELSE LENGTH(a.acc)
+                        END)
+                        AS acc_no_ver                                  ,
                         b.divid                                        ,
                         b.rank
-                FROM    seq a,
-                        all_src b
+                FROM    mgt_seq a,
+                        mgt_all_src b
                 WHERE   a.taxid   = b.taxid
                     AND a.src_db  = b.src_db
                     AND a.kind    = b.kind
                     AND a.project = b.project
                     AND a.taxid  <> 0
         )
-        WITH DATA
-        """,
-        dropList=["table seq_sel"])
+        """)
         
         db.createColumnIndices(names=["taxid","src_db","kind","project","cat",
             "stage","src_type","gi","acc","acc_no_ver","divid","rank"],
-            table="seq_sel")
+            table="mgt_seq_sel")
 
-        db.ddl("ALTER TABLE seq_sel ADD PRIMARY KEY iid(iid)")
+        db.ddl("ALTER TABLE mgt_seq_sel ADD PRIMARY KEY (iid)",ifDialect="mysql")
 
         ## Proved to be essential in MySQL for efficient planning of queries
-        db.ddl("analyze table seq_sel",ifDialect="mysql")
+        db.ddl("analyze table mgt_seq_sel",ifDialect="mysql")
 
         db.executeAndPrint("""
         SELECT  divid,
                 COUNT(*)
-        FROM    seq_sel
+        FROM    mgt_seq_sel
         GROUP BY divid
         """)
 
         db.executeAndPrint("""
         SELECT  rank,
                 COUNT(*)
-        FROM    seq_sel
+        FROM    mgt_seq_sel
         GROUP BY rank
         """)
 
@@ -1087,35 +1275,37 @@ class DbSeqSource(PhyOptions):
         ## want to analyze them later
         
         db.ddl("""
-        CREATE TABLE seq_sel_del LIKE seq_sel
+        CREATE TABLE mgt_seq_sel_del (LIKE seq_sel)
         """,
-        dropList=["table seq_sel_del"])
+        dropList=["table mgt_seq_sel_del"])
 
-        db.ddl("ALTER TABLE seq_sel_del DISABLE KEYS",ifDialect="mysql")
+        db.ddl("ALTER TABLE mgt_seq_sel_del DISABLE KEYS",ifDialect="mysql")
         
         db.ddl("""
         INSERT
-        INTO    seq_sel_del
+        INTO    mgt_seq_sel_del
         SELECT  *
-        FROM    seq_sel
+        FROM    mgt_seq_sel
         WHERE   taxid IS NULL
             OR divid IS NULL
             OR cat   IS NULL
             OR divid IN (7,8,11)
         """)
         
-        db.ddl("ALTER TABLE seq_sel_del ENABLE KEYS",ifDialect="mysql")
+        db.ddl("ALTER TABLE mgt_seq_sel_del ENABLE KEYS",ifDialect="mysql")
         
         db.ddl("""
         DELETE
-        FROM    seq_sel
+        FROM    mgt_seq_sel
         WHERE   iid IN
                 (SELECT iid
-                FROM    seq_sel_del
+                FROM    mgt_seq_sel_del
                 )
         """)
 
-        db.ddl("ANALYZE TABLE seq_sel",ifDialect="mysql")
+        db.ddl("ANALYZE TABLE mgt_seq_sel",ifDialect="mysql")
+
+        return
 
         ## save gis only into a file to be used as gi list for NCBI alias db
         
@@ -1124,7 +1314,7 @@ class DbSeqSource(PhyOptions):
         INTO    OUTFILE '/home/atovtchi/scratch/mgtdata/phyla_sel.gi'
         FIELDS TERMINATED BY ' '
         LINES TERMINATED BY '\n'
-        FROM    seq_sel
+        FROM    mgt_seq_sel
         ORDER BY taxid,
                 iid
         """)
@@ -1152,7 +1342,7 @@ class DbSeqSource(PhyOptions):
         INTO    OUTFILE '/home/atovtchi/scratch/mgtdata/phyla_sel.csv'
         FIELDS TERMINATED BY ' '
         LINES TERMINATED BY '\n'
-        FROM    seq_sel
+        FROM    mgt_seq_sel
         ORDER BY taxid,
                 iid
         """)
