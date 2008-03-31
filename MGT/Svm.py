@@ -10,7 +10,7 @@ class CountAggregateVisitor:
 
 
 
-class TaxaSampler(PhyOptions):
+class TaxaSampler(Options):
     def __init__(self):
         PhyOptions.__init__(self)
         #options
@@ -42,7 +42,7 @@ class TaxaSampler(PhyOptions):
         self.knownSeqSampKmerFasta = "phyla_sel.samp.kmer.fasta.gz"
         self.kmerPathSamp = self.kmerPath+'.samp'
         self.kmerTxtPathSamp = self.kmerPathSamp + '.gz'
-        self.viralRootTaxid = 10239        
+        self.viralRootTaxid = viralRootTaxid
         #data
         self.taxaTree = None
 

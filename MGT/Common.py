@@ -1,4 +1,5 @@
 from MGT.Util import *
+from MGT.Config import Options
 
 import numpy
 import numpy.random as nrnd
@@ -7,25 +8,6 @@ import os, sys, atexit, re, gzip
 import itertools
 
 import pdb
-
-class PhyOptions:
-    def __init__(self):
-        self.taxaPickled = 'taxa.pkl.gz'
-        self.fastaHdrSqlLen = 40
-        self.blastDataDir = 'blast'
-        self.selGiFile = 'phyla_sel.gi'
-        self.selDumpFile = 'phyla_sel.csv'
-        self.selFastaFile = 'phyla_sel.fasta.gz'
-        self.srcDbNameAlias = 'phyla'
-        self.taxaDataDir = 'taxonomy'
-        self.taxaCatFile = os.path.join(self.taxaDataDir,'categories.dmp')
-        self.taxaGiFile = os.path.join(self.taxaDataDir,'gi_taxid_nucl.dmp.gz') 
-        self.taxaDumpDir = self.taxaDataDir
-        self.taxaNodesFile = os.path.join(self.taxaDumpDir,'nodes.dmp')
-        self.taxaDivisionFile = os.path.join(self.taxaDumpDir,'division.dmp')
-        #self.kmerTxtDir = os.environ['PHYLA_KMERS']
-        #self.kmerTestFile = os.path.join(self.kmerTxtDir,'6mers_1K.gz')
-
 
 def masksToInd(maskVal,maskInd):
     """Convert value[0:someN] and index[0:someN] into value[index]. 

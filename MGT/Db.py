@@ -1,4 +1,5 @@
 from MGT.Common import *
+from MGT.Taxa import *
 import time
 
 def dbClose(dbObj):
@@ -92,6 +93,9 @@ class DbSQL:
             watch()
             curs.close()
  
+    def dumpCursor(self,cursor):
+        pass
+    
     def executeAndPrint(self,sql,**kw):
         curs = self.execute(sql,**kw)
         if curs is not None:
@@ -99,17 +103,25 @@ class DbSQL:
             curs.close()
     
     def executeAndAssert(self,sql,expect,**kw):
+        if self.debug > 0:
+            print "Asserting that query will return this: %s" % (expect,)
         curs = self.execute(sql,**kw)
-        if curs is not None:
-            rows = curs.fetchall()
-            if len(rows) != len(expect):
+        if curs is None:
+            raise SqlResultAssertionError(receive=None,expect=expect)
+        rows = curs.fetchall()
+        if len(rows) != len(expect):
+            raise SqlResultAssertionError(receive=rows,expect=expect)
+        for rowReceive, rowExpect in zip(rows,expect):
+            if list(rowReceive) != list(rowExpect):
                 raise SqlResultAssertionError(receive=rows,expect=expect)
-                for rowReceive, rowExpect in zip(rows,expect):
-                    if list(rowReceive) != list(rowExpect):
-                        raise SqlResultAssertionError(receive=rows,expect=expect)
-            curs.close()
+        curs.close()
  
+    def executeAndAssertEmpty(self,sql,**kw):
+        self.executeAndAssert(sql,tuple(),**kw)
  
+    def executeAndAssertZero(self,sql,**kw):
+        self.executeAndAssert(sql,((0,),),**kw)
+
     def dropTable(self,name):
         try:
             self.ddl("drop table " + name)
@@ -126,7 +138,7 @@ class DbSQL:
         except StandardError:
             pass
 
-    def createColumnIndices(self,names,table):
+    def createIndices(self,names,table):
         """We always create and drop indices as tablename_indexname because in some DBMS (MonetDB) index names should be globally unique.
         This can be specialized for MySQL and others that support ALTER TABLE ... ADD INDEX ... ADD INDEX"""
         for name in names:
@@ -240,6 +252,34 @@ class DbSQLMy(DbSQL):
     def makeBulkInserterFile(self,*l,**kw):
         return BulkInserterFileMy(self,*l,**kw)
 
+    def createIndices(self,table,names=None,primary=None,compounds=None):
+        """This is a specialization for MySQL, which supports ALTER TABLE ... ADD INDEX ... ADD INDEX"""
+        dropNames = []
+        sql = "ALTER TABLE %s " % (table,)
+        comma = ""
+        if primary is not None:
+            sql = sql + "%s\nADD PRIMARY KEY (%s)" % (comma,primary)
+            comma = ","
+        if names is not None:
+            addindex = []
+            for name in names:
+                dropNames.append(name)
+                addindex.append("ADD INDEX ix_%s_%s (%s)" % (table,name,name))
+            if len(addindex) > 0:
+                sql = sql + "%s\n" % (comma,)+ ",\n".join(addindex)
+                comma = ","
+        if compounds is not None:
+            addindex = []
+            for name in compounds.keys():
+                dropNames.append(name)
+                addindex.append("ADD INDEX ix_%s_%s (%s)" % (table,name,compounds[name]))
+            if len(addindex) > 0:
+                sql = sql + "%s\n" % (comma,) + ",\n".join(addindex)
+                comma = ","
+        for name in dropNames:
+            self.dropIndex(name,table)
+        self.ddl(sql)
+
 
 class DbSQLMonet(DbSQL):
     
@@ -295,16 +335,194 @@ class DbSQLMonet(DbSQL):
         except StandardError:
             pass
 
-    def createColumnIndices(self,names,table):
+    def createIndices(self,names,table):
         pass
 
 def createDbSQL():
     #db = DbSQLLite("/export/atovtchi/test_seq.db")
-    db = DbSQLMonet()
-    #db = DbSQLMy()
+    #db = DbSQLMonet()
+    db = DbSQLMy()
     return db
 
 
+class TaxaLevelsDb(TaxaLevels):
+
+    def __init__(self,db,taxaTree):
+        self.taxaTree = taxaTree
+        TaxaLevels.__init__(self)
+        if self.taxaTree is not None:
+            self.setLevels(taxaTree)
+        self.db = db
+
+    def getLevelColumns(self):
+        return [ "ti_"+name for name in self.getLevelNames() ]
+
+    def loadTaxLevelsRows(self):
+        self.db.ddl("""\
+        create table taxa_level_row
+        (
+        taxid integer,
+        level tinyint,
+        partaxid integer
+        )
+        """,
+        dropList=["table taxa_level_row"])
+
+        inserter = self.db.makeBulkInserterFile(sql="taxa_level_row",bufLen=500000)
+        taxaTree = self.taxaTree
+        for node in taxaTree.iterDepthTop():
+            for (level,partaxid) in self.lineageKeys(node):
+                inserter((node.id,level,partaxid))
+        inserter.flush()
+        self.db.createIndices(table="taxa_level_row",
+            names=["taxid","partaxid","level"],
+            primary="taxid,level,partaxid")
+
+    def loadTaxLevelsColumns(self):
+        taxaTree = self.taxaTree
+        ti_cols = self.getLevelColumns()
+        self.db.ddl("""\
+        create table taxa_level_col
+        (
+        taxid integer,
+        %s
+        )
+        """ % (",\n".join(["%s integer" % (col,) for col in ti_cols]),),
+        dropList=["table taxa_level_col"])
+
+        inserter = self.db.makeBulkInserterFile(sql="taxa_level_col",bufLen=500000)
+        for node in taxaTree.iterDepthTop():
+            inserter([node.id]+self.lineageFixedList(node))
+        inserter.flush()
+        self.db.createIndices(table="taxa_level_col",
+            names=ti_cols,
+            primary="taxid")
+
+    def makeStatsTablesDone(self):
+        db = self.db
+        
+        db.createTableAs("taxa_len","""
+        select taxid,sum(seq_len) as seq_len from all_src group by taxid
+        """)
+
+        db.createTableAs("taxa_level_row_len","""
+        select a.*,b.seq_len from taxa_level_row a,taxa_len b where a.taxid = b.taxid
+        """)
+
+        db.createIndices(names=["taxid","partaxid","level"],table="taxa_level_row_len")
+
+        db.executeAndPrint("""
+            select
+            level,count(*) as cnt,
+            avg(seq_len) as seq_len
+            from (
+                select level,partaxid,count(*) as cnt,sum(seq_len) as seq_len
+                from taxa_level_row_len
+                group by level,partaxid) a
+            group by level
+        """)
+
+        ti_cols = self.getLevelColumns()
+        ti_group = list(ti_cols)
+        ti_group.reverse()
+        ti_group_comma = ','.join(ti_group)
+        group_names = self.getLevelNames()
+        group_names.reverse()
+        
+        db.createTableAs("taxa_level_col_len","""
+        select a.*,b.seq_len from taxa_level_col a,taxa_len b where a.taxid = b.taxid
+        """)
+
+        db.createIndices(table="taxa_level_col_len",names=ti_cols,primary="taxid")
+
+        ## We replace NULL of taxid values with 0, so that
+        ## the MySQL OLAP modifier 'with rollup' would work correctly
+        ## (it uses NULL to mark rows with totals)
+        
+        db.createTableAs("taxa_level_col_gr","""
+        select %s,sum(seq_len) as seq_len,count(*) as taxid_cnt
+        from taxa_level_col_len a
+        group by %s
+        """ % (",".join(["COALESCE(a.%s,0) AS %s" % (ti_gr,ti_gr) for ti_gr in ti_group]) ,",".join(["a."+ti_gr for ti_gr in ti_group])))
+        
+        db.createIndices(table="taxa_level_col_gr",names=ti_cols)
+
+
+        db.createTableAs("taxa_level_col_rep_1","""
+        select %s,sum(seq_len) as seq_len,sum(taxid_cnt) as taxid_cnt
+        from taxa_level_col_gr
+        group by %s with rollup
+        """ % (ti_group_comma,ti_group_comma))
+        
+        db.ddl("""ALTER TABLE taxa_level_col_rep_1 ADD id INTEGER auto_increment  PRIMARY KEY""")
+        #db.createIndices(table="taxa_level_col_rep_1",names=ti_cols)
+
+        ## Add columns with string names for each ti_xxx column through 'left join'
+
+        from string import ascii_lowercase
+        alias_a = ascii_lowercase[0]
+        alias_joins = ascii_lowercase[1:]
+        assert len(ti_group) <= len(alias_joins)
+        joins = "\n".join([ "LEFT JOIN taxa_names %s ON %s.%s = %s.taxid" % (ali_join,alias_a,ti_col,ali_join)
+                        for (ali_join,ti_col) in zip(alias_joins,ti_group) ])
+
+        cols = ",\n".join(["%s,%s.name AS nm_%s" % (ti_col,ali_join,gr_name) for (ti_col,ali_join,gr_name) in zip(ti_group,alias_joins,group_names)])
+                    
+        db.createTableAs("taxa_level_col_rep","""
+        SELECT
+        id,
+        %s,
+        seq_len,taxid_cnt
+        FROM taxa_level_col_rep_1 %s
+        %s
+        ORDER BY id
+        """ % (cols,alias_a,joins))
+
+        db.createIndices(table="taxa_level_col_rep",names=ti_group+["id"])
+        
+        db.executeAndPrint("""
+        select ti_superkingdom,nm_superkingdom,seq_len,taxid_cnt
+        from taxa_level_col_rep
+        where ti_phylum is NULL
+        """)
+    
+    def makeStatsTables(self):
+        db = self.db
+        ti_cols = self.getLevelColumns()
+        ti_group = list(ti_cols)
+        ti_group.reverse()
+        ti_group_comma = ','.join(ti_group)
+        group_names = self.getLevelNames()
+        group_names.reverse()
+                    
+        db.execute("""
+        select *
+        from taxa_level_col_rep
+        order by id
+        into outfile 'taxa_level_col_rep.csv'
+        fields
+        terminated by '|'
+        optionally enclosed by '"'
+        """)
+
+        db.executeAndPrint("""
+        select ti_phylum,nm_phylum,ti_class,nm_class,ti_order,nm_order,seq_len,taxid_cnt
+        from taxa_level_col_rep
+        where ti_family is NULL and ti_order is not NULL and ti_class is not NULL
+        """)
+        
+        db.executeAndPrint("""
+        select ti_phylum,nm_phylum,ti_class,nm_class,ti_order,nm_order,ti_family,nm_family,seq_len,taxid_cnt
+        from taxa_level_col_rep where ti_superkingdom = 2 and ti_genus is NULL and ti_family is not NULL and
+        ti_order is not NULL and ti_class is not NULL
+        """)
+
+        db.executeAndPrint("""
+        select ti_phylum,nm_phylum,ti_class,nm_class,ti_order,nm_order,ti_family,nm_family,seq_len,taxid_cnt
+        from taxa_level_col_rep where ti_superkingdom = 2 and ti_genus is NULL and ti_family is not NULL and
+        ti_family <> 0 and ti_order is not NULL and ti_class is not NULL
+        """)
+                    
 class IntIdGenerator(object):
     def __init__(self,start=1):
         self.n = start - 1
@@ -369,6 +587,8 @@ class BulkInserterFile:
         for x in record:
             if isinstance(x,basestring):
                 escaped.append('"%s"' % (x,))
+            elif x is None: #NULL
+                escaped.append('\N') #at least this is how MySQL encodes NULL
             else:
                 escaped.append(str(x))
         self.buf.write('|'.join(escaped)+'\n')
@@ -415,7 +635,7 @@ class BulkInserterFile:
 
 def debugTaxaCount(db):
     cursor = db.execute("""
-    select count(*) from (select taxid from mgt_seq group by taxid) a
+    select count(*) from (select taxid from seq group by taxid) a
     """)
     res = cursor.fetchall()
     cursor.close()
@@ -450,12 +670,12 @@ class BulkInserterFileMy(BulkInserterFile):
                 os.remove(self.bulkFile)
 
 
-class DbSeqSource(PhyOptions):
+class DbSeqSource(Options):
     """Database of sequence source for training the classifier"""
     
     def __init__(self,dbSql):
         
-        PhyOptions.__init__(self)
+        Options.__init__(self)
         
         self.dbSql = dbSql
         self.ncbiDbs =  (
@@ -465,7 +685,7 @@ class DbSeqSource(PhyOptions):
                          Struct(id='h',db='htgs'),
                          Struct(id='w',db='wgs')
                          )
-
+        self.taxaTree = None
 
     def makeBlastAlias(self,idList=None,dbNames=None):
         from glob import glob
@@ -614,26 +834,30 @@ class DbSeqSource(PhyOptions):
         self.createTableSeq()
         sql = """
                 load data infile '/usr/local/scratch/atovtchi.mgt_seq.bulk.tmp'
-                into table mgt_seq
+                into table seq
                 fields
                 terminated by '|'
                 optionally enclosed by '"'
         """
         sql = """
-        copy into mgt_seq from '/usr/local/scratch/atovtchi.mgt_seq.bulk.tmp'
+        copy into seq from '/usr/local/scratch/atovtchi.mgt_seq.bulk.tmp'
         """
         db.ddl(sql)
 
         #self.idGenSeq = IntIdGenerator()
-        #inserter = db.makeBulkInserterFile(sql='mgt_seq',bufLen=500000)
+        #inserter = db.makeBulkInserterFile(sql='seq',bufLen=500000)
         #self.loadSeqNCBI(self.ncbiDbs[0],inserter)
         #self.loadSeqNCBI(self.ncbiDbs[1],inserter)
         #self.loadSeqNCBI(self.ncbiDbs[2],inserter)
         #self.loadSeqNCBI(self.ncbiDbs[3],inserter)
         #self.loadSeqNCBI(self.ncbiDbs[4],inserter)
         #inserter.flush()
-        db.ddl("analyze table mgt_seq",ifDialect="mysql")
-        db.createColumnIndices(names=["taxid","src_db","kind","project"],table="mgt_seq")
+        db.ddl("analyze table seq",ifDialect="mysql")
+        db.createIndices(table="seq",
+        names=["taxid","src_db","kind","project"],
+        primary="iid",
+        compounds={"src":"taxid,src_db,kind,project"})
+        
         self.clearGiTax()
 
     def clearGiTax(self):
@@ -643,7 +867,7 @@ class DbSeqSource(PhyOptions):
         # we removed "auto_increment primary key" from iid
         # to speed up bulk load
         self.dbSql.ddl("""
-        create table mgt_seq
+        create table seq
         (
         iid integer,
         gi bigint,
@@ -651,12 +875,13 @@ class DbSeqSource(PhyOptions):
         src_db char(1),
         project char(4),
         seq_len bigint,
-        acc char(20),
+        acc char(16),
         kind char(2),
         seq_hdr char(%s)
         )
         """ % (self.fastaHdrSqlLen,),
-        dropList=["table mgt_seq"])
+        dropList=["table seq"])
+        
         
     def loadSeqNCBI(self,db,inserter):
         pipe = Popen(("fastacmd -D 1 -d " + db.db).split(), cwd=self.blastDataDir, env=os.environ, bufsize=2**16, stdout=PIPE, close_fds=True).stdout
@@ -666,7 +891,7 @@ class DbSeqSource(PhyOptions):
         iRec = 0
         bufLen = 50000
         sql = """
-        insert into mgt_seq
+        insert into seq
         (iid, gi, taxid, src_db, project, seq_len, acc, kind, seq_hdr)
         values
         (%s,%s,%s,%s,%s,%s,%s,%s,%s)
@@ -710,7 +935,7 @@ class DbSeqSource(PhyOptions):
 
     def loadRefseqAcc(self):
         self.dbSql.ddl("""\
-        create table mgt_refseq_acc
+        create table refseq_acc
         (
         prefix char(2),
         acc char(40),
@@ -719,11 +944,11 @@ class DbSeqSource(PhyOptions):
         descr varchar(400)
         )
         """,
-        dropList=["table mgt_refseq_acc"])
-        self.dbSql.createColumnIndices(names=["prefix"],table="mgt_refseq_acc")
+        dropList=["table refseq_acc"])
+        self.dbSql.createIndices(names=["prefix"],table="refseq_acc")
         
         self.dbSql.executemany("""\
-        insert into mgt_refseq_acc
+        insert into refseq_acc
         (prefix,acc,molecule,method,descr)
         values
         (%s,%s,%s,%s,%s)
@@ -731,21 +956,21 @@ class DbSeqSource(PhyOptions):
         
     def loadTaxCategories(self):
         self.dbSql.ddl("""\
-        create table mgt_taxa_cat
+        create table taxa_cat
         (cat char(1), taxid_ancestor integer, taxid integer)
         """,
-        dropList=["table mgt_taxa_cat"])
+        dropList=["table taxa_cat"])
         inp = open(self.taxaCatFile,'r')
         curs = self.dbSql.cursor()
         iRec = 0
         bufLen = 500000
         sql = """\
-        insert into mgt_taxa_cat
+        insert into taxa_cat
         (cat,taxid_ancestor,taxid)
         values
         (%s,%s,%s)
         """
-        inserter = self.dbSql.makeBulkInserterFile(sql="mgt_taxa_cat",bufLen=bufLen)
+        inserter = self.dbSql.makeBulkInserterFile(sql="taxa_cat",bufLen=bufLen)
         for rec in inp:
             vals = rec.split()
             vals[1] = int(vals[1])
@@ -754,12 +979,11 @@ class DbSeqSource(PhyOptions):
         inp.close()
         inserter.flush()
         curs.close()
-        self.dbSql.ddl("""alter table mgt_taxa_cat ADD PRIMARY KEY (taxid)""",ifDialect="mysql")
-        self.dbSql.createColumnIndices(names=["cat","taxid_ancestor"],table="mgt_taxa_cat")
+        self.dbSql.createIndices(names=["cat","taxid_ancestor"],table="taxa_cat",primary="taxid")
 
     def loadTaxNodes(self):
         self.dbSql.ddl("""\
-        create table mgt_taxa_node
+        create table taxa_node
         (
         taxid integer,
         partaxid integer,
@@ -776,13 +1000,13 @@ class DbSeqSource(PhyOptions):
         comments  char(40)
         )
         """,
-        dropList=["table mgt_taxa_node"])
+        dropList=["table taxa_node"])
         inp = open(self.taxaNodesFile,'r')
         curs = self.dbSql.cursor()
         iRec = 0
         bufLen = 500000
         sql = """\
-        insert into mgt_taxa_node
+        insert into taxa_node
         (
         taxid,
         partaxid,
@@ -801,7 +1025,7 @@ class DbSeqSource(PhyOptions):
         values
         (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """
-        inserter = self.dbSql.makeBulkInserterFile(sql="mgt_taxa_node",bufLen=bufLen)
+        inserter = self.dbSql.makeBulkInserterFile(sql="taxa_node",bufLen=bufLen)
         for rec in inp:
             # The last '|' is behind the last field, so we cut it
             inserter([ x.strip() for x in rec.split('|')][:-1])
@@ -809,13 +1033,41 @@ class DbSeqSource(PhyOptions):
         inp.close()
         curs.close()
         #Get rid of spaces in 'rank' field to simplify export of data later on
-        self.dbSql.execute("update mgt_taxa_node set rank = replace(rank,' ','_')").close()
-        self.dbSql.ddl("""alter table mgt_taxa_node ADD PRIMARY KEY (taxid)""",ifDialect="mysql")
-        self.dbSql.createColumnIndices(names=["partaxid","divid"],table="mgt_taxa_node")
+        self.dbSql.execute("update taxa_node set rank = replace(rank,' ','_')").close()
+        self.dbSql.createIndices(names=["partaxid","divid"],table="taxa_node",primary="taxid")
 
 
+    def loadTaxNames(self):
+        """We load only 'scientific name' entries."""
+        self.dbSql.ddl("""\
+        create table taxa_names
+        (
+        taxid integer,
+        name  varchar(180)
+        )
+        """,
+        dropList=["table taxa_names"])
+        inp = open(self.taxaNamesFile,'r')
+        inserter = self.dbSql.makeBulkInserterFile(sql="taxa_names",bufLen=500000)
+        for line in inp:
+            rec = [ x.strip() for x in line.split('|') ]
+            if rec[3] == "scientific name":
+                inserter((int(rec[0]),rec[1]))
+        inserter.flush()
+        inp.close()
+        self.dbSql.createIndices(table="taxa_names",primary="taxid")
+        self.dbSql.executeAndAssertEmpty("select taxid from taxa_node where taxid not in (select taxid from taxa_names)")
+
+    def loadTaxLevels(self):
+        #self.loadTaxNodesMem()
+        self.taxaLevels = TaxaLevelsDb(self.dbSql,self.taxaTree)
+        #self.taxaLevels.loadTaxLevelsRows()
+        #self.taxaLevels.loadTaxLevelsColumns()
+        self.taxaLevels.makeStatsTables()
+        
     def loadTaxNodesMem(self):
-        self.taxaTree = TaxaTree(ncbiDumpFile=self.taxaNodesFile)
+        if self.taxaTree is None:
+            self.taxaTree = TaxaTree(ncbiDumpFile=self.taxaNodesFile)
         #self.taxaTree.write(sys.stdout)
 
         
@@ -895,7 +1147,7 @@ class DbSeqSource(PhyOptions):
 
     def selectTaxSet(self):
         db = self.dbSql
-        db.createTableAs("mgt_taxa_src_1","""
+        db.createTableAs("taxa_src_1","""
             (SELECT taxid                ,
                             src_db       ,
                             kind         ,
@@ -903,7 +1155,7 @@ class DbSeqSource(PhyOptions):
                             0            AS priority,
                             COUNT(*)     AS cnt     ,
                             SUM(seq_len) AS seq_len
-                    FROM    mgt_seq
+                    FROM    seq
                     GROUP BY taxid ,
                             src_db ,
                             kind   ,
@@ -911,9 +1163,9 @@ class DbSeqSource(PhyOptions):
             )
         """)
 
-        db.createTableAs("mgt_taxa_src","""
+        db.createTableAs("taxa_src","""
                 (SELECT *
-                        FROM    mgt_taxa_src_1
+                        FROM    taxa_src_1
                 )
         ORDER BY taxid ,
                 src_db ,
@@ -921,22 +1173,22 @@ class DbSeqSource(PhyOptions):
                 project
         """)
         
-        db.dropTable("mgt_taxa_src_1")
+        db.dropTable("taxa_src_1")
         
-        #db.ddl("""ALTER TABLE mgt_taxa_src ADD id INTEGER auto_increment PRIMARY KEY""",ifDialect="mysql")
-        db.ddl("""ALTER TABLE mgt_taxa_src ADD id INTEGER auto_increment  PRIMARY KEY""")
-        db.createColumnIndices(names=["taxid","src_db","kind","project"],table="mgt_taxa_src")
+        #db.ddl("""ALTER TABLE taxa_src ADD id INTEGER auto_increment PRIMARY KEY""",ifDialect="mysql")
+        db.ddl("""ALTER TABLE taxa_src ADD id INTEGER auto_increment  PRIMARY KEY""")
+        db.createIndices(names=["taxid","src_db","kind","project"],table="taxa_src")
         
         ## Drop "Alternative" full genomes (e.g. haplotypes)
         db.ddl("""
         DELETE
-        FROM    mgt_taxa_src
+        FROM    taxa_src
         WHERE   kind = 'AC'
         """)
 
-        db.createTableAs("mgt_wgs_src_1","""
+        db.createTableAs("wgs_src_1","""
         (SELECT *
-                FROM    mgt_taxa_src
+                FROM    taxa_src
                 WHERE   project <> ''
                     AND kind    <> ''
         )
@@ -944,61 +1196,61 @@ class DbSeqSource(PhyOptions):
         
         db.ddl("""
         INSERT
-        INTO    mgt_wgs_src_1
+        INTO    wgs_src_1
         SELECT  a.*
-        FROM    mgt_taxa_src a
+        FROM    taxa_src a
         WHERE   a.project   <> ''
             AND a.taxid NOT IN
                 (SELECT taxid
-                FROM    mgt_wgs_src_1
+                FROM    wgs_src_1
                 )
         """)
 
-        db.createTableAs("mgt_wgs_src_2","""
+        db.createTableAs("wgs_src_2","""
         (SELECT a.*
-                FROM    mgt_wgs_src_1 a
-                WHERE   a.seq_len >=
-                        (SELECT MAX(b.seq_len)
-                        FROM    mgt_wgs_src_1 b
+                FROM    wgs_src_1 a
+                WHERE   a.seq_len >= ALL
+                        (SELECT b.seq_len
+                        FROM    wgs_src_1 b
                         WHERE   a.taxid = b.taxid
                         )
         )
         """)
 
-        db.createTableAs("mgt_wgs_src_3","""
+        db.createTableAs("wgs_src_3","""
         (SELECT a.*
-                FROM    mgt_wgs_src_2 a
+                FROM    wgs_src_2 a
                 WHERE   a.id >=
                         (SELECT MAX(b.id)
-                        FROM    mgt_wgs_src_2 b
+                        FROM    wgs_src_2 b
                         WHERE   a.taxid = b.taxid
                         )
         )
         """)
-        db.dropTable("mgt_wgs_src_2")
+        db.dropTable("wgs_src_2")
 
-        db.createTableAs("mgt_wgs_src_nr","""
+        db.createTableAs("wgs_src_nr","""
         (SELECT *
-                FROM    mgt_wgs_src_3
+                FROM    wgs_src_3
         )
         """)
 
-        db.createTableAs("mgt_nc_src_1","""
+        db.createTableAs("nc_src_1","""
         (SELECT a.*
-                FROM    mgt_taxa_src a
+                FROM    taxa_src a
                 WHERE   a.kind        = 'NC'
-                    AND a.seq_len * 2 >
-                        (SELECT MAX(b.seq_len)
-                        FROM    mgt_wgs_src_nr b
+                    AND a.seq_len * 2 > ALL
+                        (SELECT b.seq_len
+                        FROM    wgs_src_nr b
                         WHERE   a.taxid = b.taxid
                         )
         )
         """)
         
-        db.createTableAs("mgt_htg_over_nc_src_1","""
+        db.createTableAs("htg_over_nc_src_1","""
         (SELECT a.*
-                FROM    mgt_taxa_src a,
-                        mgt_nc_src_1 b
+                FROM    taxa_src a,
+                        nc_src_1 b
                 WHERE   a.src_db     = 'h'
                     AND a.kind      <> 'NC'
                     AND a.taxid      = b.taxid
@@ -1006,225 +1258,154 @@ class DbSeqSource(PhyOptions):
                     AND b.seq_len    < 500000
                     AND a.taxid NOT IN
                         (SELECT taxid
-                        FROM    mgt_wgs_src_nr
+                        FROM    wgs_src_nr
                         )
         )
         """)
 
-        db.createTableAs("mgt_nc_src_2","""
+        db.createTableAs("nc_src_2","""
         (SELECT *
-                FROM    mgt_nc_src_1
+                FROM    nc_src_1
                 WHERE   taxid NOT IN
                         (SELECT taxid
-                        FROM    mgt_htg_over_nc_src_1
+                        FROM    htg_over_nc_src_1
                         )
         )
         """)
+
+        db.createIndices(names=["taxid"],table="nc_src_2")
         
-        db.createTableAs("mgt_nc_src_3","""
+        db.createTableAs("nc_src_3","""
         (SELECT a.*
-                FROM    mgt_nc_src_2 a
-                WHERE   a.id >=
+                FROM    nc_src_2 a
+                WHERE   a.id >= 
                         (SELECT MAX(b.id)
-                        FROM    mgt_nc_src_2 b
+                        FROM    nc_src_2 b
                         WHERE   a.taxid = b.taxid
                         )
         )
         """)
         
-        db.createTableAs("mgt_nc_src","""
+        db.createTableAs("nc_src","""
         (SELECT a.*,
                         'nc' AS stage
-                FROM    mgt_nc_src_3 a
+                FROM    nc_src_3 a
         )
         """)
+
+        db.createIndices(names=["taxid"],table="nc_src_3")
         
-        db.createTableAs("mgt_wgs_src","""
+        db.createTableAs("wgs_src","""
         (SELECT a.*,
                         'wg' AS stage
-                FROM    mgt_wgs_src_nr a
+                FROM    wgs_src_nr a
                 WHERE   taxid NOT IN
                         (SELECT taxid
-                        FROM    mgt_nc_src
+                        FROM    nc_src
                         )
         )
         """)
         
-        db.createTableAs("mgt_htg_src_1","""
+        db.createIndices(names=["taxid"],table="wgs_src")
+        
+        db.createTableAs("htg_src_1","""
         (SELECT *
-                FROM    mgt_taxa_src
+                FROM    taxa_src
                 WHERE ( src_db      = 'h'
                      OR kind       <> '' )
                     AND (taxid NOT IN
                         (SELECT taxid
-                        FROM    mgt_nc_src
+                        FROM    nc_src
                         )
                     AND taxid NOT IN
                         (SELECT taxid
-                        FROM    mgt_wgs_src
+                        FROM    wgs_src
                         ) )
         )
         """)
         
-        db.createTableAs("mgt_htg_src","""
+        db.createTableAs("htg_src","""
         (SELECT a.*,
                         'ht' AS stage
-                FROM    mgt_htg_src_1 a
+                FROM    htg_src_1 a
         )
         """)
         
-        db.createTableAs("mgt_gen_src","""
+        db.createTableAs("gen_src","""
         (SELECT *
-                FROM    mgt_nc_src
+                FROM    nc_src
         )
         """)
         
         db.ddl("""
         INSERT
-        INTO    mgt_gen_src
+        INTO    gen_src
         SELECT  *
-        FROM    mgt_wgs_src
+        FROM    wgs_src
         
         UNION
         
         SELECT  *
-        FROM    mgt_htg_src
+        FROM    htg_src
         """)
 
-        db.createColumnIndices(names=["taxid"],table="mgt_gen_src")
+        db.createIndices(names=["taxid"],table="gen_src")
         
-        db.createTableAs("mgt_nt_src","""
+        db.createTableAs("nt_src","""
         (SELECT a.*,
                         'nt' AS stage
-                FROM    mgt_taxa_src a
+                FROM    taxa_src a
                 WHERE   taxid NOT IN
                         (SELECT taxid
-                        FROM    mgt_gen_src
+                        FROM    gen_src
                         )
         )
         """)
 
-        db.createTableAs("mgt_all_src_1","""
+        db.createTableAs("all_src_1","""
         (SELECT a.*,
                         'g' AS src_type
-                FROM    mgt_gen_src a
+                FROM    gen_src a
         )
         """)
         
         db.ddl("""
         INSERT
-        INTO    mgt_all_src_1
+        INTO    all_src_1
         SELECT  a.*,
                 'o' AS src_type
-        FROM    mgt_nt_src a
+        FROM    nt_src a
         """)
     
     #def selectTaxSet(self):
 
         #db = self.dbSql
         
-        db.createTableAs("mgt_all_src","""
+        db.createTableAs("all_src","""
         (SELECT a.*            ,
                         b.cat  ,
                         c.divid,
                         c.rank
-                FROM    mgt_all_src_1 a
-                        LEFT JOIN mgt_taxa_cat b
+                FROM    all_src_1 a
+                        LEFT JOIN taxa_cat b
                         ON      a.taxid = b.taxid
-                        LEFT JOIN mgt_taxa_node c
+                        LEFT JOIN taxa_node c
                         ON      a.taxid = c.taxid
         )
         """)
 
-        db.createColumnIndices(names=["taxid","src_db","kind","project","cat","divid","rank"],
-            table="mgt_all_src")
-        db.ddl("ALTER TABLE mgt_all_src ADD PRIMARY KEY (id)",ifDialect="mysql")
-        db.ddl("""CREATE INDEX ix_mgt_all_src_src ON mgt_all_src (taxid,src_db,kind,project)""",
-            dropList=["index ix_mgt_all_src_src on mgt_all_src"],ifDialect="mysql")
-
-        ## Some tables to report statistics on data
-
-        ## Group into a single taxid entry per source database
-        
-        db.createTableAs("mgt_src_db_stat","""
-        (SELECT src_db        ,
-                        taxid ,
-                        COUNT(*) AS cnt
-                FROM    mgt_all_src
-                GROUP BY src_db,
-                        taxid
-        )
-        """)
-
-        db.executeAndPrint("""
-        SELECT  src_db,
-                COUNT(*)
-        FROM    mgt_src_db_stat
-        GROUP BY src_db
-        """)
-
-        db.createTableAs("mgt_taxa_stat","""
-        (SELECT src_type     ,
-                        stage,
-                        taxid,
-                        cat  ,
-                        COUNT(*) AS cnt
-                FROM    mgt_all_src
-                GROUP BY src_type,
-                        stage    ,
-                        taxid    ,
-                        cat
-        )
-        """)
-        
-        db.executeAndPrint("""
-        SELECT  stage,
-                COUNT(*)
-        FROM    mgt_taxa_stat
-        GROUP BY stage
-        """)
-
-        db.executeAndPrint("""
-        SELECT  stage,
-                cat  ,
-                COUNT(*)
-        FROM    mgt_taxa_stat
-        GROUP BY stage,
-                cat
-        """)
-        
-        db.executeAndPrint("""
-        SELECT  src_type,
-                cat     ,
-                COUNT(*)
-        FROM    mgt_taxa_stat
-        GROUP BY src_type,
-                cat
-        """)
-        
-        db.executeAndPrint("""
-        SELECT  COUNT(*)
-        FROM    mgt_all_src
-        WHERE   kind = 'NC'
-        """)
-
-        ## Human must be in NC_ only
-        db.executeAndPrint("""
-        SELECT  *
-        FROM    mgt_all_src
-        WHERE   taxid = 9606
-        """)
+        db.createIndices(names=["taxid","src_db","kind","project","cat","divid","rank"],
+            table="all_src",
+            primary="id",
+            compounds={"src":"taxid,src_db,kind,project"})
 
         return
-
-        db.ddl("""CREATE INDEX ix_mgt_seq_src ON mgt_seq (taxid,src_db,kind,project)""",
-            dropList=["index ix_mgt_seq_src on seq"],ifDialect="mysql")
 
         ## in MySQL computation of acc_no_ver (ACC w/o '.X' suffix)
         ## would be just SUBSTRING_INDEX( a.acc , '.', 1 ) AS acc_no_ver,
         ## but we use SQL standard conforming expression
         
-        db.createTableAs("mgt_seq_sel","""
+        db.createTableAs("seq_sel","""
         (SELECT a.*                                                    ,
                         b.cat                                          ,
                         b.stage                                        ,
@@ -1238,8 +1419,8 @@ class DbSeqSource(PhyOptions):
                         AS acc_no_ver                                  ,
                         b.divid                                        ,
                         b.rank
-                FROM    mgt_seq a,
-                        mgt_all_src b
+                FROM    seq a,
+                        all_src b
                 WHERE   a.taxid   = b.taxid
                     AND a.src_db  = b.src_db
                     AND a.kind    = b.kind
@@ -1248,62 +1429,47 @@ class DbSeqSource(PhyOptions):
         )
         """)
         
-        db.createColumnIndices(names=["taxid","src_db","kind","project","cat",
+        db.createIndices(names=["taxid","src_db","kind","project","cat",
             "stage","src_type","gi","acc","acc_no_ver","divid","rank"],
-            table="mgt_seq_sel")
-
-        db.ddl("ALTER TABLE mgt_seq_sel ADD PRIMARY KEY (iid)",ifDialect="mysql")
+            table="seq_sel",
+            primary="iid")
 
         ## Proved to be essential in MySQL for efficient planning of queries
-        db.ddl("analyze table mgt_seq_sel",ifDialect="mysql")
-
-        db.executeAndPrint("""
-        SELECT  divid,
-                COUNT(*)
-        FROM    mgt_seq_sel
-        GROUP BY divid
-        """)
-
-        db.executeAndPrint("""
-        SELECT  rank,
-                COUNT(*)
-        FROM    mgt_seq_sel
-        GROUP BY rank
-        """)
+        db.ddl("analyze table seq_sel",ifDialect="mysql")
 
         ## Backup all records from seq_sel that are to be discarded in case we
         ## want to analyze them later
         
         db.ddl("""
-        CREATE TABLE mgt_seq_sel_del (LIKE seq_sel)
+        CREATE TABLE seq_sel_del (LIKE seq_sel)
         """,
-        dropList=["table mgt_seq_sel_del"])
+        dropList=["table seq_sel_del"])
 
-        db.ddl("ALTER TABLE mgt_seq_sel_del DISABLE KEYS",ifDialect="mysql")
+        db.ddl("ALTER TABLE seq_sel_del DISABLE KEYS",ifDialect="mysql")
         
         db.ddl("""
         INSERT
-        INTO    mgt_seq_sel_del
+        INTO    seq_sel_del
         SELECT  *
-        FROM    mgt_seq_sel
+        FROM    seq_sel
         WHERE   taxid IS NULL
             OR divid IS NULL
             OR cat   IS NULL
             OR divid IN (7,8,11)
         """)
         
-        db.ddl("ALTER TABLE mgt_seq_sel_del ENABLE KEYS",ifDialect="mysql")
+        db.ddl("ALTER TABLE seq_sel_del ENABLE KEYS",ifDialect="mysql")
         
         db.ddl("""
         DELETE
-        FROM    mgt_seq_sel
+        FROM    seq_sel
         WHERE   iid IN
                 (SELECT iid
-                FROM    mgt_seq_sel_del
+                FROM    seq_sel_del
                 )
         """)
 
-        db.ddl("ANALYZE TABLE mgt_seq_sel",ifDialect="mysql")
+        db.ddl("ANALYZE TABLE seq_sel",ifDialect="mysql")
 
         return
 
@@ -1314,7 +1480,7 @@ class DbSeqSource(PhyOptions):
         INTO    OUTFILE '/home/atovtchi/scratch/mgtdata/phyla_sel.gi'
         FIELDS TERMINATED BY ' '
         LINES TERMINATED BY '\n'
-        FROM    mgt_seq_sel
+        FROM    seq_sel
         ORDER BY taxid,
                 iid
         """)
@@ -1342,12 +1508,128 @@ class DbSeqSource(PhyOptions):
         INTO    OUTFILE '/home/atovtchi/scratch/mgtdata/phyla_sel.csv'
         FIELDS TERMINATED BY ' '
         LINES TERMINATED BY '\n'
-        FROM    mgt_seq_sel
+        FROM    seq_sel
         ORDER BY taxid,
                 iid
         """)
 
 
+    def reportStat(self):
+        """Output a report that shows a high-level overview of data."""
+        db.executeAndPrint("""
+        select level,avg(cnt) from
+        (select level,partaxid,count(*) as cnt from taxa_level group by level,partaxid) a
+        group by level
+        """)
+        db.executeAndPrint("""
+        select level,count(*) from
+        (select level,partaxid,count(*) as cnt from taxa_level group by level,partaxid) a
+        group by level
+        """)
+        
+        ## Some tables to report statistics on data
+
+        ## Group into a single taxid entry per source database
+        
+        db.createTableAs("src_db_stat","""
+        (SELECT src_db        ,
+                        taxid ,
+                        COUNT(*) AS cnt
+                FROM    all_src
+                GROUP BY src_db,
+                        taxid
+        )
+        """)
+
+        db.executeAndPrint("""
+        SELECT  src_db,
+                COUNT(*)
+        FROM    src_db_stat
+        GROUP BY src_db
+        """)
+
+        db.createTableAs("taxa_stat","""
+        (SELECT src_type     ,
+                        stage,
+                        taxid,
+                        cat  ,
+                        COUNT(*) AS cnt
+                FROM    all_src
+                GROUP BY src_type,
+                        stage    ,
+                        taxid    ,
+                        cat
+        )
+        """)
+        
+        db.executeAndPrint("""
+        SELECT  stage,
+                COUNT(*)
+        FROM    taxa_stat
+        GROUP BY stage
+        """)
+
+        db.executeAndPrint("""
+        SELECT  stage,
+                cat  ,
+                COUNT(*)
+        FROM    taxa_stat
+        GROUP BY stage,
+                cat
+        """)
+        
+        db.executeAndPrint("""
+        SELECT  src_type,
+                cat     ,
+                COUNT(*)
+        FROM    taxa_stat
+        GROUP BY src_type,
+                cat
+        """)
+        
+        db.executeAndPrint("""
+        SELECT  COUNT(*)
+        FROM    all_src
+        WHERE   kind = 'NC'
+        """)
+
+        ## Human must be in NC_ only
+        db.executeAndPrint("""
+        SELECT  *
+        FROM    all_src
+        WHERE   taxid = 9606
+        """)
+        
+        db.executeAndPrint("""
+        SELECT  rank,
+                COUNT(*)
+        FROM    all_src
+        GROUP BY rank
+        """)
+        
+        db.executeAndPrint("""
+        SELECT  stage,
+                rank,
+                COUNT(*)
+        FROM    all_src
+        GROUP BY stage, rank
+        """)
+
+        db.executeAndPrint("""
+        SELECT  divid,
+                COUNT(*)
+        FROM    seq_sel
+        GROUP BY divid
+        """)
+
+        db.executeAndPrint("""
+        SELECT  rank,
+                COUNT(*)
+        FROM    seq_sel
+        GROUP BY rank
+        """)
+
+        
 refseqAccFormat = \
 (
 ('','','','','Undefined'),

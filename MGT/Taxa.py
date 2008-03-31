@@ -1,5 +1,7 @@
 """Classes to represent and traverse a taxonomy tree (NCBI format)"""
 
+from MGT.Common import *
+
 import os
 import numpy
 from numpy import array
@@ -23,9 +25,13 @@ class TaxaNodeData(object):
 #        ('comments',str)
      )
     
+    savedDtype = numpy.dtype([('taxid','int32'),
+                              ('partaxid','int32'),
+                              ('rank','S20')])
+    
     def __init__(self,values):
         for (f,v) in zip(self.fields,values):
-            setattr(self,f[0],f[1](v.strip()))
+            setattr(self,f[0],f[1](v))
         self.rank = self.rank.replace(' ','_')
         
     def __str__(self):
@@ -97,6 +103,14 @@ class TaxaNode(object):
         if func(self) is None:
             for child in self.children:
                 child.visitDepthTop(func)
+    
+    def iterDepthTop(self):
+        """Return depth-first top-to-bottom iterator."""
+        yield self
+        for child in self.children:
+            for node in child.iterDepthTop():
+                yield node
+
 
     def visitDepthBottom(self,func):
         """If functor 'func' does not return anything when applied to itself, recursively do the same with each of the children."""
@@ -109,30 +123,29 @@ class TaxaTree(object):
     
     def __init__(self,nodes=None,ncbiDumpFile=None,save=False,load=False):
         #It is still much faster to load node file directly rather than
-        #from a pickled version of raw (unlinked) nodes, and uses much less
+        #from a pickled version of raw (unlinked) nodes or from a pickled
+        #numpy array, and uses much less
         #memory. Therefore, the default values for cacheing are False.
-        #TODO: using numpy text file loading functions can help,
-        #see the examples on numpy site.
         assert nodes is None or ncbiDumpFile is None
         assert not (ncbiDumpFile is None and (save or load))
         #pickling the nodes after they were internally linked in a tree structure
-        #leads to huge memory consumption and very slow. So, we cache only
-        #the initially read unlinked node dict
+        #leads to huge memory consumption and very slow.
         
         if ncbiDumpFile is not None:
             cacheFile = os.path.basename(ncbiDumpFile)+'.cache'
             if load and os.path.isfile(cacheFile):
-                nodes = loadObj(cacheFile)
+                print "Loading cached version of TaxaTree"
+                nodes = self.loadData(cacheFile)
             else:
                 inp = open(ncbiDumpFile,'r')
                 nodes = {}
                 n_splits = len(TaxaNodeData.fields)
                 for rec in inp:
-                    node = TaxaNode(rec.split('\t|\t',n_splits))
+                    node = TaxaNode([ x.strip() for x in rec.split('\t|\t',n_splits)[:n_splits]])
                     nodes[node.id] = node
                 inp.close()
                 if save:
-                    dumpObj(nodes,cacheFile)
+                    self.saveData(nodes,cacheFile)
             
         self.nodes = nodes
         self.rootNode = None
@@ -147,6 +160,21 @@ class TaxaTree(object):
                 self.rootNode = v
             v.setParent(par)
     
+    def saveData(self,nodes,fileName):
+        arr = numpy.empty(len(nodes),dtype=TaxaNodeData.savedDtype)
+        i = 0
+        for node in nodes.itervalues():
+            arr[i] = (node.data.taxid,node.data.partaxid,node.data.rank)
+            i += 1
+        dumpObj(arr,fileName)
+    
+    def loadData(self,fileName):
+        arr = loadObj(fileName)
+        nodes = {}
+        for rec in arr:
+            nodes[int(rec["taxid"])] = TaxaNode(rec)
+        return nodes
+
     def write(self,out):
         for id in sorted(self.nodes.iterkeys()):
              out.write(str(self.nodes[id])+'\n')
@@ -161,6 +189,9 @@ class TaxaTree(object):
     def getNodesDict(self):
         return self.nodes
     
+    def getNodesIter(self):
+        return self.nodes.itervalues()
+    
     def getRootNode(self):
         return self.rootNode
 
@@ -170,6 +201,14 @@ class TaxaTree(object):
         else:
             top = self.getNode(id)
         top.visitDepthTop(func)
+        
+    def iterDepthTop(self,id=None):
+        if id is None:
+            top = self.getRootNode()
+        else:
+            top = self.getNode(id)
+        return top.iterDepthTop()
+
         
     def visitDepthBottom(self,func,id=None):
         if id is None:
@@ -284,10 +323,6 @@ The goal: we need to asign the amount of sequence selected for a given AT level
 
 """    
 
-#main Linnaean ranks, modified with superkingdom in place of domain rank
-linnMainRanks = ("superkingdom", "phylum", "class", "order", "family", "genus", "species")
-viralRanksTemplate = linnMainRanks
-
 class RankReducerVisitor:
     """Removes all internal (non-leaf, non-root) nodes from a tree with rank names not in a given list.
     Example of such list is a 'linnMainRanks' module level variable ('domain',...,'species').
@@ -296,7 +331,7 @@ class RankReducerVisitor:
     It does not check the starting node, so it must be already valid reduced node if you
     want to get the full subtree in a reduced form. Root node is a valid starting point."""
     
-    def __init__(self,allowedRanks=linnMainRanks):
+    def __init__(self,allowedRanks):
         self.allowedRanks = allowedRanks
     
     def __call__(self,node):
@@ -364,9 +399,9 @@ class RankFakerVisitor:
                 lin_ranks[ind_species] = 'species'
             #set all other nodes in the lineage to 'no_rank'
             for i in range(ind_species):
-                lin_ranks[i] = 'no_rank'
+                lin_ranks[i] = noRank
             for i in range(ind_species+1,len(lin_ranks)):
-                lin_ranks[i] = 'no_rank'
+                lin_ranks[i] = noRank
             #set nodes up to the 'species' node to ranks from template lineage
             for i in range(min(ind_species,len(lin_ranks_template))):
                 lin_ranks[i] = lin_ranks_template[i]
@@ -389,21 +424,21 @@ class RankFakerVisitor:
             if rank == 'species':
                 print "Warning: 'species' is marked as a parent of 'species', original lineage  %s, current lineage %s" % \
                 (lin_orig,node.lineageRanksStr())
-            node.data.rank = 'no_rank'
+            node.data.rank = noRank
         #do nothing if this node is already a 'species',
         #continue to the children
         elif rank == 'species':
             pass
         #only after we checked current for 'species', we can
         #propagate parents' 'no_rank'
-        elif par_rank == 'no_rank':
-            node.data.rank = 'no_rank'
+        elif par_rank == noRank:
+            node.data.rank = noRank
         else:
             next_rank_ind = lineage.index(par_rank) + 1
             if next_rank_ind < len(lineage):
                 node.data.rank = lineage[next_rank_ind]
             else:
-                node.data.rank = 'no_rank'
+                node.data.rank = noRank
         #Set the rank to 'species' for every leaf node
         #that does not have a 'species' already in its lineage
         #ASSUMPTION: What if there are nodes in NCBI taxonomy tree
@@ -416,7 +451,71 @@ class RankFakerVisitor:
             lin_before = node.lineageRanks()
             if 'species' not in lin_before:
                 node.data.rank = 'species'
-                if rank != 'no_rank':
+                if rank != noRank:
                     print ("Warning: resetting existing rank '%s' in leaf node to 'species' for taxid = %s,"+\
                            " original lineage: %s, current lineage: %s, previous lineage: %s") % \
                            (rank,node.id,lin_orig,node.lineageRanksStr(),lin_before)
+
+
+viralRootTaxid = 10239
+#main Linnaean ranks, modified with superkingdom in place of domain rank
+linnMainRanks = ("species","genus","family","order","class","phylum","superkingdom")
+viralRanksTemplate = linnMainRanks
+noRank = "no_rank"
+
+class TaxaLevels:
+    """Class that assigns classification levels to nodes of the taxonomic tree.
+    We will train our classifiers to predict these levels."""
+
+    def __init__(self):
+        self.levels = list(linnMainRanks)
+        self.levelIds = {noRank:0, "species":20, "genus":30, "family":40,
+                         "order":50, "class":60, "phylum":70, "superkingdom":80}
+        self.levelByTaxid = { "superkingdom" : (viralRootTaxid,) }
+        self.viralLevels = ("superkingdom","family","genus","species")
+        self.levelSet = set(self.levels)
+        #index of a given level name in the list 'levels'
+        levelPos = {}
+        for (i,level) in zip(range(len(self.levels)),self.levels):
+            levelPos[level] = i
+        self.levelPos = levelPos
+
+    def getLevelNames(self):
+        return self.levels
+
+    def setLevels(self,taxaTree):
+        levelSet = self.levelSet
+        for node in taxaTree.getNodesIter():
+            if node.data.rank in levelSet:
+                node.data.level = node.data.rank
+            else:
+                node.data.level = noRank
+        for level in self.levelByTaxid:
+            taxids = self.levelByTaxid[level]
+            for taxid in taxids:
+                node = taxaTree.getNode(taxid)
+                node.data.level = level
+        ##at this point, node.data.level is either one of 'levels' or 'no_rank'
+        ##remove all viral levels above family (there are only two 'orders' currently defined
+        ##for viruses, so it does not make much sense to train for them)
+        viralLevels = self.viralLevels
+        for node in taxaTree.iterDepthTop(viralRootTaxid):
+            if node.data.level not in viralLevels:
+                node.data.level = noRank
+
+    def lineage(self,node):
+        levelSet = self.levelSet
+        return [ n for n in node.lineage() if n.data.level in levelSet ]
+
+    def lineageKeys(self,node):
+        levelIds = self.levelIds
+        return [ (levelIds[n.data.level],n.id) for n in self.lineage(node)]
+
+    def lineageFixedList(self,node):
+        """Return a list of taxids that correspond to the list of level names returned by getLevelNames().
+        If a given level is not present in this node's lineage, the corresponding element is None."""
+        levelPos = self.levelPos
+        ret = [None]*len(self.levels)
+        for n in self.lineage(node):
+            ret[levelPos[n.data.level]] = n.id
+        return ret
