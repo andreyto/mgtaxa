@@ -2,13 +2,15 @@ import os
 
 class Options:
     def __init__(self):
+        self.debug = 1
+        self.tmpDir = "/usr/local/scratch/atovtchi"
         self.taxaPickled = 'taxa.pkl.gz'
         self.fastaHdrSqlLen = 40
         self.blastDataDir = 'blast'
-        self.selGiFile = 'phyla_sel.gi'
-        self.selDumpFile = 'phyla_sel.csv'
-        self.selFastaFile = 'phyla_sel.fasta.gz'
-        self.srcDbNameAlias = 'phyla'
+        self.selGiFile = 'mgt_sel.gi'
+        self.selDumpFile = 'mgt_sel.csv'
+        self.selFastaFile = 'mgt_sel.fasta.gz'
+        self.blastSelAlias = 'mgt'
         self.taxaDataDir = 'taxonomy'
         self.taxaCatFile = os.path.join(self.taxaDataDir,'categories.dmp')
         self.taxaGiFile = os.path.join(self.taxaDataDir,'gi_taxid_nucl.dmp.gz') 

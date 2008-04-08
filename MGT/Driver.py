@@ -2,17 +2,19 @@
 import sys, os
 #sys.path.append(os.environ['CA_BINDIR'])
 
-from MGT.Db import *
-from MGT.Svm import *
+from MGT.CollectTaxa import *
+#from MGT.Svm import *
 
 dbSql = createDbSQL()
 #
-db = DbSeqSource(dbSql=dbSql)
+db = TaxaCollector(dbSql=dbSql)
 #db.rebuild()
+#db.delDuplicateGiFromSeq()
+db.selectSeqIds()
 #db.loadGiTaxNumpy()
 #db.loadSeq()
 #db.loadTaxNames()
-db.loadTaxLevels()
+#db.loadTaxLevels()
 #db.loadTaxNodes()
 #db.loadTaxCategories()
 #db.loadRefseqAcc()

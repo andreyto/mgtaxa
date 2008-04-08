@@ -21,7 +21,7 @@ sysconfdir := $(prefix)/etc
 docdir := $(prefix)/doc
 
 CC := $(shell which gcc)
-CFLAGS := -O0
+CFLAGS := -O3 #-O0
 CXX := $(shell which g++)
 #To avoid "undefined symbols" message from gdb print command
 #even when all optimization is off,
@@ -31,7 +31,7 @@ CXX := $(shell which g++)
 #and for STL gdb macros to work (from ~/.gdb/stl_views).
 #It's a little odd that we need to tell GCC to produce gdb
 #specific debugging data on a linux system...
-CXXFLAGS := -g -gstabs -ggdb -O0 -fPIC
+CXXFLAGS := -O3 -fPIC #-g -gstabs -ggdb -O0 -fPIC
 PYTHON := $(shell which python)
 MAKE := make
 AR := $(shell which ar)
@@ -46,19 +46,19 @@ PROGRAMS       :=
 PROGRAMS_TEST  := test_kmers
 LIBRARIES      := libMGT.a
 #This should list only extensions that are to be installed, and omit testing ones
-PYEXT          := MGT/sample_boost.so
+PYEXT          := MGTX/sample_boost.so MGTX/kmersx.so
 PYEXT_TEST     := test_sample_boostx.so test_numpy_boostx.so
 
-EXTRA_CXXFLAGS = -I$(PROJ_DIR)/include -I$(BOOST_INC_DIR) -I$(PY_INC_DIR)
+EXTRA_CXXFLAGS = -I$(PROJ_DIR)/include -I$(BOOST_INC_DIR) -I$(PY_INC_DIR) -I$(NUMPY_INC_DIR)
 
 ## Installation subdirectories
 
 # Python extensions will be here. $(libdir) must be added to PYTHONPATH,
-# so that the extensions can be 'import MGT.<extmodule>' just like
-# regular modules. This makes moving the implementation from
-# pure Python to extension to be transparent to the user.
+# so that the extensions can be 'import MGTX.<extmodule>'.
+# Somehow having two identical subdirectories 'MGT' under 'prefix' and
+# 'exec_prefix' does not work (extension modules are never found)
 
-extdir := $(libdir)/MGT
+extdir := $(libdir)/MGTX
 
 ## How we generate autodependencies:
 ## Dependency autogeneration code is taken from:
@@ -81,7 +81,7 @@ extdir := $(libdir)/MGT
 
 PROJ_DIR := $(HOME)/work/mgtaxa
 BUILD_DIR := $(PROJ_DIR)/build/$(MACH)
-BUILD_EXT_DIR := $(BUILD_DIR)/MGT
+BUILD_EXT_DIR := $(BUILD_DIR)/MGTX
 SRC_DIR := $(PROJ_DIR)/src
 EXT_DIR := $(PROJ_DIR)/ext
 PY_DIR := $(PROJ_DIR)/MGT
@@ -108,6 +108,8 @@ PY_INC_DIR := $(shell $(PYTHON) -c 'from distutils.sysconfig import *; print get
 ## get_config_var() might not be portable.
 PY_LIB_DIR := $(shell $(PYTHON) -c 'from distutils.sysconfig import *; print get_config_var("LIBPL")')
 PY_LIB := $(shell $(PYTHON) -c 'from distutils.sysconfig import *; print get_config_var("LIBRARY")')
+
+NUMPY_INC_DIR := $(shell $(PYTHON) -c 'import numpy; print numpy.get_include()')
 
 #We build a single Python extension with Boost interface library, and therefore
 #use the static liboost_python.a. This saves a lot of grief with
@@ -165,8 +167,8 @@ $(DOC_DIR)/html: $(SRC) $(PY) $(DOC_DIR)/Doxyfile
 ## Testing is done "in place", before the "install" target is made.
 ## Still, we can run Python tests as though they call the installed
 ## application modules due to our directory structure. In particular,
-## Python extensions are built into a subdirectory MGT, and so can be
-## "import MGT.<extension_name>"
+## Python extensions are built into a subdirectory MGTX, and so can be
+## "import MGTX.<extension_name>"
 
 test: build
 	rm -rf .testrun; mkdir .testrun
@@ -262,6 +264,7 @@ endef
 # Define macro for Python extension linking with Boost.Python
 define LINK_EXT
 install -d $(BUILD_EXT_DIR)
+touch $(BUILD_EXT_DIR)/__init__.py
 $(LINK_SO) $(BOOST_PY_LINK)
 endef
 
@@ -269,13 +272,16 @@ endef
 #####################################################################################
 #### Define each target, adding custom libs and options after LINK_EXE as needed ####
 
-libMGT.a: kmers.o
+libMGT.a: kmers.o py_num_util.o
 	$(BUILD_LIB)
 
 test_kmers: test_kmers.o libMGT.a
 	$(LINK_EXE)
 
-MGT/sample_boost.so: sample_boost.o
+MGTX/sample_boost.so: sample_boost.o
+	$(LINK_EXT)
+
+MGTX/kmersx.so: kmersx.o libMGT.a
 	$(LINK_EXT)
 
 test_sample_boostx.so: test_sample_boostx.o

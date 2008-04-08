@@ -1,255 +1,32 @@
+"""Select from NCBI BLAST database the identifiers of sequence records with taxonomy assigned to them.
+Create various summary tables with overview of the available data along the way.
+"""
+
 from MGT.Common import *
 from MGT.Taxa import *
 from MGT.Sql import *
-
-class TaxaLevelsDb(TaxaLevels):
-
-    def __init__(self,db,taxaTree):
-        self.taxaTree = taxaTree
-        TaxaLevels.__init__(self)
-        if self.taxaTree is not None:
-            self.setLevels(taxaTree)
-        self.db = db
-
-    def getLevelColumns(self):
-        return [ "ti_"+name for name in self.getLevelNames() ]
-
-    def loadTaxLevelsRows(self):
-        self.db.ddl("""\
-        create table taxa_level_row
-        (
-        taxid integer,
-        level tinyint,
-        partaxid integer
-        )
-        """,
-        dropList=["table taxa_level_row"])
-
-        inserter = self.db.makeBulkInserterFile(sql="taxa_level_row",bufLen=500000)
-        taxaTree = self.taxaTree
-        for node in taxaTree.iterDepthTop():
-            for (level,partaxid) in self.lineageKeys(node):
-                inserter((node.id,level,partaxid))
-        inserter.flush()
-        self.db.createIndices(table="taxa_level_row",
-            names=["taxid","partaxid","level"],
-            primary="taxid,level,partaxid")
-
-    def loadTaxLevelsColumns(self):
-        taxaTree = self.taxaTree
-        ti_cols = self.getLevelColumns()
-        self.db.ddl("""\
-        create table taxa_level_col
-        (
-        taxid integer,
-        %s
-        )
-        """ % (",\n".join(["%s integer" % (col,) for col in ti_cols]),),
-        dropList=["table taxa_level_col"])
-
-        inserter = self.db.makeBulkInserterFile(sql="taxa_level_col",bufLen=500000)
-        for node in taxaTree.iterDepthTop():
-            inserter([node.id]+self.lineageFixedList(node))
-        inserter.flush()
-        self.db.createIndices(table="taxa_level_col",
-            names=ti_cols,
-            primary="taxid")
-
-    def makeStatsTablesDone(self):
-        db = self.db
-        
-        db.createTableAs("taxa_len","""
-        select taxid,sum(seq_len) as seq_len from all_src group by taxid
-        """)
-
-        db.createTableAs("taxa_level_row_len","""
-        select a.*,b.seq_len from taxa_level_row a,taxa_len b where a.taxid = b.taxid
-        """)
-
-        db.createIndices(names=["taxid","partaxid","level"],table="taxa_level_row_len")
-
-        db.executeAndPrint("""
-            select
-            level,count(*) as cnt,
-            avg(seq_len) as seq_len
-            from (
-                select level,partaxid,count(*) as cnt,sum(seq_len) as seq_len
-                from taxa_level_row_len
-                group by level,partaxid) a
-            group by level
-        """)
-
-        ti_cols = self.getLevelColumns()
-        ti_group = list(ti_cols)
-        ti_group.reverse()
-        ti_group_comma = ','.join(ti_group)
-        group_names = self.getLevelNames()
-        group_names.reverse()
-        
-        db.createTableAs("taxa_level_col_len","""
-        select a.*,b.seq_len from taxa_level_col a,taxa_len b where a.taxid = b.taxid
-        """)
-
-        db.createIndices(table="taxa_level_col_len",names=ti_cols,primary="taxid")
-
-        ## We replace NULL of taxid values with 0, so that
-        ## the MySQL OLAP modifier 'with rollup' would work correctly
-        ## (it uses NULL to mark rows with totals)
-        
-        db.createTableAs("taxa_level_col_gr","""
-        select %s,sum(seq_len) as seq_len,count(*) as taxid_cnt
-        from taxa_level_col_len a
-        group by %s
-        """ % (",".join(["COALESCE(a.%s,0) AS %s" % (ti_gr,ti_gr) for ti_gr in ti_group]) ,",".join(["a."+ti_gr for ti_gr in ti_group])))
-        
-        db.createIndices(table="taxa_level_col_gr",names=ti_cols)
+from MGT.BlastDb import BlastDb
 
 
-        db.createTableAs("taxa_level_col_rep_1","""
-        select %s,sum(seq_len) as seq_len,sum(taxid_cnt) as taxid_cnt
-        from taxa_level_col_gr
-        group by %s with rollup
-        """ % (ti_group_comma,ti_group_comma))
-        
-        db.ddl("""ALTER TABLE taxa_level_col_rep_1 ADD id INTEGER auto_increment  PRIMARY KEY""")
-        #db.createIndices(table="taxa_level_col_rep_1",names=ti_cols)
-
-        ## Add columns with string names for each ti_xxx column through 'left join'
-
-        from string import ascii_lowercase
-        alias_a = ascii_lowercase[0]
-        alias_joins = ascii_lowercase[1:]
-        assert len(ti_group) <= len(alias_joins)
-        joins = "\n".join([ "LEFT JOIN taxa_names %s ON %s.%s = %s.taxid" % (ali_join,alias_a,ti_col,ali_join)
-                        for (ali_join,ti_col) in zip(alias_joins,ti_group) ])
-
-        cols = ",\n".join(["%s,%s.name AS nm_%s" % (ti_col,ali_join,gr_name) for (ti_col,ali_join,gr_name) in zip(ti_group,alias_joins,group_names)])
-                    
-        db.createTableAs("taxa_level_col_rep","""
-        SELECT
-        id,
-        %s,
-        seq_len,taxid_cnt
-        FROM taxa_level_col_rep_1 %s
-        %s
-        ORDER BY id
-        """ % (cols,alias_a,joins))
-
-        db.createIndices(table="taxa_level_col_rep",names=ti_group+["id"])
-        
-        db.executeAndPrint("""
-        select ti_superkingdom,nm_superkingdom,seq_len,taxid_cnt
-        from taxa_level_col_rep
-        where ti_phylum is NULL
-        """)
-    
-    def makeStatsTables(self):
-        db = self.db
-        ti_cols = self.getLevelColumns()
-        ti_group = list(ti_cols)
-        ti_group.reverse()
-        ti_group_comma = ','.join(ti_group)
-        group_names = self.getLevelNames()
-        group_names.reverse()
-                    
-        db.execute("""
-        select *
-        from taxa_level_col_rep
-        order by id
-        into outfile 'taxa_level_col_rep.csv'
-        fields
-        terminated by '|'
-        optionally enclosed by '"'
-        """)
-
-        db.executeAndPrint("""
-        select ti_phylum,nm_phylum,ti_class,nm_class,ti_order,nm_order,seq_len,taxid_cnt
-        from taxa_level_col_rep
-        where ti_family is NULL and ti_order is not NULL and ti_class is not NULL
-        """)
-        
-        db.executeAndPrint("""
-        select ti_phylum,nm_phylum,ti_class,nm_class,ti_order,nm_order,ti_family,nm_family,seq_len,taxid_cnt
-        from taxa_level_col_rep where ti_superkingdom = 2 and ti_genus is NULL and ti_family is not NULL and
-        ti_order is not NULL and ti_class is not NULL
-        """)
-
-        db.executeAndPrint("""
-        select ti_phylum,nm_phylum,ti_class,nm_class,ti_order,nm_order,ti_family,nm_family,seq_len,taxid_cnt
-        from taxa_level_col_rep where ti_superkingdom = 2 and ti_genus is NULL and ti_family is not NULL and
-        ti_family <> 0 and ti_order is not NULL and ti_class is not NULL
-        """)
-
-
-class DbSeqSource(Options):
-    """Database of sequence source for training the classifier"""
+class TaxaCollector(Options):
+    """Collects data about taxonomically known sequence for training the classifier.
+    Process the NCBI BLAST DB files by calling fastacmd.
+    Aggregate, prioritize and partially removes redundancy along the taxonomy ids."""
     
     def __init__(self,dbSql):
         
         Options.__init__(self)
-        
         self.dbSql = dbSql
-        self.ncbiDbs =  (
-                         Struct(id='g',db='refseq_genomic'),
-                         Struct(id='o',db='other_genomic'),
-                         Struct(id='n',db='nt'),
-                         Struct(id='h',db='htgs'),
-                         Struct(id='w',db='wgs')
-                         )
+        self.blastDb = BlastDb()
         self.taxaTree = None
 
-    def makeBlastAlias(self,idList=None,dbNames=None):
-        from glob import glob
-        from datetime import datetime
-        from textwrap import dedent
-        if dbNames is None:
-            dbNames = [ db.db for db in self.ncbiDbs ]
-        directDbRefs = False
-        #comment out GILIST field in alias file if idList is None
-        if idList is None:
-            comGILIST = '#'
-        else:
-            comGILIST = ''
-        dbNameAlias = self.srcDbNameAlias
-        idListBin = dbNameAlias+'.gil'
-        aliasStr = dedent("""\
-        #
-        # Alias file created %s
-        #
-        #
-        TITLE Custom Unified DB for Phyla
-        #
-        DBLIST %%s
-        #
-        %sGILIST %s
-        #
-        #OIDLIST
-        #
-        """ % (datetime.today().ctime(),comGILIST,idListBin))
-        cwd = os.getcwd()
-        try:
-            os.chdir(self.blastDataDir)
-            if directDbRefs:
-                chunks = []
-                for rec in dbNames:
-                    chunks += sorted(list(set(
-                                    ( y.group(1) for y in  
-                                      (re.match('('+rec.db+'\.[0-9]+)\..*',x) 
-                                       for x in glob(rec.db+'.*')) 
-                                    if y is not None )
-                                    )))
-            else:
-                chunks = dbNames
-            strToFile(aliasStr % ' '.join(chunks),dbNameAlias+'.nal')
-        finally:
-            os.chdir(cwd)
         
     def mergeSelWithSeq(self,skipSeq=False):
         #from itertool import izip
         outFasta = gzip.open(self.selFastaFile,'w',compresslevel=4)
         inpDump = open(self.selDumpFile,'r')
         selGiFile = os.path.abspath(self.selGiFile)
-        fldsDump = "gi,taxid,src_db,kind,project,cat,stage,src_type,iid,seq_len,divid,rank".split(',')
+        fldsDump = "gi,taxid,src_db,kind,project,cat,stage,src_type,id,seq_len,divid,rank".split(',')
         pipe = Popen(("fastacmd -i %s -d %s" % (selGiFile,self.srcDbNameAlias)).split(), 
                      cwd=self.blastDataDir, env=os.environ, bufsize=2**16, stdout=PIPE, close_fds=True).stdout
         #inpFasta = readFastaRecords(pipe,readSeq=True)
@@ -333,90 +110,123 @@ class DbSeqSource(Options):
 
     def rebuild(self):
         #self.loadGiTaxNumpy()
-        self.loadTaxCategories()
-        self.loadTaxNodes()
-        self.loadRefseqAcc()
-        self.loadSeq()
-        self.selectTaxSet()
+        #self.loadTaxCategories()
+        #self.loadTaxNodes()
+        #self.loadRefseqAcc()
+        #self.loadTaxNames()
+        #self.loadSeq()
+        #self.selectTaxSource()
+        self.loadTaxLevels()
 
     def loadSeq(self):
         db = self.dbSql
         self.loadGiTaxPickled()
         self.createTableSeq()
-        sql = """
-                load data infile '/usr/local/scratch/atovtchi.mgt_seq.bulk.tmp'
-                into table seq
-                fields
-                terminated by '|'
-                optionally enclosed by '"'
-        """
+        #sql = """
+                #load data infile '/usr/local/scratch/atovtchi.mgt_seq.bulk.tmp'
+                #into table seq
+                #fields
+                #terminated by '|'
+                #optionally enclosed by '"'
+        #"""
         #sql = """
         #copy into seq from '/usr/local/scratch/atovtchi.mgt_seq.bulk.tmp'
         #"""
-        db.ddl(sql)
+        #db.ddl(sql)
 
-        #self.idGenSeq = IntIdGenerator()
-        #inserter = db.makeBulkInserterFile(sql='seq',bufLen=500000)
-        #self.loadSeqNCBI(self.ncbiDbs[0],inserter)
-        #self.loadSeqNCBI(self.ncbiDbs[1],inserter)
-        #self.loadSeqNCBI(self.ncbiDbs[2],inserter)
-        #self.loadSeqNCBI(self.ncbiDbs[3],inserter)
-        #self.loadSeqNCBI(self.ncbiDbs[4],inserter)
-        #inserter.flush()
+        self.idGenSeq = IntIdGenerator()
+        inserterSeq        = db.makeBulkInserterFile(table='seq',bufLen=500000,workDir=self.tmpDir)
+        inserterSeqMultiId = db.makeBulkInserterFile(table='seq_multi_id',bufLen=500000,workDir=self.tmpDir)
+        blastDbs = self.blastDb.getDbs()
+        self.loadSeqNCBI(blastDbs[0],inserterSeq,inserterSeqMultiId)
+        self.loadSeqNCBI(blastDbs[1],inserterSeq,inserterSeqMultiId)
+        self.loadSeqNCBI(blastDbs[2],inserterSeq,inserterSeqMultiId)
+        self.loadSeqNCBI(blastDbs[3],inserterSeq,inserterSeqMultiId)
+        self.loadSeqNCBI(blastDbs[4],inserterSeq,inserterSeqMultiId)
+        inserterSeq.flush()
+        inserterSeqMultiId.flush()
         db.ddl("analyze table seq",ifDialect="mysql")
         db.createIndices(table="seq",
-        names=["taxid","src_db","kind","project"],
-        primary="iid",
+        names=["gi","taxid","src_db","kind","project"],
+        primary="id",
         compounds={"src":"taxid,src_db,kind,project"})
+        db.ddl("analyze table seq_multi_id",ifDialect="mysql")
+        db.createIndices(table="seq_multi_id",
+        names=["gi","acc_db"],
+        primary="id_seq")
         
         self.clearGiTax()
+        self.delDuplicateGiFromSeq()
+        db.ddl("analyze table seq",ifDialect="mysql")
 
     def clearGiTax(self):
         self.gi2taxa = None
     
     def createTableSeq(self):
-        # we removed "auto_increment primary key" from iid
+        # we removed "auto_increment primary key" from id
         # to speed up bulk load
         self.dbSql.ddl("""
         create table seq
         (
-        iid integer,
+        id integer,
         gi bigint,
         taxid integer,
         src_db char(1),
         project char(4),
         seq_len bigint,
-        acc char(16),
+        acc_db char(3),
+        acc char(18),
         kind char(2),
         seq_hdr char(%s)
         )
         """ % (self.fastaHdrSqlLen,),
         dropList=["table seq"])
+
+        ## If we get a header record with two gi's like:
+        ## >gi|23455713|ref|NC_004301.1| Enterobacteria phage FI, complete genome >gi|15183|emb|X07489.1| Bacteriophage SP genomic RNA
+        ## then we insert the second gi along with db ("emb" here) into the seq_multi_id table, related to the record in 'seq' by
+        ## "seq_multi_id.id_seq = seq.id".
+        
+        self.dbSql.ddl("""
+        create table seq_multi_id
+        (
+        id_seq integer,
+        gi bigint,
+        acc_db char(3)
+        )
+        """,
+        dropList=["table seq_multi_id"])
         
         
-    def loadSeqNCBI(self,db,inserter):
-        pipe = Popen(("fastacmd -D 1 -d " + db.db).split(), cwd=self.blastDataDir, env=os.environ, bufsize=2**16, stdout=PIPE, close_fds=True).stdout
-        #inp = readFastaRecords(pipe,readSeq=False)
-        inp = FastaReader(pipe)
+    def loadSeqNCBI(self,db,inserterSeq,inserterSeqMultiId):
+        print "Processing BLAST DB " + db.db
+        inp = self.blastDb.fastaReader(dbName=db.db,defLineTargetOnly=False)
         #curs = self.dbSql.cursor()
         iRec = 0
-        bufLen = 50000
-        sql = """
-        insert into seq
-        (iid, gi, taxid, src_db, project, seq_len, acc, kind, seq_hdr)
-        values
-        (%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        """
+        #bufLen = 50000
+        #sql = """
+        #insert into seq
+        #(id, gi, taxid, src_db, project, seq_len, acc_db, acc, kind, seq_hdr)
+        #values
+        #(%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        #"""
         #inserter = self.dbSql.makeBulkInserter(sql=sql,bufLen=bufLen)
         #inserter.n = 1
         #inserter.flush()
         #inp.close()
         #return
         for rec in inp.records():
+            idSeq = self.idGenSeq()
             title = rec.header()[1:-1] #remove '>' and '\n'
-            (gifld,gi,accfld,acc,txt) = title.split('|',4)
+            (gifld,gi,acc_db,acc,txt) = title.split('|',4)
             assert gifld == 'gi'
             gi = int(gi)
+            defLine2 = txt.split(">gi|")
+            if len(defLine2) > 1:
+                txt = defLine2[0]
+                (gi2,acc_db2,dummy) = defLine2[1].split('|',2)
+                gi2 = int(gi2)
+                inserterSeqMultiId((idSeq,gi2,acc_db2))
             try:
                 taxid = int(self.gi2taxa[gi])
             except KeyError:
@@ -434,9 +244,9 @@ class DbSeqSource(Options):
             if acc_sfx[:4].isalpha() and acc_sfx[5].isdigit():
                 project = acc_sfx[:4]
             seqLen = rec.seqLen()
-            values = (self.idGenSeq(),gi,taxid,db.id,project,seqLen,acc,kind,title[:self.fastaHdrSqlLen])
+            values = (idSeq,gi,taxid,db.id,project,seqLen,acc_db,acc,kind,title[:self.fastaHdrSqlLen])
             #values = [ str(x) for x in values ]
-            inserter(values)
+            inserterSeq(values)
             if iRec % 50000 == 0:
                 print db.db, title, taxid, iRec, seqLen
                 #if iRec >= 500000:
@@ -481,7 +291,7 @@ class DbSeqSource(Options):
         values
         (%s,%s,%s)
         """
-        inserter = self.dbSql.makeBulkInserterFile(sql="taxa_cat",bufLen=bufLen)
+        inserter = self.dbSql.makeBulkInserterFile(table="taxa_cat",bufLen=500000,workDir=self.tmpDir)
         for rec in inp:
             vals = rec.split()
             vals[1] = int(vals[1])
@@ -536,7 +346,7 @@ class DbSeqSource(Options):
         values
         (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """
-        inserter = self.dbSql.makeBulkInserterFile(sql="taxa_node",bufLen=bufLen)
+        inserter = self.dbSql.makeBulkInserterFile(table="taxa_node",bufLen=500000,workDir=self.tmpDir)
         for rec in inp:
             # The last '|' is behind the last field, so we cut it
             inserter([ x.strip() for x in rec.split('|')][:-1])
@@ -559,7 +369,7 @@ class DbSeqSource(Options):
         """,
         dropList=["table taxa_names"])
         inp = open(self.taxaNamesFile,'r')
-        inserter = self.dbSql.makeBulkInserterFile(sql="taxa_names",bufLen=500000)
+        inserter = self.dbSql.makeBulkInserterFile(table="taxa_names",bufLen=500000,workDir=self.tmpDir)
         for line in inp:
             rec = [ x.strip() for x in line.split('|') ]
             if rec[3] == "scientific name":
@@ -570,10 +380,10 @@ class DbSeqSource(Options):
         self.dbSql.executeAndAssertEmpty("select taxid from taxa_node where taxid not in (select taxid from taxa_names)")
 
     def loadTaxLevels(self):
-        #self.loadTaxNodesMem()
+        self.loadTaxNodesMem()
         self.taxaLevels = TaxaLevelsDb(self.dbSql,self.taxaTree)
-        #self.taxaLevels.loadTaxLevelsRows()
-        #self.taxaLevels.loadTaxLevelsColumns()
+        self.taxaLevels.loadTaxLevelsRows()
+        self.taxaLevels.loadTaxLevelsColumns()
         self.taxaLevels.makeStatsTables()
         
     def loadTaxNodesMem(self):
@@ -600,7 +410,7 @@ class DbSeqSource(Options):
         bufLen = 100000
         sql = "insert into gi_taxa (gi,taxid) values (%s,%s)"
         curs = self.dbSql.cursor()
-        inserter = self.dbSql.makeBulkInserterFile(sql='gi_taxa',bufLen=bufLen)
+        inserter = self.dbSql.makeBulkInserterFile(table='gi_taxa',bufLen=500000,workDir=self.tmpDir)
         print "Start insert"
         for record in inp:
             inserter(record.split())
@@ -656,7 +466,31 @@ class DbSeqSource(Options):
         #pdb.set_trace()
 
 
-    def selectTaxSet(self):
+    def delDuplicateGiFromSeq(self):
+        """Delete duplicate records (by gi) from seq table, leave only those with smallest gi.
+        Duplicate records appear because some sequences (with identical defline) are included
+        into both 'refseq_genomic' and 'other_genomic' BLAST databases."""
+        db = self.dbSql
+        db.createTableAs("tmp_gi2","""
+            (select gi,count(*) as cnt from seq group by gi having count(*) > 1)
+        """)
+        db.createIndices(names=["gi"],table="tmp_gi2")
+        db.createTableAs("tmp_id_gi2","""
+            (select a.id,a.gi from seq a,tmp_gi2 b where a.gi = b.gi)
+        """)
+        db.createIndices(names=["id","gi"],table="tmp_id_gi2")
+        db.createTableAs("tmp_id_gi1","""
+        (select a.id from tmp_id_gi2 a where a.id > SOME ( select b.id from tmp_id_gi2 b where a.gi = b.gi ))
+        """)
+        db.createIndices(names=["id"],table="tmp_id_gi1")
+        db.ddl("""
+            delete from seq where id in (select id from tmp_id_gi1)
+        """)
+        db.dropTables(("tmp_gi2","tmp_id_gi2","tmp_id_gi1"))
+        
+
+
+    def selectTaxSource(self):
         db = self.dbSql
         db.createTableAs("taxa_src_1","""
             (SELECT taxid                ,
@@ -910,6 +744,9 @@ class DbSeqSource(Options):
             primary="id",
             compounds={"src":"taxid,src_db,kind,project"})
 
+    def selectSeqIds(self):
+
+        db = self.dbSql
 
         ## in MySQL computation of acc_no_ver (ACC w/o '.X' suffix)
         ## would be just SUBSTRING_INDEX( a.acc , '.', 1 ) AS acc_no_ver,
@@ -942,7 +779,7 @@ class DbSeqSource(Options):
         db.createIndices(names=["taxid","src_db","kind","project","cat",
             "stage","src_type","gi","acc","acc_no_ver","divid","rank"],
             table="seq_sel",
-            primary="iid")
+            primary="id")
 
         ## Proved to be essential in MySQL for efficient planning of queries
         db.ddl("analyze table seq_sel",ifDialect="mysql")
@@ -973,8 +810,8 @@ class DbSeqSource(Options):
         db.ddl("""
         DELETE
         FROM    seq_sel
-        WHERE   iid IN
-                (SELECT iid
+        WHERE   id IN
+                (SELECT id
                 FROM    seq_sel_del
                 )
         """)
@@ -992,7 +829,7 @@ class DbSeqSource(Options):
         LINES TERMINATED BY '\n'
         FROM    seq_sel
         ORDER BY taxid,
-                iid
+                id
         """)
 
         ## save all importand fields for selected seq records into a
@@ -1011,7 +848,7 @@ class DbSeqSource(Options):
                 cat     ,
                 stage   ,
                 src_type,
-                iid     ,
+                id     ,
                 seq_len ,
                 divid   ,
                 rank
@@ -1020,7 +857,7 @@ class DbSeqSource(Options):
         LINES TERMINATED BY '\n'
         FROM    seq_sel
         ORDER BY taxid,
-                iid
+                id
         """)
 
 
@@ -1138,6 +975,180 @@ class DbSeqSource(Options):
         FROM    seq_sel
         GROUP BY rank
         """)
+
+
+class TaxaLevelsDb(TaxaLevels,Options):
+    """Load our selection of taxonomic ranks into SQL database, create column and row aggregates.
+    """
+
+    def __init__(self,db,taxaTree):
+        Options.__init__(self)
+        self.taxaTree = taxaTree
+        TaxaLevels.__init__(self)
+        if self.taxaTree is not None:
+            self.setLevels(taxaTree)
+        self.db = db
+
+    def getLevelColumns(self):
+        return [ "ti_"+name for name in self.getLevelNames() ]
+
+    def loadTaxLevelsRows(self):
+        self.db.ddl("""\
+        create table taxa_level_row
+        (
+        taxid integer,
+        level tinyint,
+        partaxid integer
+        )
+        """,
+        dropList=["table taxa_level_row"])
+
+        inserter = self.db.makeBulkInserterFile(table="taxa_level_row",bufLen=500000,workDir=self.tmpDir)
+        taxaTree = self.taxaTree
+        for node in taxaTree.iterDepthTop():
+            for (level,partaxid) in self.lineageKeys(node):
+                inserter((node.id,level,partaxid))
+        inserter.flush()
+        self.db.createIndices(table="taxa_level_row",
+            names=["taxid","partaxid","level"],
+            primary="taxid,level,partaxid")
+
+    def loadTaxLevelsColumns(self):
+        taxaTree = self.taxaTree
+        ti_cols = self.getLevelColumns()
+        self.db.ddl("""\
+        create table taxa_level_col
+        (
+        taxid integer,
+        %s
+        )
+        """ % (",\n".join(["%s integer" % (col,) for col in ti_cols]),),
+        dropList=["table taxa_level_col"])
+
+        inserter = self.db.makeBulkInserterFile(table="taxa_level_col",bufLen=500000,workDir=self.tmpDir)
+        for node in taxaTree.iterDepthTop():
+            inserter([node.id]+self.lineageFixedList(node))
+        inserter.flush()
+        self.db.createIndices(table="taxa_level_col",
+            names=ti_cols,
+            primary="taxid")
+
+    def makeStatsTables(self):
+        db = self.db
+        
+        db.createTableAs("taxa_len","""
+        select taxid,sum(seq_len) as seq_len from all_src group by taxid
+        """)
+
+        db.createTableAs("taxa_level_row_len","""
+        select a.*,b.seq_len from taxa_level_row a,taxa_len b where a.taxid = b.taxid
+        """)
+
+        db.createIndices(names=["taxid","partaxid","level"],table="taxa_level_row_len")
+
+        db.executeAndPrint("""
+            select
+            level,count(*) as cnt,
+            avg(seq_len) as seq_len
+            from (
+                select level,partaxid,count(*) as cnt,sum(seq_len) as seq_len
+                from taxa_level_row_len
+                group by level,partaxid) a
+            group by level
+        """)
+
+        ti_cols = self.getLevelColumns()
+        ti_group = list(ti_cols)
+        ti_group.reverse()
+        ti_group_comma = ','.join(ti_group)
+        group_names = self.getLevelNames()
+        group_names.reverse()
+        
+        db.createTableAs("taxa_level_col_len","""
+        select a.*,b.seq_len from taxa_level_col a,taxa_len b where a.taxid = b.taxid
+        """)
+
+        db.createIndices(table="taxa_level_col_len",names=ti_cols,primary="taxid")
+
+        ## We replace NULL of taxid values with 0, so that
+        ## the MySQL OLAP modifier 'with rollup' would work correctly
+        ## (it uses NULL to mark rows with totals)
+        
+        db.createTableAs("taxa_level_col_gr","""
+        select %s,sum(seq_len) as seq_len,count(*) as taxid_cnt
+        from taxa_level_col_len a
+        group by %s
+        """ % (",".join(["COALESCE(a.%s,0) AS %s" % (ti_gr,ti_gr) for ti_gr in ti_group]) ,",".join(["a."+ti_gr for ti_gr in ti_group])))
+        
+        db.createIndices(table="taxa_level_col_gr",names=ti_cols)
+
+
+        db.createTableAs("taxa_level_col_rep_1","""
+        select %s,sum(seq_len) as seq_len,sum(taxid_cnt) as taxid_cnt
+        from taxa_level_col_gr
+        group by %s with rollup
+        """ % (ti_group_comma,ti_group_comma))
+        
+        db.ddl("""ALTER TABLE taxa_level_col_rep_1 ADD id INTEGER auto_increment  PRIMARY KEY""")
+        #db.createIndices(table="taxa_level_col_rep_1",names=ti_cols)
+
+        ## Add columns with string names for each ti_xxx column through 'left join'
+
+        from string import ascii_lowercase
+        alias_a = ascii_lowercase[0]
+        alias_joins = ascii_lowercase[1:]
+        assert len(ti_group) <= len(alias_joins)
+        joins = "\n".join([ "LEFT JOIN taxa_names %s ON %s.%s = %s.taxid" % (ali_join,alias_a,ti_col,ali_join)
+                        for (ali_join,ti_col) in zip(alias_joins,ti_group) ])
+
+        cols = ",\n".join(["%s,%s.name AS nm_%s" % (ti_col,ali_join,gr_name) for (ti_col,ali_join,gr_name) in zip(ti_group,alias_joins,group_names)])
+                    
+        db.createTableAs("taxa_level_col_rep","""
+        SELECT
+        id,
+        %s,
+        seq_len,taxid_cnt
+        FROM taxa_level_col_rep_1 %s
+        %s
+        ORDER BY id
+        """ % (cols,alias_a,joins))
+
+        db.createIndices(table="taxa_level_col_rep",names=ti_group+["id"])
+        
+        db.executeAndPrint("""
+        select ti_superkingdom,nm_superkingdom,seq_len,taxid_cnt
+        from taxa_level_col_rep
+        where ti_phylum is NULL
+        """)
+    
+        #db.execute("""
+        #select *
+        #from taxa_level_col_rep
+        #order by id
+        #into outfile 'taxa_level_col_rep.csv'
+        #fields
+        #terminated by '|'
+        #optionally enclosed by '"'
+        #""")
+
+        db.executeAndPrint("""
+        select ti_phylum,nm_phylum,ti_class,nm_class,ti_order,nm_order,seq_len,taxid_cnt
+        from taxa_level_col_rep
+        where ti_family is NULL and ti_order is not NULL and ti_class is not NULL
+        """)
+        
+        db.executeAndPrint("""
+        select ti_phylum,nm_phylum,ti_class,nm_class,ti_order,nm_order,ti_family,nm_family,seq_len,taxid_cnt
+        from taxa_level_col_rep where ti_superkingdom = 2 and ti_genus is NULL and ti_family is not NULL and
+        ti_order is not NULL and ti_class is not NULL
+        """)
+
+        db.executeAndPrint("""
+        select ti_phylum,nm_phylum,ti_class,nm_class,ti_order,nm_order,ti_family,nm_family,seq_len,taxid_cnt
+        from taxa_level_col_rep where ti_superkingdom = 2 and ti_genus is NULL and ti_family is not NULL and
+        ti_family <> 0 and ti_order is not NULL and ti_class is not NULL
+        """)
+
 
         
 refseqAccFormat = \

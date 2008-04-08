@@ -7,6 +7,7 @@ from cPickle import dump, load
 from cStringIO import StringIO
 import numpy
 import numpy.random as nrnd
+from tempfile import mkstemp
 
 from subprocess import Popen, call, PIPE
 
@@ -99,6 +100,30 @@ def varsub(template,*l,**kw):
             p.append(x)
     o.update(kw)
     return string.Template(template).substitute(*p,**o)
+
+def makeTmpFile(*l,**kw):
+    """Create and open a temporary file that will exist after this program closes it.
+    Return a tuple (file object,file name).
+    It does the same as tempfile.NamedTemporaryFile but the file is not automatically
+    deleted after being closed. Because it works through calls to mkstemp and os.fdopen,
+    the returned file object does not have a file name in its 'name' attribute."""
+    
+    opts1 = {}
+    opts1.update(kw)
+    opts1.setdefault("createParents",True)
+    if opts1.pop("createParents"):
+        try:
+            dirName = opts1["dir"]
+        except KeyError:
+            raise ValueError("makeTmpFile: 'dir' keyword must be used with 'createParents' keyword")
+        makedir(dirName)
+    l2 = []
+    for k in ("mode","bufsize"):
+        if opts1.has_key(k):
+            l2.append(opts1[k])
+            del opts1[k]
+    (fd,name) = mkstemp(*l,**opts1)
+    return (os.fdopen(fd,*l2),name)
 
 def makedir(path,dryRun=False):
     run(["mkdir","-p",path],dryRun=dryRun)
@@ -268,6 +293,8 @@ class FastaReaderSinkMem(FastaReaderSink):
         self.seq.close()
 
 
+from cStringIO import StringIO
+
 class FastaReader(object):
     def __init__(self,infile):
         self.infile = infile
@@ -307,8 +334,23 @@ class FastaReader(object):
                 return
             yield line
 
+    def seqChunks(self,chunkSize):
+        seq = StringIO()
+        for line in self.seqLines():
+            seq.write(line.rstrip("\n"))
+            if seq.tell() >= chunkSize:
+                yield seq.getvalue()
+                seq.close()
+                seq = StringIO()
+        if seq.tell() > 0:
+            yield seq.getvalue()
+        seq.close()
+
+    def seqArrays(self,chunkSize):
+        for s in self.seqChunks(chunkSize):
+            yield numpy.fromstring(s,dtype='S1')
+
     def sequence(self):
-        from cStringIO import StringIO
         seq = StringIO()
         for line in self.seqLines():
             seq.write(line.rstrip("\n"))
