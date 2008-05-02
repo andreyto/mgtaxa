@@ -1,0 +1,2 @@
+mysql --user=root --password=OrangeN0 --auto-rehash=TRUE
+

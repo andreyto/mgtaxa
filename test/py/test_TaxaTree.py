@@ -1,13 +1,33 @@
-from MGT.Taxa import *
+from MGT.TaxaTree import *
+from MGT.TaxaIO import *
 
 from MGT.Config import options
 
-taxaTree = TaxaTree(ncbiDumpFile=options.taxaNodesFile,save=False,load=False)
+store = NodeStorageNcbiDump(ncbiDumpFile=options.taxaNodesFile,ncbiNamesDumpFile=options.taxaNamesFile)
 
-for node in taxaTree.iterDepthTop():
-    print node
+taxaTree = TaxaTree(storage=store)
 
-taxaLevels = TaxaLevels(taxaTree)
+#for node in taxaTree.iterDepthTop():
+#    print node
 
-for node in taxaTree.getNodesIter():
-    print taxaLevels.lineageKeys(node), node
+taxaTree.deleteNodesIf(lambda n: n.rank == "species")
+taxaTree.reindex()
+
+
+#taxaLevels = TaxaLevels()
+#taxaLevels.setLevels(taxaTree)
+#taxaLevels.reduceNodes(taxaTree)
+
+#for node in taxaTree.getNodesIter():
+#    print node
+
+#storeOut = NodeStorageNewick(fileName="test_TaxaTree.newick",
+#    labeler=lambda n: "%s_%s_%s" % (n.name,n.rank,n.id))
+
+#storeOut = NodeStorageHypView(fileName="test_TaxaTree.hv3",
+#    labeler=lambda n: "%s_%s_%s" % (n.name,n.rank,n.id))
+
+storeOut = NodeStorageLibSea(fileName="test_TaxaTree.libsea",
+   labeler=lambda n: "%s_%s_%s" % (n.name,n.rank,n.id))
+        
+storeOut.save(taxaTree)

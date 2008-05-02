@@ -1,0 +1,26 @@
+#!/bin/sh
+
+curdir=`pwd`
+
+topdb=$curdir
+
+dbdir=$topdb/taxonomy
+dldir=$topdb/taxonomy.new
+bakdir=$topdb/taxonomy.bak
+
+mkdir -p $dldir
+
+ftpdir=ftp://ftp.ncbi.nlm.nih.gov/pub/taxonomy
+
+cd $dldir && \
+wget -v "$ftpdir/taxdump.tar.gz" && \
+tar -zxf taxdump.tar.gz && \
+rm taxdump.tar.gz && \
+wget -v "$ftpdir/gi_taxid_nucl.dmp.gz" && \
+wget -v "$ftpdir/taxcat.tar.gz" && \
+tar -zxf taxcat.tar.gz && \
+rm taxcat.tar.gz && \
+cd $curdir && \
+mv $dbdir $bakdir && \
+mv $dldir $dbdir
+

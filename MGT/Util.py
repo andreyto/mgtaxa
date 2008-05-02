@@ -8,6 +8,7 @@ from cStringIO import StringIO
 import numpy
 import numpy.random as nrnd
 from tempfile import mkstemp
+from textwrap import dedent
 
 from subprocess import Popen, call, PIPE
 
@@ -34,6 +35,10 @@ def loadObj(fileName):
     ret = load(inp)
     inp.close()
     return ret
+
+def allChr():
+    """Return a string with all characters in C local [0-255]"""
+    return ''.join([chr(i) for i in range(256)])
 
 class objectDiskCacher:
 
@@ -132,6 +137,12 @@ def makedir(path,dryRun=False):
 def rmdir(path,dryRun=False):
     run(["rm","-rf",path],dryRun=dryRun)
 
+def rmf(path,dryRun=False):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
 def chmod(path,mode,opts='',dryRun=False):
     if isinstance(path,basestring):
         path = [path]
@@ -152,7 +163,7 @@ def openCompressed(filename,mode,**kw):
     if filename.endswith('.gz'):
         return openGzip(filename,mode,**kw)
     else:
-        return open(filename,mode,**kw)
+        return open(filename,mode,2**20,**kw)
 
 def openGzip(filename,mode,compresslevel=6):
     compresslevel = int(compresslevel)
@@ -163,6 +174,11 @@ def openGzip(filename,mode,compresslevel=6):
     else:
         raise ValueError("'openGzip()' - Unsupported 'mode': " + mode)
 
+
+def strAttributes(o,exclude=tuple(),delim=' | '):
+    """Return a string with all attributes names and value for an object 'o'."""
+    return delim.join([ name + ' : ' + str(val) for (name,val) in o.__dict__.items()
+        if not name in exclude])
 
 class Struct:
     """Class to create 'struct's on the fly.
@@ -319,6 +335,10 @@ class FastaReader(object):
     
     def header(self):
         return self.hdr
+
+    def getNCBI_Id(self):
+        """Assume that header starts with '>gi|1234567|' and return the id from second field."""
+        return self.hdr.split('|',2)[1]
     
     def seqLines(self):
         infile = self.infile

@@ -5,16 +5,17 @@ import sys, os
 from MGT.CollectTaxa import *
 #from MGT.Svm import *
 
-dbSql = createDbSQL()
+dbSql = createDbSql()
 #
 db = TaxaCollector(dbSql=dbSql)
+#db.tmp_loadSeqHdr()
 #db.rebuild()
 #db.delDuplicateGiFromSeq()
-db.selectSeqIds()
+#db.selectSeqIds()
 #db.loadGiTaxNumpy()
 #db.loadSeq()
 #db.loadTaxNames()
-#db.loadTaxLevels()
+db.loadTaxLevels()
 #db.loadTaxNodes()
 #db.loadTaxCategories()
 #db.loadRefseqAcc()
@@ -26,6 +27,8 @@ db.selectSeqIds()
 #db.mergeSelWithSeq(skipSeq=False)
 #db.loadGiTaxSql()
 #db.loadGiTaxNumpy()
+#db.loadSeqToHdf()
+#db.indexHdfSeq()
 sys.exit(0)
 
 nrnd.seed(1)

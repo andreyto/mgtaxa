@@ -31,11 +31,24 @@ class SqlWatch:
             print "SQL finished in %.3f sec" % (finish-self.start)
             self.start = finish
 
-class DbSQL:
+class DbSql(Options):
     
     def __init__(self):
         atexit.register(dbClose, dbObj=self)
         self.debug = 1
+
+        # This will be lazy constructed because the needed DBAPI module is
+        # only available after descendant class __init__ is called
+        
+        self.numpyTypeMap = None
+
+    def dbapi(self):
+        return self.dbmod
+
+    def getNumpyTypeMap(self):
+        if self.numpyTypeMap is None:
+            self.numpyTypeMap = SqlNumpyTypeMap(self.dbapi())
+        return self.numpyTypeMap
 
     def ddlIgnoreErr(self,*l,**kw):
         curs = self.cursor()
@@ -180,19 +193,24 @@ class DbSQL:
                 curs.close()
 
 
-    def makeBulkInserterFile(self,*l,**kw):
-        return BulkInserterFile(self,*l,**kw)
+    def makeBulkInserterFile(self,**kw):
+        k = {}
+        k.update(kw)
+        k.setdefault("tmpDir",self.tmpDir)
+        return BulkInserterFile(self,**k)
    
     def makeBulkInserter(self,*l,**kw):
         return BulkInserter(self,*l,**kw)
 
+    def makeBulkReader(self,*l,**kw):
+        return BulkReader(db=self,*l,**kw)
 
-class DbSQLLite(DbSQL):
+class DbSqlLite(DbSql):
     
     def __init__(self,dbpath,strType=str,dryRun=False):
         from pysqlite2 import dbapi2 as dbmod
         self.dbmod = dbmod
-        DbSQL.__init__(self)
+        DbSql.__init__(self)
         self.strType = strType
         self.dbpath = dbpath
         self.dryRun = dryRun
@@ -206,12 +224,13 @@ class DbSQLLite(DbSQL):
             self.con.close()
 
 
-class DbSQLMy(DbSQL):
+class DbSqlMy(DbSql):
     
     def __init__(self,dryRun=False):
         import MySQLdb as dbmod
+        import MySQLdb.cursors
         self.dbmod = dbmod
-        DbSQL.__init__(self)        
+        DbSql.__init__(self)
         #self.dbmod.server_init(("phyla","--defaults-file=my.cnf"),('server',))
         self.con = self.dbmod.connect(unix_socket="/tmp/atovtchi.mysql.sock",
                                       host="localhost",
@@ -219,8 +238,15 @@ class DbSQLMy(DbSQL):
                                       user="root",
                                       passwd="OrangeN0",
                                       read_default_file="my.cnf",
-                                      read_default_group="client")
+                                      read_default_group="client",
+                                      ## SSCursor fetches results row-by-row from the server,
+                                      ## although I did not see any difference in overall speed
+                                      cursorclass=MySQLdb.cursors.SSCursor)
 
+        ## TODO: handle situation due to long periods of computations w/o SQL calls:
+        ## Exception _mysql_exceptions.OperationalError: (2006, 'MySQL server has gone away')
+        ## or
+        ## _mysql_exceptions.OperationalError: (2013, 'Lost connection to MySQL server during query')
 
     def close(self):
         self.commit()
@@ -252,8 +278,9 @@ class DbSQLMy(DbSQL):
     def makeBulkInserterFile(self,*l,**kw):
         return BulkInserterFileMy(self,*l,**kw)
 
-    def createIndices(self,table,names=None,primary=None,compounds=None):
-        """This is a specialization for MySQL, which supports ALTER TABLE ... ADD INDEX ... ADD INDEX"""
+    def createIndices(self,table,names=None,primary=None,compounds=None,attrib={}):
+        """This is a specialization for MySQL, which supports ALTER TABLE ... ADD INDEX ... ADD INDEX.
+        @param attrib - optional index attributes. Currently supported is 'unique', e.g. attrib={'id':{'unique':True}}"""
         dropNames = []
         sql = "ALTER TABLE %s " % (table,)
         comma = ""
@@ -264,7 +291,13 @@ class DbSQLMy(DbSQL):
             addindex = []
             for name in names:
                 dropNames.append(name)
-                addindex.append("ADD INDEX ix_%s_%s (%s)" % (table,name,name))
+                unique = ""
+                try:
+                    if attrib[name]["unique"]:
+                        unique = "UNIQUE"
+                except KeyError:
+                        pass
+                addindex.append("ADD %s INDEX ix_%s_%s (%s)" % (unique,table,name,name))
             if len(addindex) > 0:
                 sql = sql + "%s\n" % (comma,)+ ",\n".join(addindex)
                 comma = ","
@@ -272,7 +305,13 @@ class DbSQLMy(DbSQL):
             addindex = []
             for name in compounds.keys():
                 dropNames.append(name)
-                addindex.append("ADD INDEX ix_%s_%s (%s)" % (table,name,compounds[name]))
+                unique = ""
+                try:
+                    if attrib[name]["unique"]:
+                        unique = "UNIQUE"
+                except KeyError:
+                        pass
+                addindex.append("ADD %s INDEX ix_%s_%s (%s)" % (unique,table,name,compounds[name]))
             if len(addindex) > 0:
                 sql = sql + "%s\n" % (comma,) + ",\n".join(addindex)
                 comma = ","
@@ -280,8 +319,19 @@ class DbSQLMy(DbSQL):
             self.dropIndex(name,table)
         self.ddl(sql)
 
+    def exportToFile(self,sql1,sql2,fileName,fieldsTerm='|',linesTerm=r'\n'):
+        rmf(fileName)
+        self.ddl("""
+        %s
+        INTO    OUTFILE '%s'
+        FIELDS TERMINATED BY '%s'
+        LINES TERMINATED BY '%s'
+        %s
+        """ % (sql1,fileName,fieldsTerm,linesTerm,sql2))
+        
 
-class DbSQLMonet(DbSQL):
+
+class DbSqlMonet(DbSql):
     
 #sql>CREATE USER "root" WITH PASSWORD 'OrangeN0' NAME 'Main User' SCHEMA "sys";
 #sql>CREATE SCHEMA "mgtaxa" AUTHORIZATION "root";
@@ -290,7 +340,7 @@ class DbSQLMonet(DbSQL):
     def __init__(self,dryRun=False):
         import MonetSQLdb as dbmod
         self.dbmod = dbmod
-        DbSQL.__init__(self)        
+        DbSql.__init__(self)
         #self.dbmod.server_init(("phyla","--defaults-file=my.cnf"),('server',))
         self.con = self.dbmod.connect(host = 'localhost',
             dbname = 'mgtaxa')#,
@@ -338,14 +388,12 @@ class DbSQLMonet(DbSQL):
     def createIndices(self,names,table):
         pass
 
-def createDbSQL():
-    #db = DbSQLLite("/export/atovtchi/test_seq.db")
-    #db = DbSQLMonet()
-    db = DbSQLMy()
+def createDbSql():
+    #db = DbSqlLite("/export/atovtchi/test_seq.db")
+    #db = DbSqlMonet()
+    db = DbSqlMy()
     return db
 
-
-                    
 class IntIdGenerator(object):
     def __init__(self,start=1):
         self.n = start - 1
@@ -483,3 +531,107 @@ class BulkInserterFileMy(BulkInserterFile):
             self.buf.close()
             self.buf = StringIO()
 
+
+class SqlNumpyTypeMap:
+    """Map between SQL data types and NumPy data types.
+    Precision in digits vs number of bytes for integer NUMBER types are taken
+    from MySQL reference (but should be universal)
+    http://dev.mysql.com/doc/refman/5.0/en/numeric-types.html
+    and from SQL code:
+    db.ddl("create table tmp_types (f_bool bool, f_tinyint tinyint, f_smallint smallint, f_med mediumint, f_int int,"+
+    " f_big bigint, f_char char(5), f_float float)",dropList=["table tmp_types"])
+    curs = db.execute("select * from tmp_types limit 1")
+    print curs.description
+    """
+    
+    intDigitsBytes = numpy.array([('bool',1,1,1), ('tinyint',4,1,1), ('smallint',6,2,2),
+                                  ('mediumint',9,3,4), ('int',11,4,4), ('bigint',20,8,8)],
+                    dtype=[('typeSql', 'S15'), ('digits', 'i4'), ('bytesSql', 'i4'), ('bytesNpy', 'i4')])
+
+    def __init__(self,dbapi):
+        """@param dbapi - Python DBAPI module instance."""
+        self.dbapi = dbapi
+
+    def close(self):
+        self.dbapi = None
+
+    def digitsToBytes(self,dig):
+        return self.intDigitsBytes['bytesNpy'][numpy.digitize([dig-0.0001],self.intDigitsBytes['digits'])[0]]
+    
+    def dtype(self,descr):
+        """Take cursor.description object and return NumPy dtype suitable for record array construction.
+        dtype is returned in a 'list of tuples' representation e.g. [('id','int8'),('taxid','int4')]
+        SQL is case insensitive, so we convert field names to lower case when constructing dtype.
+        @bug 'smallint' in MySQL DBAPI has typecode 2, which is not recognized as NUMBER by that DBAPI.
+        You should cast 'smallint' fields to some other integer type in your SQL SELECT statement."""
+
+        ## mnemonic names for indexes into cursor.description list
+        
+        I_NAME  = 0
+        I_TYPE  = 1
+        I_SIZE  = 3
+        I_PREC  = 4
+        I_SCALE = 5
+
+        dbapi = self.dbapi
+        dt = []
+        for fld in descr:
+            npy_t = None
+            fld_t = fld[I_TYPE]
+            if fld_t == dbapi.NUMBER:
+                if fld[I_SCALE] > 0:
+                    npy_t = 'f8'
+                else:
+                    npy_t = 'i%s' % (self.digitsToBytes(fld[I_PREC]),)
+            elif fld_t == dbapi.STRING:
+                npy_t = 'S%s' % (fld[I_SIZE],)
+            elif fld_t == dbapi.DATE or fld_t == dbapi.DATETIME:
+                ## DATE is string for numpy
+                npy_t = 'S%s' % (fld[I_SIZE],)
+            else:
+                raise TypeError("Unsuported SQL DBAPI typecode: %s. Field is %s" % (fld_t,fld))
+            dt.append((fld[I_NAME].lower(),npy_t))
+        return dt
+
+class BulkReader:
+    """Class that executes SQL statement and provides an iterator to read results back in chunks as NumPy record arrays."""
+
+    def __init__(self,db,sql,bufLen):
+        self.db = db
+        self.bufLen = bufLen
+        self.sql = sql
+        curs = db.execute(sql=sql)
+        self.curs = curs
+        curs.arraysize = bufLen
+        self.dt = db.getNumpyTypeMap().dtype(curs.description)
+        #print "descr = ", curs.description
+        #print "dt = ", self.dt
+        self.nrows_fetched = 0
+
+    def nrows(self):
+        """Return total number of rows in the result, or None if it cannot be determined.
+        It looks like not every DBAPI module (or SQL backend) is capable of returning a rowcount."""
+        rowcount = self.curs.rowcount
+        if rowcount is None or rowcount < 0:
+            return None
+        else:
+            return rowcount
+
+    def nrowsFetched(self):
+        return self.nrows_fetched
+
+    def chunks(self):
+        """Iterate through result rows in chunks (as numpy arrays), each of length limited by 'bufLen' argument supplied to the __init__()."""
+        curs = self.curs
+        dt = self.dt
+        while True:
+            rows = curs.fetchmany()
+            if not rows:
+                break
+            #print rows
+            self.nrows_fetched += len(rows)
+            yield numpy.rec.fromrecords(list(rows),dtype=dt)
+
+    def close(self):
+        self.curs.close()
+        self.db = None

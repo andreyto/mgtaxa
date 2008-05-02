@@ -1,0 +1,2 @@
+$INSTMACH/bin/mysqld_safe &
+#$INSTMACH/bin/mysqld_safe --defaults-file=my.cnf &

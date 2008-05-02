@@ -6,12 +6,12 @@ from MGT.Common import *
 from MGT.Taxa import *
 from MGT.Sql import *
 from MGT.BlastDb import BlastDb
-
+from SeqDb import pt, HdfSeqLoader, HdfSeqReaderSql
 
 class TaxaCollector(Options):
     """Collects data about taxonomically known sequence for training the classifier.
     Process the NCBI BLAST DB files by calling fastacmd.
-    Aggregate, prioritize and partially removes redundancy along the taxonomy ids."""
+    Aggregate, prioritize and partially remove redundancy along the taxonomy ids."""
     
     def __init__(self,dbSql):
         
@@ -19,94 +19,9 @@ class TaxaCollector(Options):
         self.dbSql = dbSql
         self.blastDb = BlastDb()
         self.taxaTree = None
+        self.taxaLevels = None
 
         
-    def mergeSelWithSeq(self,skipSeq=False):
-        #from itertool import izip
-        outFasta = gzip.open(self.selFastaFile,'w',compresslevel=4)
-        inpDump = open(self.selDumpFile,'r')
-        selGiFile = os.path.abspath(self.selGiFile)
-        fldsDump = "gi,taxid,src_db,kind,project,cat,stage,src_type,id,seq_len,divid,rank".split(',')
-        pipe = Popen(("fastacmd -i %s -d %s" % (selGiFile,self.srcDbNameAlias)).split(), 
-                     cwd=self.blastDataDir, env=os.environ, bufsize=2**16, stdout=PIPE, close_fds=True).stdout
-        #inpFasta = readFastaRecords(pipe,readSeq=True)
-        FGI_SKIP  = 0x01
-        FGI_WRITE = 0x02
-        FGI_MISM  = 0x04
-        giSeen = {}
-        iRec = 0
-        skip = True
-        mismatchRun = 0 # how many gi mismatches in a row
-        for line in pipe:
-            try:
-                if line.startswith(">"):
-                    skip = False
-                    #header line can be:
-                    #>gi|23455713|ref|NC_004301.1| Enterobacteria phage FI, complete genome >gi|15183|emb|X07489.1| Bacteriophage SP genomic RNA
-                    headers = line.split('>')
-                    gi2 = -1
-                    if len(headers) > 2:
-                        hdr2 = headers[2]
-                        if hdr2.startswith('gi|'):
-                            gi2 = int(hdr2.split('|',2)[1])
-                            if not giSeen.has_key(gi2):
-                                giSeen[gi2] = 0
-                    (gifld,gi,accfld,acc,txt) = line[1:].split('|',4)
-                    assert gifld == 'gi'
-                    gi = int(gi)
-                    valsDump = inpDump.readline().rstrip('\n').split(' ') #empty string fields will be ok
-                    giDump = int(valsDump[0])
-                    taxidDump = int(valsDump[1])
-                    try:
-                        lineage = self.taxaTree.getNode(taxidDump).lineageRanksStr()
-                    except KeyError:
-                        lineage = 'NULL'
-                        print "Warning: Lineage not found for taxid %s" % (taxidDump,)
-                    if giDump == gi:
-                        line = ">gi|%s|%s|%s|" % (gi,accfld,acc) + \
-                            ''.join(["%s:%s " % (fld,val) for (fld,val) in zip(fldsDump[1:],valsDump[1:])]) + \
-                            "lineage:%s " % (lineage,) + \
-                            txt
-                        if gi2 > 0:
-                            giSeen[gi2] |= FGI_WRITE
-                        mismatchRun = 0
-                    elif giDump == gi2:
-                        giSeen[giDump] |= FGI_SKIP
-                        skip = True
-                        mismatchRun = 0
-                    else:
-                        if mismatchRun >= 10:
-                            raise ValueError("Mismatch between FASTA and SQl DUMP input streams:" + \
-                                "fastaTitle = %s valsDump = %s" % (line,' '.join(valsDump)))
-                        else:
-                            if not giSeen.has_key(giDump):
-                                giSeen[giDump] = 0
-                            giSeen[giDump] |= (FGI_SKIP | FGI_MISM)
-                            skip = True
-                            mismatchRun += 1
-                            print "GI mismatch for ", giDump
-                    if iRec % 10000 == 0:
-                        print "Done %s records" % (iRec,)
-                    iRec += 1
-                elif skipSeq:
-                    skip = True
-                if not skip:
-                    outFasta.write(line)
-            except:
-                print "Exception with input line: ", line
-                pipe.close()
-                raise
-        pipe.close()
-        inpDump.close()
-        outFasta.close()
-        print 'giSeen = \n', sorted(giSeen.items())
-        print 'len(giSeen) = ',len(giSeen)
-        for (gi,val) in sorted(giSeen.items()):
-            if val & FGI_SKIP and not val & FGI_WRITE:
-                print "%s never written %s" % (gi,val)
-            if val & FGI_MISM:
-                print "%s mistamtch %s" % (gi,val)
-
 
     def rebuild(self):
         #self.loadGiTaxNumpy()
@@ -116,7 +31,11 @@ class TaxaCollector(Options):
         #self.loadTaxNames()
         #self.loadSeq()
         #self.selectTaxSource()
-        self.loadTaxLevels()
+        #self.loadTaxLevels()
+        #self.selectSeqIds()
+        #self.loadSeqToHdf()
+        #self.indexHdfSeq()
+        pass
 
     def loadSeq(self):
         db = self.dbSql
@@ -137,27 +56,33 @@ class TaxaCollector(Options):
         self.idGenSeq = IntIdGenerator()
         inserterSeq        = db.makeBulkInserterFile(table='seq',bufLen=500000,workDir=self.tmpDir)
         inserterSeqMultiId = db.makeBulkInserterFile(table='seq_multi_id',bufLen=500000,workDir=self.tmpDir)
+        inserterSeqHdr = db.makeBulkInserterFile(table='seq_hdr',bufLen=500000,workDir=self.tmpDir)
         blastDbs = self.blastDb.getDbs()
-        self.loadSeqNCBI(blastDbs[0],inserterSeq,inserterSeqMultiId)
-        self.loadSeqNCBI(blastDbs[1],inserterSeq,inserterSeqMultiId)
-        self.loadSeqNCBI(blastDbs[2],inserterSeq,inserterSeqMultiId)
-        self.loadSeqNCBI(blastDbs[3],inserterSeq,inserterSeqMultiId)
-        self.loadSeqNCBI(blastDbs[4],inserterSeq,inserterSeqMultiId)
+        self.loadSeqNCBI(blastDbs[0],inserterSeq,inserterSeqMultiId,inserterSeqHdr)
+        self.loadSeqNCBI(blastDbs[1],inserterSeq,inserterSeqMultiId,inserterSeqHdr)
+        self.loadSeqNCBI(blastDbs[2],inserterSeq,inserterSeqMultiId,inserterSeqHdr)
+        self.loadSeqNCBI(blastDbs[3],inserterSeq,inserterSeqMultiId,inserterSeqHdr)
+        self.loadSeqNCBI(blastDbs[4],inserterSeq,inserterSeqMultiId,inserterSeqHdr)
         inserterSeq.flush()
         inserterSeqMultiId.flush()
-        db.ddl("analyze table seq",ifDialect="mysql")
+        inserterSeqHdr.flush()
         db.createIndices(table="seq",
         names=["gi","taxid","src_db","kind","project"],
         primary="id",
         compounds={"src":"taxid,src_db,kind,project"})
-        db.ddl("analyze table seq_multi_id",ifDialect="mysql")
+        db.ddl("analyze table seq",ifDialect="mysql")
         db.createIndices(table="seq_multi_id",
         names=["gi","acc_db"],
         primary="id_seq")
-        
+        db.ddl("analyze table seq_multi_id",ifDialect="mysql")
+        db.createIndices(table="seq_hdr",
+        names=["gi"],
+        primary="id_seq")
+        db.ddl("analyze table seq_hdr",ifDialect="mysql")
         self.clearGiTax()
         self.delDuplicateGiFromSeq()
         db.ddl("analyze table seq",ifDialect="mysql")
+        db.ddl("analyze table seq_hdr",ifDialect="mysql")
 
     def clearGiTax(self):
         self.gi2taxa = None
@@ -176,11 +101,21 @@ class TaxaCollector(Options):
         seq_len bigint,
         acc_db char(3),
         acc char(18),
-        kind char(2),
-        seq_hdr char(%s)
+        kind char(2)
+        )
+        """,
+        dropList=["table seq"])
+
+        self.dbSql.ddl("""
+        create table seq_hdr
+        (
+        id_seq integer,
+        gi bigint,
+        hdr varchar(%i)
         )
         """ % (self.fastaHdrSqlLen,),
-        dropList=["table seq"])
+        dropList=["table seq_hdr"])
+
 
         ## If we get a header record with two gi's like:
         ## >gi|23455713|ref|NC_004301.1| Enterobacteria phage FI, complete genome >gi|15183|emb|X07489.1| Bacteriophage SP genomic RNA
@@ -198,7 +133,7 @@ class TaxaCollector(Options):
         dropList=["table seq_multi_id"])
         
         
-    def loadSeqNCBI(self,db,inserterSeq,inserterSeqMultiId):
+    def loadSeqNCBI(self,db,inserterSeq,inserterSeqMultiId,inserterSeqHdr):
         print "Processing BLAST DB " + db.db
         inp = self.blastDb.fastaReader(dbName=db.db,defLineTargetOnly=False)
         #curs = self.dbSql.cursor()
@@ -244,15 +179,52 @@ class TaxaCollector(Options):
             if acc_sfx[:4].isalpha() and acc_sfx[5].isdigit():
                 project = acc_sfx[:4]
             seqLen = rec.seqLen()
-            values = (idSeq,gi,taxid,db.id,project,seqLen,acc_db,acc,kind,title[:self.fastaHdrSqlLen])
+            values = (idSeq,gi,taxid,db.id,project,seqLen,acc_db,acc,kind)
             #values = [ str(x) for x in values ]
             inserterSeq(values)
+            values = (idSeq,gi,title[:self.fastaHdrSqlLen])
+            inserterSeqHdr(values)
             if iRec % 50000 == 0:
                 print db.db, title, taxid, iRec, seqLen
                 #if iRec >= 500000:
                 #    break
             iRec += 1
         inp.close()
+
+    def tmp_loadSeqHdr(self):
+        idGenSeq = IntIdGenerator()
+        db = self.dbSql
+        db.ddl("""
+        create table seq_hdr
+        (
+        id_seq integer,
+        gi bigint,
+        hdr varchar(%i)
+        )
+        """ % (self.fastaHdrSqlLen,),
+        dropList=["table seq_hdr"])
+        reCutLen = re.compile(r"(.*)\Wlen:[0-9]+")
+        inserterSeqHdr = db.makeBulkInserterFile(table='seq_hdr',bufLen=500000,workDir=self.tmpDir)
+        inp = open("all.hdr",'r')
+        for rec in inp:
+            idSeq = idGenSeq()
+            title = reCutLen.search(rec[1:-1]).group(1) #remove '>' and '\n', then cut the " len:0000000" suffix
+            (gifld,gi,txt) = title.split('|',2)
+            assert gifld == 'gi'
+            gi = int(gi)
+            values = (idSeq,gi,title)
+            inserterSeqHdr(values)
+        inserterSeqHdr.flush()
+        db.createIndices(table="seq_hdr",
+        names=["gi"],
+        primary="id_seq")
+        db.ddl("analyze table seq_hdr",ifDialect="mysql")
+
+    def createFullTextIndexSeqHeader(self):
+        """Build a full text index for sequence FASTA hdeaders in 'seq_hdr' table (currently implemented only for MySQL back-end).
+        Warning: it took 1 hr for 28M records."""
+        db.ddl("alter table seq_hdr add fulltext index hdr(hdr)",ifDialect="mysql",dropList=["index hdr on seq_hdr"])
+        
 
     def loadRefseqAcc(self):
         self.dbSql.ddl("""\
@@ -380,18 +352,25 @@ class TaxaCollector(Options):
         self.dbSql.executeAndAssertEmpty("select taxid from taxa_node where taxid not in (select taxid from taxa_names)")
 
     def loadTaxLevels(self):
-        self.loadTaxNodesMem()
-        self.taxaLevels = TaxaLevelsDb(self.dbSql,self.taxaTree)
+        self.loadTaxLevelsMem(withTaxTree=True)
         self.taxaLevels.loadTaxLevelsRows()
         self.taxaLevels.loadTaxLevelsColumns()
         self.taxaLevels.makeStatsTables()
         
+    def loadTaxLevelsMem(self,withTaxTree=False):
+        if self.taxaLevels is None:
+            if withTaxTree:
+                self.loadTaxNodesMem()
+            self.taxaLevels = TaxaLevelsDb(self.dbSql,self.taxaTree)
+        
     def loadTaxNodesMem(self):
         if self.taxaTree is None:
-            self.taxaTree = TaxaTree(ncbiDumpFile=self.taxaNodesFile)
+            self.taxaTree = \
+                TaxaTree(NodeStorageNcbiDump(ncbiDumpFile=self.taxaNodesFile,
+                                             ncbiNamesDumpFile=self.taxaNamesFile))
         #self.taxaTree.write(sys.stdout)
 
-        
+       
     def loadGiTaxSql(self):
         self.dbSql.dropTable("gi_taxa")
         self.dbSql.execute(
@@ -486,8 +465,17 @@ class TaxaCollector(Options):
         db.ddl("""
             delete from seq where id in (select id from tmp_id_gi1)
         """)
+        db.ddl("""
+            delete from seq_hdr where id_seq in (select id from tmp_id_gi1)
+        """)
         db.dropTables(("tmp_gi2","tmp_id_gi2","tmp_id_gi1"))
-        
+
+        db.createIndices(table="seq",
+                         names=["gi"],
+                         attrib={"gi":{"unique":True}})
+        db.createIndices(table="seq_hdr",
+                         names=["gi"],
+                         attrib={"gi":{"unique":True}})
 
 
     def selectTaxSource(self):
@@ -725,7 +713,7 @@ class TaxaCollector(Options):
     #def selectTaxSet(self):
 
         #db = self.dbSql
-        
+        ## We exclude records that we do not need here.
         db.createTableAs("all_src","""
         (SELECT a.*            ,
                         b.cat  ,
@@ -736,36 +724,43 @@ class TaxaCollector(Options):
                         ON      a.taxid = b.taxid
                         LEFT JOIN taxa_node c
                         ON      a.taxid = c.taxid
+                WHERE   not (
+                    a.taxid IS NULL
+                    OR a.taxid = 0
+                    OR c.divid IS NULL
+                    OR b.cat   IS NULL
+                    OR c.divid IN (7,8,11)
+                    )
         )
         """)
+
+        db.ddl("ANALYZE TABLE all_src",ifDialect="mysql")
 
         db.createIndices(names=["taxid","src_db","kind","project","cat","divid","rank"],
             table="all_src",
             primary="id",
             compounds={"src":"taxid,src_db,kind,project"})
+        
+        db.ddl("ANALYZE TABLE all_src",ifDialect="mysql")
+
+        db.createTableAs("taxa_seq_len","""
+        select taxid,sum(seq_len) as seq_len from all_src group by taxid
+        """)
+        db.createIndices(primary="taxid",table="taxa_seq_len")
+        db.ddl("ANALYZE TABLE taxa_seq_len",ifDialect="mysql")
+
+
 
     def selectSeqIds(self):
 
         db = self.dbSql
 
-        ## in MySQL computation of acc_no_ver (ACC w/o '.X' suffix)
-        ## would be just SUBSTRING_INDEX( a.acc , '.', 1 ) AS acc_no_ver,
-        ## but we use SQL standard conforming expression
-        
+        self.loadTaxLevelsMem()
+
         db.createTableAs("seq_sel","""
-        (SELECT a.*                                                    ,
-                        b.cat                                          ,
-                        b.stage                                        ,
-                        b.src_type                                     ,
-                        SUBSTRING(a.acc FROM 1 FOR
-                        CASE
-                           WHEN POSITION('.' IN a.acc) <> 0
-                           THEN POSITION('.' IN a.acc) - 1
-                           ELSE LENGTH(a.acc)
-                        END)
-                        AS acc_no_ver                                  ,
-                        b.divid                                        ,
-                        b.rank
+        (SELECT         a.gi                                           ,
+                        a.taxid                                        ,
+                        b.id as src_id
                 FROM    seq a,
                         all_src b
                 WHERE   a.taxid   = b.taxid
@@ -775,91 +770,107 @@ class TaxaCollector(Options):
                     AND a.taxid  <> 0
         )
         """)
-        
-        db.createIndices(names=["taxid","src_db","kind","project","cat",
-            "stage","src_type","gi","acc","acc_no_ver","divid","rank"],
-            table="seq_sel",
-            primary="id")
 
         ## Proved to be essential in MySQL for efficient planning of queries
-        db.ddl("analyze table seq_sel",ifDialect="mysql")
-
-        ## Backup all records from seq_sel that are to be discarded in case we
-        ## want to analyze them later
-        
-        db.ddl("""
-        CREATE TABLE seq_sel_del (LIKE seq_sel)
-        """,
-        dropList=["table seq_sel_del"])
-
-        db.ddl("ALTER TABLE seq_sel_del DISABLE KEYS",ifDialect="mysql")
-        
-        db.ddl("""
-        INSERT
-        INTO    seq_sel_del
-        SELECT  *
-        FROM    seq_sel
-        WHERE   taxid IS NULL
-            OR divid IS NULL
-            OR cat   IS NULL
-            OR divid IN (7,8,11)
-        """)
-        
-        db.ddl("ALTER TABLE seq_sel_del ENABLE KEYS",ifDialect="mysql")
-        
-        db.ddl("""
-        DELETE
-        FROM    seq_sel
-        WHERE   id IN
-                (SELECT id
-                FROM    seq_sel_del
-                )
-        """)
-
         db.ddl("ANALYZE TABLE seq_sel",ifDialect="mysql")
 
-        return
+        db.createIndices(names=["taxid","src_id"],
+            table="seq_sel",
+            primary="gi")
+
+        db.ddl("ANALYZE TABLE seq_sel",ifDialect="mysql")
+        
+        ### in MySQL computation of acc_no_ver (ACC w/o '.X' suffix)
+        ### would be just SUBSTRING_INDEX( a.acc , '.', 1 ) AS acc_no_ver,
+        ### but we use SQL standard conforming expression
+        
+        #db.createTableAs("seq_sel","""
+        #(SELECT a.*                                                    ,
+                        #b.cat                                          ,
+                        #b.stage                                        ,
+                        #b.src_type                                     ,
+                        #SUBSTRING(a.acc FROM 1 FOR
+                        #CASE
+                           #WHEN POSITION('.' IN a.acc) <> 0
+                           #THEN POSITION('.' IN a.acc) - 1
+                           #ELSE LENGTH(a.acc)
+                        #END)
+                        #AS acc_no_ver                                  ,
+                        #b.divid                                        ,
+                        #b.rank
+                #FROM    seq a,
+                        #all_src b
+                #WHERE   a.taxid   = b.taxid
+                    #AND a.src_db  = b.src_db
+                    #AND a.kind    = b.kind
+                    #AND a.project = b.project
+                    #AND a.taxid  <> 0
+        #)
+        #""")
+        
+        #db.createIndices(names=["taxid","src_db","kind","project","cat",
+            #"stage","src_type","gi","acc","acc_no_ver","divid","rank"],
+            #table="seq_sel",
+            #primary="id")
+
+        levelsComma = self.taxaLevels.getLevelColumnsComma(alias='b',order='descend')
 
         ## save gis only into a file to be used as gi list for NCBI alias db
-        
-        db.ddl("""
-        SELECT  gi
-        INTO    OUTFILE '/home/atovtchi/scratch/mgtdata/phyla_sel.gi'
-        FIELDS TERMINATED BY ' '
-        LINES TERMINATED BY '\n'
-        FROM    seq_sel
-        ORDER BY taxid,
-                id
-        """)
+        db.exportToFile(\
+        """SELECT  a.gi""",
+        """FROM    seq_sel a, taxa_level_col b
+        WHERE a.taxid = b.taxid
+        ORDER BY %s,a.taxid,a.gi
+        """ % (levelsComma,),
+        fileName=self.collectTaxaGiFile,fieldsTerm=' ',linesTerm=r'\n')
 
-        ## save all importand fields for selected seq records into a
-        ## flat file to be merged with
-        ## fasta sequence data extracted from blast databases
-        ## through just created gi list
-        ## the order must match the preceding 'select' for gis
-        ## Full csv format will have something like OPTIONALLY ENCLOSED BY '"'
+        ### save all important fields for selected seq records into a
+        ### flat file to be merged with
+        ### fasta sequence data extracted from blast databases
+        ### through just created gi list
+        ### the order must match the preceding 'select' for gis
+        ### Full csv format will have something like OPTIONALLY ENCLOSED BY '"'
 
-        db.ddl("""
-        SELECT  gi      ,
-                taxid   ,
-                src_db  ,
-                kind    ,
-                project ,
-                cat     ,
-                stage   ,
-                src_type,
-                id     ,
-                seq_len ,
-                divid   ,
-                rank
-        INTO    OUTFILE '/home/atovtchi/scratch/mgtdata/phyla_sel.csv'
-        FIELDS TERMINATED BY ' '
-        LINES TERMINATED BY '\n'
-        FROM    seq_sel
-        ORDER BY taxid,
-                id
-        """)
+        #db.ddl("""
+        #SELECT  gi      ,
+                #taxid   ,
+                #src_db  ,
+                #kind    ,
+                #project ,
+                #cat     ,
+                #stage   ,
+                #src_type,
+                #id     ,
+                #seq_len ,
+                #divid   ,
+                #rank
+        #INTO    OUTFILE '/home/atovtchi/scratch/mgtdata/phyla_sel.csv'
+        #FIELDS TERMINATED BY ' '
+        #LINES TERMINATED BY '\n'
+        #FROM    seq_sel
+        #ORDER BY taxid,
+                #id
+        #""")
 
+
+    def loadSeqToHdf(self):
+        """Load collected taxonomically characterised sequence into HDF dataset."""
+        ## CAUTION! mode="w" trancates the HDF file if it already exists.
+        ## "a" opens file for writing w/o destroying existing data,
+        ## "r+" is the same as "a" but file must exist
+        hdfFile = pt.openFile(self.hdfCollTaxaFile,mode="a")
+        #hdfLoader = HdfSeqLoader(hdfFile=hdfFile,hdfGroupName=self.hdfCollTaxaGroup,seqSizeEstimate=100*1000**3)
+        #hdfLoader.loadBlastDb(giFile=self.collectTaxaGiFile)
+        #hdfLoader.close()
+
+    def indexHdfSeq(self):
+        """Create SQL tables that index sequence in HDF dataset."""
+        db = self.dbSql
+        hdfFile = pt.openFile(self.hdfCollTaxaFile,mode="r")
+        hdfSeq = HdfSeqReaderSql(db=db,hdfFile=hdfFile,hdfGroupName=self.hdfCollTaxaGroup)
+        hdfSeq.loadIndToSql()
+        hdfSeq.close()
+        hdfFile.close()
 
     def reportStat(self):
         """Output a report that shows a high-level overview of data."""
@@ -977,180 +988,6 @@ class TaxaCollector(Options):
         """)
 
 
-class TaxaLevelsDb(TaxaLevels,Options):
-    """Load our selection of taxonomic ranks into SQL database, create column and row aggregates.
-    """
-
-    def __init__(self,db,taxaTree):
-        Options.__init__(self)
-        self.taxaTree = taxaTree
-        TaxaLevels.__init__(self)
-        if self.taxaTree is not None:
-            self.setLevels(taxaTree)
-        self.db = db
-
-    def getLevelColumns(self):
-        return [ "ti_"+name for name in self.getLevelNames() ]
-
-    def loadTaxLevelsRows(self):
-        self.db.ddl("""\
-        create table taxa_level_row
-        (
-        taxid integer,
-        level tinyint,
-        partaxid integer
-        )
-        """,
-        dropList=["table taxa_level_row"])
-
-        inserter = self.db.makeBulkInserterFile(table="taxa_level_row",bufLen=500000,workDir=self.tmpDir)
-        taxaTree = self.taxaTree
-        for node in taxaTree.iterDepthTop():
-            for (level,partaxid) in self.lineageKeys(node):
-                inserter((node.id,level,partaxid))
-        inserter.flush()
-        self.db.createIndices(table="taxa_level_row",
-            names=["taxid","partaxid","level"],
-            primary="taxid,level,partaxid")
-
-    def loadTaxLevelsColumns(self):
-        taxaTree = self.taxaTree
-        ti_cols = self.getLevelColumns()
-        self.db.ddl("""\
-        create table taxa_level_col
-        (
-        taxid integer,
-        %s
-        )
-        """ % (",\n".join(["%s integer" % (col,) for col in ti_cols]),),
-        dropList=["table taxa_level_col"])
-
-        inserter = self.db.makeBulkInserterFile(table="taxa_level_col",bufLen=500000,workDir=self.tmpDir)
-        for node in taxaTree.iterDepthTop():
-            inserter([node.id]+self.lineageFixedList(node))
-        inserter.flush()
-        self.db.createIndices(table="taxa_level_col",
-            names=ti_cols,
-            primary="taxid")
-
-    def makeStatsTables(self):
-        db = self.db
-        
-        db.createTableAs("taxa_len","""
-        select taxid,sum(seq_len) as seq_len from all_src group by taxid
-        """)
-
-        db.createTableAs("taxa_level_row_len","""
-        select a.*,b.seq_len from taxa_level_row a,taxa_len b where a.taxid = b.taxid
-        """)
-
-        db.createIndices(names=["taxid","partaxid","level"],table="taxa_level_row_len")
-
-        db.executeAndPrint("""
-            select
-            level,count(*) as cnt,
-            avg(seq_len) as seq_len
-            from (
-                select level,partaxid,count(*) as cnt,sum(seq_len) as seq_len
-                from taxa_level_row_len
-                group by level,partaxid) a
-            group by level
-        """)
-
-        ti_cols = self.getLevelColumns()
-        ti_group = list(ti_cols)
-        ti_group.reverse()
-        ti_group_comma = ','.join(ti_group)
-        group_names = self.getLevelNames()
-        group_names.reverse()
-        
-        db.createTableAs("taxa_level_col_len","""
-        select a.*,b.seq_len from taxa_level_col a,taxa_len b where a.taxid = b.taxid
-        """)
-
-        db.createIndices(table="taxa_level_col_len",names=ti_cols,primary="taxid")
-
-        ## We replace NULL of taxid values with 0, so that
-        ## the MySQL OLAP modifier 'with rollup' would work correctly
-        ## (it uses NULL to mark rows with totals)
-        
-        db.createTableAs("taxa_level_col_gr","""
-        select %s,sum(seq_len) as seq_len,count(*) as taxid_cnt
-        from taxa_level_col_len a
-        group by %s
-        """ % (",".join(["COALESCE(a.%s,0) AS %s" % (ti_gr,ti_gr) for ti_gr in ti_group]) ,",".join(["a."+ti_gr for ti_gr in ti_group])))
-        
-        db.createIndices(table="taxa_level_col_gr",names=ti_cols)
-
-
-        db.createTableAs("taxa_level_col_rep_1","""
-        select %s,sum(seq_len) as seq_len,sum(taxid_cnt) as taxid_cnt
-        from taxa_level_col_gr
-        group by %s with rollup
-        """ % (ti_group_comma,ti_group_comma))
-        
-        db.ddl("""ALTER TABLE taxa_level_col_rep_1 ADD id INTEGER auto_increment  PRIMARY KEY""")
-        #db.createIndices(table="taxa_level_col_rep_1",names=ti_cols)
-
-        ## Add columns with string names for each ti_xxx column through 'left join'
-
-        from string import ascii_lowercase
-        alias_a = ascii_lowercase[0]
-        alias_joins = ascii_lowercase[1:]
-        assert len(ti_group) <= len(alias_joins)
-        joins = "\n".join([ "LEFT JOIN taxa_names %s ON %s.%s = %s.taxid" % (ali_join,alias_a,ti_col,ali_join)
-                        for (ali_join,ti_col) in zip(alias_joins,ti_group) ])
-
-        cols = ",\n".join(["%s,%s.name AS nm_%s" % (ti_col,ali_join,gr_name) for (ti_col,ali_join,gr_name) in zip(ti_group,alias_joins,group_names)])
-                    
-        db.createTableAs("taxa_level_col_rep","""
-        SELECT
-        id,
-        %s,
-        seq_len,taxid_cnt
-        FROM taxa_level_col_rep_1 %s
-        %s
-        ORDER BY id
-        """ % (cols,alias_a,joins))
-
-        db.createIndices(table="taxa_level_col_rep",names=ti_group+["id"])
-        
-        db.executeAndPrint("""
-        select ti_superkingdom,nm_superkingdom,seq_len,taxid_cnt
-        from taxa_level_col_rep
-        where ti_phylum is NULL
-        """)
-    
-        #db.execute("""
-        #select *
-        #from taxa_level_col_rep
-        #order by id
-        #into outfile 'taxa_level_col_rep.csv'
-        #fields
-        #terminated by '|'
-        #optionally enclosed by '"'
-        #""")
-
-        db.executeAndPrint("""
-        select ti_phylum,nm_phylum,ti_class,nm_class,ti_order,nm_order,seq_len,taxid_cnt
-        from taxa_level_col_rep
-        where ti_family is NULL and ti_order is not NULL and ti_class is not NULL
-        """)
-        
-        db.executeAndPrint("""
-        select ti_phylum,nm_phylum,ti_class,nm_class,ti_order,nm_order,ti_family,nm_family,seq_len,taxid_cnt
-        from taxa_level_col_rep where ti_superkingdom = 2 and ti_genus is NULL and ti_family is not NULL and
-        ti_order is not NULL and ti_class is not NULL
-        """)
-
-        db.executeAndPrint("""
-        select ti_phylum,nm_phylum,ti_class,nm_class,ti_order,nm_order,ti_family,nm_family,seq_len,taxid_cnt
-        from taxa_level_col_rep where ti_superkingdom = 2 and ti_genus is NULL and ti_family is not NULL and
-        ti_family <> 0 and ti_order is not NULL and ti_class is not NULL
-        """)
-
-
-        
 refseqAccFormat = \
 (
 ('','','','','Undefined'),
@@ -1171,3 +1008,90 @@ refseqAccFormat = \
 ('ZP','ZP_12345678','Protein','Automated','Protein products; annotated on NZ_ accessions (often via computational methods).')
 )
 
+class OldTaxaCollector:
+    def mergeSelWithSeq(self,skipSeq=False):
+        #from itertool import izip
+        outFasta = gzip.open(self.selFastaFile,'w',compresslevel=4)
+        inpDump = open(self.selDumpFile,'r')
+        selGiFile = os.path.abspath(self.selGiFile)
+        fldsDump = "gi,taxid,src_db,kind,project,cat,stage,src_type,id,seq_len,divid,rank".split(',')
+        pipe = Popen(("fastacmd -i %s -d %s" % (selGiFile,self.srcDbNameAlias)).split(), 
+                     cwd=self.blastDataDir, env=os.environ, bufsize=2**16, stdout=PIPE, close_fds=True).stdout
+        #inpFasta = readFastaRecords(pipe,readSeq=True)
+        FGI_SKIP  = 0x01
+        FGI_WRITE = 0x02
+        FGI_MISM  = 0x04
+        giSeen = {}
+        iRec = 0
+        skip = True
+        mismatchRun = 0 # how many gi mismatches in a row
+        for line in pipe:
+            try:
+                if line.startswith(">"):
+                    skip = False
+                    #header line can be:
+                    #>gi|23455713|ref|NC_004301.1| Enterobacteria phage FI, complete genome >gi|15183|emb|X07489.1| Bacteriophage SP genomic RNA
+                    headers = line.split('>')
+                    gi2 = -1
+                    if len(headers) > 2:
+                        hdr2 = headers[2]
+                        if hdr2.startswith('gi|'):
+                            gi2 = int(hdr2.split('|',2)[1])
+                            if not giSeen.has_key(gi2):
+                                giSeen[gi2] = 0
+                    (gifld,gi,accfld,acc,txt) = line[1:].split('|',4)
+                    assert gifld == 'gi'
+                    gi = int(gi)
+                    valsDump = inpDump.readline().rstrip('\n').split(' ') #empty string fields will be ok
+                    giDump = int(valsDump[0])
+                    taxidDump = int(valsDump[1])
+                    try:
+                        lineage = self.taxaTree.getNode(taxidDump).lineageRanksStr()
+                    except KeyError:
+                        lineage = 'NULL'
+                        print "Warning: Lineage not found for taxid %s" % (taxidDump,)
+                    if giDump == gi:
+                        line = ">gi|%s|%s|%s|" % (gi,accfld,acc) + \
+                            ''.join(["%s:%s " % (fld,val) for (fld,val) in zip(fldsDump[1:],valsDump[1:])]) + \
+                            "lineage:%s " % (lineage,) + \
+                            txt
+                        if gi2 > 0:
+                            giSeen[gi2] |= FGI_WRITE
+                        mismatchRun = 0
+                    elif giDump == gi2:
+                        giSeen[giDump] |= FGI_SKIP
+                        skip = True
+                        mismatchRun = 0
+                    else:
+                        if mismatchRun >= 10:
+                            raise ValueError("Mismatch between FASTA and SQl DUMP input streams:" + \
+                                "fastaTitle = %s valsDump = %s" % (line,' '.join(valsDump)))
+                        else:
+                            if not giSeen.has_key(giDump):
+                                giSeen[giDump] = 0
+                            giSeen[giDump] |= (FGI_SKIP | FGI_MISM)
+                            skip = True
+                            mismatchRun += 1
+                            print "GI mismatch for ", giDump
+                    if iRec % 10000 == 0:
+                        print "Done %s records" % (iRec,)
+                    iRec += 1
+                elif skipSeq:
+                    skip = True
+                if not skip:
+                    outFasta.write(line)
+            except:
+                print "Exception with input line: ", line
+                pipe.close()
+                raise
+        pipe.close()
+        inpDump.close()
+        outFasta.close()
+        print 'giSeen = \n', sorted(giSeen.items())
+        print 'len(giSeen) = ',len(giSeen)
+        for (gi,val) in sorted(giSeen.items()):
+            if val & FGI_SKIP and not val & FGI_WRITE:
+                print "%s never written %s" % (gi,val)
+            if val & FGI_MISM:
+                print "%s mistamtch %s" % (gi,val)
+    
