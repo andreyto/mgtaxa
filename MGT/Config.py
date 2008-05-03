@@ -21,6 +21,7 @@ class Options:
         self.taxaDivisionFile = os.path.join(self.taxaDumpDir,'division.dmp')
         self.taxaNamesFile = os.path.join(self.taxaDumpDir,'names.dmp')
         self.taxaTreeTablePrefix = "txtr"
+        self.taxaTreeTableSfxMain = ""
         #self.kmerTxtDir = os.environ['PHYLA_KMERS']
         #self.kmerTestFile = os.path.join(self.kmerTxtDir,'6mers_1K.gz')
         self.hdfCollTaxaFile = 'collTaxa.hdf'

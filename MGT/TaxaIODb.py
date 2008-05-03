@@ -2,6 +2,7 @@ from MGT.Common import *
 from MGT.TaxaTree import TaxaNode
 from MGT.Sql import *
 
+
 class NodeStorageDb:
     """Taxonomy nodes storage in SQL DB"""
 

@@ -11,9 +11,9 @@ class BlastDb(Options):
         self.ncbiDbs =  (
                          Struct(id='g',db='refseq_genomic'),
                          Struct(id='o',db='other_genomic'),
-                         Struct(id='n',db='nt'),
+                         Struct(id='w',db='wgs'),
                          Struct(id='h',db='htgs'),
-                         Struct(id='w',db='wgs')
+                         Struct(id='n',db='nt')
                          )
         self.taxaTree = None
 

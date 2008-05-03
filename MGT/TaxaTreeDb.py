@@ -26,8 +26,7 @@ class TaxaTreeDb(TaxaTree):
         """
         db = self.db
         if setDefault:
-            for node in self.iterDepthTop():
-                setattr(node,name,default)
+            self.setAttribute(name,default)
         if typeCast is None:
             typeCast = lambda v: v
         curs = db.execute(sql)

@@ -20,23 +20,34 @@ class TaxaCollector(Options):
         self.blastDb = BlastDb()
         self.taxaTree = None
         self.taxaLevels = None
-
+        self.taxaTreeDbStore = NodeStorageDb(db=self.dbSql,tableSfx=self.taxaTreeTableSfxMain)
         
 
     def rebuild(self):
-        #self.loadGiTaxNumpy()
-        #self.loadTaxCategories()
-        #self.loadTaxNodes()
-        #self.loadRefseqAcc()
-        #self.loadTaxNames()
-        #self.loadSeq()
+        self.loadGiTaxNumpy()
+        self.loadRefseqAcc()
+        self.loadTaxTables()
+        self.loadSeq()
         #self.selectTaxSource()
-        #self.loadTaxLevels()
         #self.selectSeqIds()
         #self.loadSeqToHdf()
         #self.indexHdfSeq()
         pass
 
+    def loadTaxTables(self):
+        """Create and fill all initial tables with taxa tree data.
+        It only needs NCBU taxonomy dump files.
+        It assigns dummy zero values to seq_len and seq_len_total attributes.
+        Result: tree is saved in SQL DB"""
+        self.loadTaxCategories()
+        self.loadTaxNodes()
+        self.loadTaxNames()
+        self.loadTaxLevels()
+        self.taxaTree.setAttribute("seq_len",0L)
+        self.taxaTree.setAttribute("seq_len_tot",0L)
+        self.saveTaxTree()
+        self.taxaTreeDbStore.save(self.taxaTree)
+        
     def loadSeq(self):
         db = self.dbSql
         self.loadGiTaxPickled()
@@ -83,6 +94,7 @@ class TaxaCollector(Options):
         self.delDuplicateGiFromSeq()
         db.ddl("analyze table seq",ifDialect="mysql")
         db.ddl("analyze table seq_hdr",ifDialect="mysql")
+        self.createFullTextIndexSeqHeader()
 
     def clearGiTax(self):
         self.gi2taxa = None
@@ -165,25 +177,30 @@ class TaxaCollector(Options):
             try:
                 taxid = int(self.gi2taxa[gi])
             except KeyError:
-                print "Taxid not found for gi: "+gi
+                print "Warning: Taxid not found for gi: "+gi
                 taxid = 0
-            #Accession number formats are described here:
-            #http://www.ncbi.nlm.nih.gov/Sequin/acc.html
-            #WGS id might be 'AAAA00000000' or 'NZ_AAAA00000000', both cases seen in wgs db
-            kind = ''
-            acc_sfx = acc
-            if acc_sfx[2] == '_':
-                kind = acc_sfx[:2]
-                acc_sfx = acc_sfx[3:]
-            project = ''
-            if acc_sfx[:4].isalpha() and acc_sfx[5].isdigit():
-                project = acc_sfx[:4]
-            seqLen = rec.seqLen()
-            values = (idSeq,gi,taxid,db.id,project,seqLen,acc_db,acc,kind)
-            #values = [ str(x) for x in values ]
-            inserterSeq(values)
-            values = (idSeq,gi,title[:self.fastaHdrSqlLen])
-            inserterSeqHdr(values)
+            # We are not interested in taxonomically unassigned sequence.
+            # If we late change this, we also need to modify
+            # exportIdsForSeqDb() where we currently do the inner join
+            # with tax nodes table
+            if taxid != 0:
+                #Accession number formats are described here:
+                #http://www.ncbi.nlm.nih.gov/Sequin/acc.html
+                #WGS id might be 'AAAA00000000' or 'NZ_AAAA00000000', both cases seen in wgs db
+                kind = ''
+                acc_sfx = acc
+                if acc_sfx[2] == '_':
+                    kind = acc_sfx[:2]
+                    acc_sfx = acc_sfx[3:]
+                project = ''
+                if acc_sfx[:4].isalpha() and acc_sfx[5].isdigit():
+                    project = acc_sfx[:4]
+                seqLen = rec.seqLen()
+                values = (idSeq,gi,taxid,db.id,project,seqLen,acc_db,acc,kind)
+                #values = [ str(x) for x in values ]
+                inserterSeq(values)
+                values = (idSeq,gi,title[:self.fastaHdrSqlLen])
+                inserterSeqHdr(values)
             if iRec % 50000 == 0:
                 print db.db, title, taxid, iRec, seqLen
                 #if iRec >= 500000:
@@ -361,6 +378,7 @@ class TaxaCollector(Options):
         if self.taxaLevels is None:
             if withTaxTree:
                 self.loadTaxNodesMem()
+            # that will also set level attributes inside tree nodes
             self.taxaLevels = TaxaLevelsDb(self.dbSql,self.taxaTree)
         
     def loadTaxNodesMem(self):
@@ -429,7 +447,7 @@ class TaxaCollector(Options):
         print sorted(((cnt,taxid) for (taxid,cnt) in taxaCnt.iteritems()))
 
     def loadGiTaxNumpy(self):
-        inp = openGzip(self.taxaGiFile,'r')
+        inp = openCompressed(self.taxaGiFile,'r')
         #inp = open("test_gi_taxid_nucl.dmp",'r')
         #twocol = numpy.loadtxt(inp,dtype=numpy.int32)
         twocol = numpy.fromfile(inp,dtype="i4",sep='\n')
@@ -750,6 +768,26 @@ class TaxaCollector(Options):
         db.ddl("ANALYZE TABLE taxa_seq_len",ifDialect="mysql")
 
 
+
+    def exportIdsForSeqDb(self):
+        """Write text files with sequence ids that will be used to create sequence HDF5 files.
+        Currently we load only NCBI sequence, but we want to decouple SeqDB from NCBI GIs
+        in case we will also use non-NCBI sequence in the future. Therefore, we write
+        two files - one with GIs only and another with (GI,ID) pairs in the same order as
+        the first one, where ID is our internal sequence id. The order is defined by
+        our tree nested set index. That most closely corresponds to the order in which
+        we will be traversing the tree most of the time."""
+        treeTable = self.taxaTreeDbStore.tblNodes
+        db = self.dbSql
+        db.createTableAs("seqdb_ids","""
+        (SELECT         a.id,
+                        a.gi,
+                        b.lnest as ord
+        FROM            seq a,
+                        %(treeTable)s b
+        WHERE           a.taxid = b.id
+        ORDER BY        ord,a.id
+        )""" % {"treeTable":treeTable})
 
     def selectSeqIds(self):
 

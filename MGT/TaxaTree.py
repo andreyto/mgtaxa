@@ -179,6 +179,11 @@ class TaxaNode:
         self.visitDepthBottom(actor)
 
 
+    def setAttribute(self,name,value):
+        for node in self.iterDepthTop():
+            setattr(node,name,value)
+    
+
 class TaxaTree(object):
     
     def __init__(self,storage):
@@ -263,6 +268,13 @@ class TaxaTree(object):
     
     def getRootNode(self):
         return self.rootNode
+
+    def setAttribute(self,name,value,id=None):
+        if id is None:
+            top = self.getRootNode()
+        else:
+            top = self.getNode(id)
+        top.setAttribute(name,value)
 
     def visitDepthTop(self,func,id=None):
         if id is None:

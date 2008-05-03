@@ -21,7 +21,7 @@ class SqlWatch:
         self.debug = debug
         if self.debug > 0:
             ##time.clock() seems to be broken on SuSe 10 x86_64 Python 2.4
-            ##- always return the same value
+            ##- it always returns the same value
             self.start = time.time()
             print sql
 
@@ -168,6 +168,13 @@ class DbSql(Options):
         if hasattr(self,'con'):
             self.con.commit()
 
+    def reconnect(self):
+        self.close()
+        self.open()
+
+    def open(self):
+        pass
+    
     def close(self):
         pass
 
@@ -232,6 +239,15 @@ class DbSqlMy(DbSql):
         self.dbmod = dbmod
         DbSql.__init__(self)
         #self.dbmod.server_init(("phyla","--defaults-file=my.cnf"),('server',))
+
+
+        ## TODO: handle situation due to long periods of computations w/o SQL calls:
+        ## Exception _mysql_exceptions.OperationalError: (2006, 'MySQL server has gone away')
+        ## or
+        ## _mysql_exceptions.OperationalError: (2013, 'Lost connection to MySQL server during query')
+
+    def open(self):
+        self.close()
         self.con = self.dbmod.connect(unix_socket="/tmp/atovtchi.mysql.sock",
                                       host="localhost",
                                       db="mgtaxa",
@@ -243,15 +259,11 @@ class DbSqlMy(DbSql):
                                       ## although I did not see any difference in overall speed
                                       cursorclass=MySQLdb.cursors.SSCursor)
 
-        ## TODO: handle situation due to long periods of computations w/o SQL calls:
-        ## Exception _mysql_exceptions.OperationalError: (2006, 'MySQL server has gone away')
-        ## or
-        ## _mysql_exceptions.OperationalError: (2013, 'Lost connection to MySQL server during query')
-
     def close(self):
         self.commit()
         if hasattr(self,'con'):
             self.con.close()
+            del self.con
         #self.dbmod.server_end()
 
     def dropTable(self,name):
