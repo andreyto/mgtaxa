@@ -43,8 +43,9 @@ class TaxaTreeDb(TaxaTree):
                         raise
         
     
-    def loadSeqLen(self,name="seq_len",
-                         sql="select taxid,seq_len from taxa_seq_len")
+    def loadSeqLen(self,
+            name="seq_len",
+            sql="select taxid,seq_len from taxa_seq_len"):
         """Load sequence length from DB and also assign accumulated subtree sequence to attribute name+'_tot'
         Parameters have the same meaning as for for loadAttribute().
         Default value of 0L is used."""
@@ -53,7 +54,7 @@ class TaxaTreeDb(TaxaTree):
                            default=0L,
                            setDefault=True,
                            ignoreKeyError=True,
-                           typeCast=long):
+                           typeCast=long)
         self.setTotal(srcAttr=name,dstAttr=name+"_tot")
 
 

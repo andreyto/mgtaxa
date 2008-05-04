@@ -24,10 +24,15 @@ class TaxaCollector(Options):
         
 
     def rebuild(self):
-        self.loadGiTaxNumpy()
-        self.loadRefseqAcc()
-        self.loadTaxTables()
-        self.loadSeq()
+        #self.loadGiTaxNumpy()
+        #self.loadRefseqAcc()
+        #self.loadTaxTables()
+        #self.loadSeq()
+        self.delDuplicateGiFromSeq()
+        db.ddl("analyze table seq",ifDialect="mysql")
+        db.ddl("analyze table seq_hdr",ifDialect="mysql")
+        self.createFullTextIndexSeqHeader()
+                                
         #self.selectTaxSource()
         #self.selectSeqIds()
         #self.loadSeqToHdf()
@@ -45,7 +50,6 @@ class TaxaCollector(Options):
         self.loadTaxLevels()
         self.taxaTree.setAttribute("seq_len",0L)
         self.taxaTree.setAttribute("seq_len_tot",0L)
-        self.saveTaxTree()
         self.taxaTreeDbStore.save(self.taxaTree)
         
     def loadSeq(self):

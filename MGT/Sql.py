@@ -135,6 +135,10 @@ class DbSql(Options):
     def executeAndAssertZero(self,sql,**kw):
         self.executeAndAssert(sql,((0,),),**kw)
 
+    def dropTables(self,names):
+       for name in names:
+           self.dropTable(name)
+
     def dropTable(self,name):
         try:
             self.ddl("drop table " + name)
@@ -235,9 +239,9 @@ class DbSqlMy(DbSql):
     
     def __init__(self,dryRun=False):
         import MySQLdb as dbmod
-        import MySQLdb.cursors
         self.dbmod = dbmod
         DbSql.__init__(self)
+        self.open()
         #self.dbmod.server_init(("phyla","--defaults-file=my.cnf"),('server',))
 
 
@@ -247,6 +251,7 @@ class DbSqlMy(DbSql):
         ## _mysql_exceptions.OperationalError: (2013, 'Lost connection to MySQL server during query')
 
     def open(self):
+        import MySQLdb.cursors
         self.close()
         self.con = self.dbmod.connect(unix_socket="/tmp/atovtchi.mysql.sock",
                                       host="localhost",
