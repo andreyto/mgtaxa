@@ -28,14 +28,16 @@ class TaxaCollector(Options):
         #self.loadRefseqAcc()
         #self.loadTaxTables()
         #self.loadSeq()
-        self.delDuplicateGiFromSeq()
+        ## TMP_START
+        #self.delDuplicateGiFromSeq()
+        db = self.dbSql
         db.ddl("analyze table seq",ifDialect="mysql")
         db.ddl("analyze table seq_hdr",ifDialect="mysql")
         self.createFullTextIndexSeqHeader()
-                                
+        ## TMP_END
+        self.loadSeqToHdf()
         #self.selectTaxSource()
         #self.selectSeqIds()
-        #self.loadSeqToHdf()
         #self.indexHdfSeq()
         pass
 
@@ -777,21 +779,22 @@ class TaxaCollector(Options):
         """Write text files with sequence ids that will be used to create sequence HDF5 files.
         Currently we load only NCBI sequence, but we want to decouple SeqDB from NCBI GIs
         in case we will also use non-NCBI sequence in the future. Therefore, we write
-        two files - one with GIs only and another with (GI,ID) pairs in the same order as
-        the first one, where ID is our internal sequence id. The order is defined by
+        a file with (GI,ID) pairs where ID is our internal sequence id. The order is defined by
         our tree nested set index. That most closely corresponds to the order in which
         we will be traversing the tree most of the time."""
         treeTable = self.taxaTreeDbStore.tblNodes
         db = self.dbSql
-        db.createTableAs("seqdb_ids","""
-        (SELECT         a.id,
-                        a.gi,
-                        b.lnest as ord
+        # GI,ID list for fastacmd input and HDF index id
+        db.exportToFile(\
+        """SELECT  a.gi,a.id""",
+        """
         FROM            seq a,
                         %(treeTable)s b
         WHERE           a.taxid = b.id
-        ORDER BY        ord,a.id
-        )""" % {"treeTable":treeTable})
+        ORDER BY        b.lnest,a.id
+        """ % {"treeTable":treeTable}),
+        fileName=self.seqGiIdFile,fieldsTerm=' ',linesTerm=r'\n')
+
 
     def selectSeqIds(self):
 
@@ -896,20 +899,22 @@ class TaxaCollector(Options):
 
 
     def loadSeqToHdf(self):
-        """Load collected taxonomically characterised sequence into HDF dataset."""
+        """Load sequence data for all records in 'seq' table into HDF dataset."""
+        self.exportIdsForSeqDb()
         ## CAUTION! mode="w" trancates the HDF file if it already exists.
         ## "a" opens file for writing w/o destroying existing data,
         ## "r+" is the same as "a" but file must exist
-        hdfFile = pt.openFile(self.hdfCollTaxaFile,mode="a")
-        #hdfLoader = HdfSeqLoader(hdfFile=hdfFile,hdfGroupName=self.hdfCollTaxaGroup,seqSizeEstimate=100*1000**3)
-        #hdfLoader.loadBlastDb(giFile=self.collectTaxaGiFile)
-        #hdfLoader.close()
+        seq_len_tot = long(self.dbSql.selectScalar("select sum(seq_len) from seq"))
+        hdfFile = pt.openFile(self.hdfSeqFile,mode="a")
+        hdfLoader = HdfSeqLoader(hdfFile=hdfFile,hdfGroupName=self.hdfSeqGroup,seqSizeEstimate=seq_len_tot)
+        hdfLoader.loadBlastDb(giFile=self.seqGiFile,giIdFile=self.seqGiIdFile)
+        hdfLoader.close()
 
     def indexHdfSeq(self):
         """Create SQL tables that index sequence in HDF dataset."""
         db = self.dbSql
-        hdfFile = pt.openFile(self.hdfCollTaxaFile,mode="r")
-        hdfSeq = HdfSeqReaderSql(db=db,hdfFile=hdfFile,hdfGroupName=self.hdfCollTaxaGroup)
+        hdfFile = pt.openFile(self.hdfSeqFile,mode="r")
+        hdfSeq = HdfSeqReaderSql(db=db,hdfFile=hdfFile,hdfGroupName=self.hdfSeqGroup)
         hdfSeq.loadIndToSql()
         hdfSeq.close()
         hdfFile.close()

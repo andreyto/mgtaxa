@@ -8,8 +8,10 @@ from MGT.BlastDb import BlastDb
 
 import tables as pt
 
+from itertools import izip
+
 class HdfSeqInd(pt.IsDescription):
-    id        = pt.Int64Col(pos=1) # primary key id, currently NCBI GI
+    id        = pt.Int32Col(pos=1) # primary key id, our internal
     # [begin,begin + size) form right-open-ended range, same as python range() or STL begin(),end()
     begin     = pt.Int64Col(pos=2) # index of first element within 'seq' dataset
     size       = pt.Int64Col(pos=3) # size of sequences
@@ -38,24 +40,39 @@ class HdfSeqLoader(Options):
         ind.nrowsinbuf = 1024**2 #1M
         self.ind = ind
 
-    def loadBlastDb(self,giFile):
+    def loadBlastDb(self,giIdFile):
+        """Load specified subset of BLAST DB into HDF dataset.
+        @param giIdFile - file with pairs 'gi id' on each line:
+        gi will be used to pull sequence from BLAST DB, id will be used as 'id' field in HDF sequence index."""
+        (outGi,giFile) = makeTmpFile(mode="w",bufsize=2**20,dir=self.workDir,prefix="hdfSeqLoader_",suffix=".gi",createParents=True)
+        giFile = os.path.abspath(giFile)
+        inpGiId = open(giIdFile,"r",2**20)
+        for line in inpGiId:
+            outGi.write(line.split()+"\n")
+        inpGiId.close()
+        outGi.close()
         blastAlias = self.blastSelAlias
         blastDb = BlastDb()
         blastDb.makeDbAlias(blastAlias,giFile)
         #defLineTargetOnly is True because we should have already removed duplicate
         #records while collecting the sequence headers
         fastaInp = blastDb.fastaReader(dbName=blastAlias,giFile=giFile,defLineTargetOnly=True)
+        inpGiId = open(giIdFile,"r",2**20)
         indBegin = 0
         chunkSize = 1024**2
         iRec = 0
-        for rec in fastaInp.records():
+        for (rec,giIdLine) in izip(fastaInp.records(),inpGiId):
             gi = int(rec.getNCBI_Id())
+            giCheck,id = giIdLine.split()
+            giCheck = int(giCheck)
+            id = int(id)
+            assert gi == giCheck, "GI mismatch between BLAST DB FASTA stream (%i) and GI input list (%i)" % (gi,giCheck)
             nSeq = 0
             indRec = self.ind.row
             for chunk in rec.seqArrays(chunkSize=chunkSize):
                 nSeq += len(chunk)
                 self.seq.append(chunk)
-            indRec['id'] = gi
+            indRec['id'] = id
             indRec['begin'] = indBegin
             indRec['size'] = nSeq
             indRec.append()
@@ -64,6 +81,8 @@ class HdfSeqLoader(Options):
             if iRec % 10000 == 0:
                 print "Done %s records of total length %s" % (iRec,indBegin)
         fastaInp.close()
+        inpGiId.close()
+        os.remove(giFile)
 
     def close(self):
         self.seq.close()
@@ -93,7 +112,7 @@ class HdfSeqReaderSql(HdfSeqReader):
 
     def loadIndToSql(self):
         db = self.db
-        db.ddl("create table seq_ind (id bigint, begin bigint, size bigint)",
+        db.ddl("create table seq_ind (id int, begin bigint, size bigint)",
             dropList=["table seq_ind"])
         inserter = db.makeBulkInserterFile(table="seq_ind",bufLen=500000,workDir=self.tmpDir)
         for row in self.ind:

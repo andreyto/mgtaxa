@@ -135,6 +135,15 @@ class DbSql(Options):
     def executeAndAssertZero(self,sql,**kw):
         self.executeAndAssert(sql,((0,),),**kw)
 
+    def selectScalar(self,sql,**kw):
+        """Execute sql that must return a single row with a single column and return result as scalar value."""
+        curs = self.execute(sql,**kw)
+        ret = curs.fetchall()
+        assert len(ret) == 1 && len(ret[0]) == 1,"Non-scalar value obtained in 'selectScalar()'"
+        ret = ret[0][0]
+        curs.close()
+        return ret
+
     def dropTables(self,names):
        for name in names:
            self.dropTable(name)

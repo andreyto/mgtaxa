@@ -10,6 +10,7 @@ class Options:
         self.fastaHdrSqlLen = 2048
         self.blastDataDir = 'blast'
         self.collectTaxaGiFile = os.path.abspath('mgt_coll_taxa.gi')
+        self.seqGiIdFile = os.path.abspath('mgt_seq.giid')
         #self.selDumpFile = 'mgt_sel.csv'
         self.selFastaFile = 'mgt_sel.fasta.gz'
         self.blastSelAlias = 'mgt'
@@ -24,8 +25,8 @@ class Options:
         self.taxaTreeTableSfxMain = ""
         #self.kmerTxtDir = os.environ['PHYLA_KMERS']
         #self.kmerTestFile = os.path.join(self.kmerTxtDir,'6mers_1K.gz')
-        self.hdfCollTaxaFile = 'collTaxa.hdf'
-        self.hdfCollTaxaGroup = 'seq'
+        self.hdfSeqFile = 'seq.hdf'
+        self.hdfSeqGroup = 'seq'
 
 
 options = Options()

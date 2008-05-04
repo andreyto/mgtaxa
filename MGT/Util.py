@@ -111,7 +111,11 @@ def makeTmpFile(*l,**kw):
     Return a tuple (file object,file name).
     It does the same as tempfile.NamedTemporaryFile but the file is not automatically
     deleted after being closed. Because it works through calls to mkstemp and os.fdopen,
-    the returned file object does not have a file name in its 'name' attribute."""
+    the returned file object does not have a file name in its 'name' attribute.
+    @param createParents - if True (default) - create parent directories (require 'dir' option)
+    @param dir - create file in this directory
+    @param mode (default 'w') - open file in this mode
+    @param bufsize - open with his buffer size"""
     
     opts1 = {}
     opts1.update(kw)
@@ -123,6 +127,7 @@ def makeTmpFile(*l,**kw):
             raise ValueError("makeTmpFile: 'dir' keyword must be used with 'createParents' keyword")
         makedir(dirName)
     l2 = []
+    optsl.setdefault("mode","w")
     for k in ("mode","bufsize"):
         if opts1.has_key(k):
             l2.append(opts1[k])
