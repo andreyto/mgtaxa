@@ -29,16 +29,21 @@ class TaxaCollector(Options):
         #self.loadTaxTables()
         #self.loadSeq()
         ## TMP_START
+        #self.loadTaxLevels()
+        #self.taxaTree.setAttribute("seq_len",0L)
+        #self.taxaTree.setAttribute("seq_len_tot",0L)
+        #self.taxaTreeDbStore.save(self.taxaTree)
+                                
         #self.delDuplicateGiFromSeq()
         db = self.dbSql
-        db.ddl("analyze table seq",ifDialect="mysql")
-        db.ddl("analyze table seq_hdr",ifDialect="mysql")
-        self.createFullTextIndexSeqHeader()
+        #db.ddl("analyze table seq",ifDialect="mysql")
+        #db.ddl("analyze table seq_hdr",ifDialect="mysql")
+        #self.createFullTextIndexSeqHeader()
         ## TMP_END
-        self.loadSeqToHdf()
+        #self.loadSeqToHdf()
         #self.selectTaxSource()
         #self.selectSeqIds()
-        #self.indexHdfSeq()
+        self.indexHdfSeq()
         pass
 
     def loadTaxTables(self):
@@ -246,6 +251,7 @@ class TaxaCollector(Options):
     def createFullTextIndexSeqHeader(self):
         """Build a full text index for sequence FASTA hdeaders in 'seq_hdr' table (currently implemented only for MySQL back-end).
         Warning: it took 1 hr for 28M records."""
+        db = self.dbSql
         db.ddl("alter table seq_hdr add fulltext index hdr(hdr)",ifDialect="mysql",dropList=["index hdr on seq_hdr"])
         
 
@@ -376,9 +382,9 @@ class TaxaCollector(Options):
 
     def loadTaxLevels(self):
         self.loadTaxLevelsMem(withTaxTree=True)
-        self.taxaLevels.loadTaxLevelsRows()
-        self.taxaLevels.loadTaxLevelsColumns()
-        self.taxaLevels.makeStatsTables()
+        #self.taxaLevels.loadTaxLevelsRows()
+        #self.taxaLevels.loadTaxLevelsColumns()
+        #self.taxaLevels.makeStatsTables()
         
     def loadTaxLevelsMem(self,withTaxTree=False):
         if self.taxaLevels is None:
@@ -502,6 +508,17 @@ class TaxaCollector(Options):
                          attrib={"gi":{"unique":True}})
 
 
+    def excludePreSource(self):
+        """Exclude some sequence before selectTaxSource()
+        @post table seq_excl has excluded idseq's."""
+        ## Currently we use MySQL specific full text search
+        db = self.dbSql
+        db.createTableAs("seq_excl","""
+            (select id from seq_hdr where MATCH(hdr) AGAINST('"ribosomal RNA" "rRNA"' IN BOOLEAN MODE) )
+            """)
+        db.createIndices(primary="id",table="seq_excl")
+
+        
     def selectTaxSource(self):
         db = self.dbSql
         db.createTableAs("taxa_src_1","""
@@ -513,6 +530,7 @@ class TaxaCollector(Options):
                             COUNT(*)     AS cnt     ,
                             SUM(seq_len) AS seq_len
                     FROM    seq
+                    WHERE   id not in (SELECT id FROM seq_excl)
                     GROUP BY taxid ,
                             src_db ,
                             kind   ,
@@ -763,7 +781,8 @@ class TaxaCollector(Options):
         db.createIndices(names=["taxid","src_db","kind","project","cat","divid","rank"],
             table="all_src",
             primary="id",
-            compounds={"src":"taxid,src_db,kind,project"})
+            compounds={"src":"taxid,src_db,kind,project"},
+            attrib={"src":{"unique":True}})
         
         db.ddl("ANALYZE TABLE all_src",ifDialect="mysql")
 
@@ -774,6 +793,68 @@ class TaxaCollector(Options):
         db.ddl("ANALYZE TABLE taxa_seq_len",ifDialect="mysql")
 
 
+    def excludePostSource(self):
+        """Exclude some sequence after selectTaxSource().
+        @post table seq_src is table seq_ind with added
+        foreign key id_src into act_src and some records dropped.
+        @post table act_src is all_src with some records
+        dropped and seq_len recomputed from seq_src.
+        The compination of these two new tables allows to
+        filter initial sequence set described by all_src 
+        both at individual sequence level (e.g. drop short sequences)
+        and at source id level (meaning origin,sequence type)
+        (e.g. retain only longest fully RefSeq strain for each species).
+        Currently this method does not drop any sequence.
+        After this method, seq_src and act_src can be used
+        to randomly sample training and testing sets."""
+        db = self.dbSql
+
+        db.createTableAs("seq_src","""
+        (SELECT         a.id,
+                        b.id as id_src,
+                        a.seq_len
+                FROM    seq a,
+                        all_src b
+                WHERE   a.taxid   = b.taxid
+                    AND a.src_db  = b.src_db
+                    AND a.kind    = b.kind
+                    AND a.project = b.project
+                    AND a.taxid  <> 0
+                    AND a.id not in (SELECT id FROM seq_excl)
+        )
+        """)
+        db.createIndices(names=["id_src"],primary="id",table="seq_src")
+        db.ddl("ANALYZE TABLE seq_src",ifDialect="mysql")
+
+        db.createTableAs("act_src","""
+        (SELECT a.*            ,
+                        b.cat  ,
+                        c.divid,
+                        c.rank
+                FROM    all_src_1 a
+                        LEFT JOIN taxa_cat b
+                        ON      a.taxid = b.taxid
+                        LEFT JOIN taxa_node c
+                        ON      a.taxid = c.taxid
+                WHERE   not (
+                    a.taxid IS NULL
+                    OR a.taxid = 0
+                    OR c.divid IS NULL
+                    OR b.cat   IS NULL
+                    OR c.divid IN (7,8,11)
+                    )
+        )
+        """)
+
+        db.ddl("ANALYZE TABLE all_src",ifDialect="mysql")
+
+        db.createIndices(names=["taxid","src_db","kind","project","cat","divid","rank"],
+            table="all_src",
+            primary="id",
+            compounds={"src":"taxid,src_db,kind,project"},
+            attrib={"src":{"unique":True}})
+        
+        db.ddl("ANALYZE TABLE all_src",ifDialect="mysql")
 
     def exportIdsForSeqDb(self):
         """Write text files with sequence ids that will be used to create sequence HDF5 files.
@@ -792,7 +873,7 @@ class TaxaCollector(Options):
                         %(treeTable)s b
         WHERE           a.taxid = b.id
         ORDER BY        b.lnest,a.id
-        """ % {"treeTable":treeTable}),
+        """ % {"treeTable":treeTable},
         fileName=self.seqGiIdFile,fieldsTerm=' ',linesTerm=r'\n')
 
 
@@ -905,10 +986,11 @@ class TaxaCollector(Options):
         ## "a" opens file for writing w/o destroying existing data,
         ## "r+" is the same as "a" but file must exist
         seq_len_tot = long(self.dbSql.selectScalar("select sum(seq_len) from seq"))
-        hdfFile = pt.openFile(self.hdfSeqFile,mode="a")
+        hdfFile = pt.openFile(self.hdfSeqFile,mode="w")
         hdfLoader = HdfSeqLoader(hdfFile=hdfFile,hdfGroupName=self.hdfSeqGroup,seqSizeEstimate=seq_len_tot)
-        hdfLoader.loadBlastDb(giFile=self.seqGiFile,giIdFile=self.seqGiIdFile)
-        hdfLoader.close()
+        hdfLoader.loadBlastDb(giIdFile=self.seqGiIdFile)
+        #hdfLoader.close()
+        hdfFile.close()
 
     def indexHdfSeq(self):
         """Create SQL tables that index sequence in HDF dataset."""
@@ -916,7 +998,7 @@ class TaxaCollector(Options):
         hdfFile = pt.openFile(self.hdfSeqFile,mode="r")
         hdfSeq = HdfSeqReaderSql(db=db,hdfFile=hdfFile,hdfGroupName=self.hdfSeqGroup)
         hdfSeq.loadIndToSql()
-        hdfSeq.close()
+        #hdfSeq.close()
         hdfFile.close()
 
     def reportStat(self):

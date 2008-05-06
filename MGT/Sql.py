@@ -139,7 +139,7 @@ class DbSql(Options):
         """Execute sql that must return a single row with a single column and return result as scalar value."""
         curs = self.execute(sql,**kw)
         ret = curs.fetchall()
-        assert len(ret) == 1 && len(ret[0]) == 1,"Non-scalar value obtained in 'selectScalar()'"
+        assert len(ret) == 1 and len(ret[0]) == 1,"Non-scalar value obtained in 'selectScalar()'"
         ret = ret[0][0]
         curs.close()
         return ret

@@ -44,11 +44,11 @@ class HdfSeqLoader(Options):
         """Load specified subset of BLAST DB into HDF dataset.
         @param giIdFile - file with pairs 'gi id' on each line:
         gi will be used to pull sequence from BLAST DB, id will be used as 'id' field in HDF sequence index."""
-        (outGi,giFile) = makeTmpFile(mode="w",bufsize=2**20,dir=self.workDir,prefix="hdfSeqLoader_",suffix=".gi",createParents=True)
+        (outGi,giFile) = makeTmpFile(mode="w",bufsize=2**20,dir=self.tmpDir,prefix="hdfSeqLoader_",suffix=".gi",createParents=True)
         giFile = os.path.abspath(giFile)
         inpGiId = open(giIdFile,"r",2**20)
         for line in inpGiId:
-            outGi.write(line.split()+"\n")
+            outGi.write(line.split()[0]+"\n")
         inpGiId.close()
         outGi.close()
         blastAlias = self.blastSelAlias
@@ -104,6 +104,14 @@ class HdfSeqReader(Options):
         ind.nrowsinbuf = 1024**2 #1M
         self.ind = ind
 
+    def close(self):
+        self.seq.close()
+        self.seq = None
+        self.ind.close()
+        self.ind = None
+        self.hdfFile.flush()
+        self.hdfFile = None
+                                                        
 class HdfSeqReaderSql(HdfSeqReader):
 
     def __init__(self,db,*l,**kw):
