@@ -31,7 +31,7 @@ CXX := $(shell which g++)
 #and for STL gdb macros to work (from ~/.gdb/stl_views).
 #It's a little odd that we need to tell GCC to produce gdb
 #specific debugging data on a linux system...
-CXXFLAGS := -O3 -fPIC #-g -gstabs -ggdb -O0 -fPIC
+CXXFLAGS := -O3 -fPIC #-g -gstabs -ggdb -O0 -fPIC #-O3 -fPIC 
 PYTHON := $(shell which python)
 MAKE := make
 AR := $(shell which ar)

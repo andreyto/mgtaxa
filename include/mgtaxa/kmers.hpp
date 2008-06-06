@@ -96,7 +96,7 @@ typedef KmerStateData *PKmerStateData;
 
 /** Type for unique ID of a k-mer. It should be stable between program invocations.
  * For dense  KmerStates implementation, this is defined as int.
- * For sparce (e.g. hash) representations, it might be k-mer itself.*/
+ * For sparse (e.g. hash) representations, it might be k-mer itself.*/
  
 typedef int KmerId;
 
@@ -150,8 +150,9 @@ class KmerStateData {
 	public:
 
 	KmerStateData():
+	count(0),
 	m_pState(0), 
-	count(0)
+    m_id(0)
 	{}
 	
 	PKmerState getState() {
@@ -164,7 +165,13 @@ class KmerStateData {
 	
 	void setState(PKmerState pState) {
 		m_pState = pState;
+        ADT_ALWAYS(pState);
+        m_id = pState->m_id;
 	}
+
+    KmerId idState() const {
+        return m_id;
+    }
 
 	/** k-mer count.*/
 	ULong count;
@@ -173,7 +180,9 @@ class KmerStateData {
 	
 	/** Pointer to the owning  KmerState object.*/
 	PKmerState m_pState;
-	
+
+    /** ID of k-mer, cached here from m_pState to avoid pointer dereferencing during sorting.*/
+    KmerId m_id;
 };
 
 
@@ -216,7 +225,8 @@ class KmerStateData {
  * 
  * After construction, this implementation guarantees the following complexity during
  * the sequence processing: O(1) on k-mer length; O(min(L,N)) where L is the actual sequence chunk
- * length and N is the number of possible k-mers.*/ 
+ * length and N is the number of possible k-mers + O(min(L,N)*log(min(L,N))) if results are sorted
+ * by k-mer ID for extraction.*/ 
 
 class KmerStates {
 	protected:
@@ -261,7 +271,9 @@ class KmerStates {
 	
 	/** Index of the first non-degenerate state in m_states.*/ 
 	int iFirstStateNonDegen;
-	
+
+    /** IDs of output (non-degenerate, non-reverse-complement) k-mers start from this.*/
+    KmerId m_firstIdState;
 };
 
 
@@ -297,12 +309,18 @@ class KmerCounter {
  	* o.finishKmer();
  	* @endcode
  	* nextKmer() can be called less than numKmers() times.
+    * sumKmerCounts() can be called outside of startKmer()...finishKmer() block
  	* */
 	/*@{*/ 	
 	/** Return number of k-mers found so far in current accumulation cycle.*/
 	int numKmers() const;
-	/** Prepare internal state for result extraction.*/
-	void startKmer();
+	/** Return sum of non-degenerate k-mer counts found so far in current accumulation cycle.
+     * Can be only called outside of startKmer()...finishKmer() block.*/
+	ULong sumKmerCounts() const;
+	/** Prepare internal state for result extraction.
+     * @param doSort - if true, the results will be sorted (complexity will be N*log(N) where
+     * N is numKmers(). SVM sparse feature vector representation needs sorted results.*/
+	void startKmer(bool doSort=true);
 	/** Advance internal state to extract next k-mer results.*/
 	void nextKmer();
 	/** Accessor to get count value from the currently extracted k-mer.*/

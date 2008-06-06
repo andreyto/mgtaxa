@@ -3,6 +3,13 @@ from MGT.TaxaTree import TaxaNode
 from MGT.Sql import *
 
 
+
+def sqlIsSubTree(aliasSub,aliasSuper):
+    """SQL 'macro'. Return part of the WHERE clause: require that node from 'aliasSub' is in sub-tree of node from 'aliasSuper'.
+    It uses 'nested sets' index fields 'lnest' and 'rnest'."""
+    return "( %(sub)s.lnest > %(sup)s.lnest and %(sub)s.rnest < %(sup)s.rnest )" % \
+        {'sub':aliasSub,'sup':aliasSup}
+
 class NodeStorageDb:
     """Taxonomy nodes storage in SQL DB"""
 
@@ -76,4 +83,99 @@ class NodeStorageDb:
                       n.rank))
         inserter.flush()
         db.ddl("ANALYZE TABLE %s" % (self.tblNodes,),ifDialect="mysql")
-        db.createIndices(table=self.tblNodes,primary="id",names=["idpar","lnest","rnest","idlevel","depth","rank"])
+        db.createIndices(table=self.tblNodes,primary="id",
+                names=["idpar","lnest","rnest","idlevel","depth","rank"],
+                attrib={"lnest":{"unique":True},"rnest":{"unique":True}})
+
+
+    def loadAttribute(self,tree,name,sql,default=None,setDefault=True,ignoreKeyError=True,typeCast=None):
+        """Execute 'sql' which should return a unique mapping taxid -> value and assign result to each node.
+        @param name - name of the new treee nodee attribbute to set
+        @param sql - statement to execute. It must return (id,value) pairs (in that order) with 'id' corresponding to tree node id's.
+        Actual column names do not matter.
+        @param default - assign this value to those nodes for which taxid is not present in the 'sql' result set (if 'setDeafult' is True)
+        @param setDefault - if False, do not assign default value to nodes
+        @param ignoreKeyError - if True, do not raise exception if 'sql' results set contains an id that is not present in the tree.
+        """
+        db = self.db
+        if setDefault:
+            tree.setAttribute(name,default)
+        if typeCast is None:
+            typeCast = lambda v: v
+        curs = db.execute(sql)
+        curs.arraysize = 100000
+        while True:
+            rows = curs.fetchmany()
+            if not rows:
+                break
+            for row in rows:
+                try:
+                    setattr(tree.getNode(int(row[0])),name,typeCast(row[1]))
+                except KeyError:
+                    if not ignoreKeyError:
+                        raise
+        
+    
+    def saveAttributes(self,tree,nameToSql,table):
+        """Save attribute values of tree nodes as a new table indexed by node id.
+        @param tree - tree to work on
+        @nameToSql - mapping of attribute names into SQL, by example: {'rankUpper':{'name':'rank_upper','type':'char(20)','createIndex':True,default=0}}. If 'name' is not present, the key of the dictionary will be used as is for SQL column
+        name. That might lead to problems if SQL server converts all names to lower case, for instance. It is not a good
+        idea to rely on identifier case in SQL code anyway.
+        @param table - SQL table name to create
+        """
+        db = self.db
+        #protect against typos in keyword names
+        attribKeywords = set(('name','type','createIndex','default'))
+        for name in nameToSql:
+            for k in nameToSql[name].keys():
+                if k not in attribKeywords:
+                    raise ValueError("Unknown attribute keyword: " + name + "[" + k + "]")
+        sqlColDef = ",\n".join([ "%(name)s %(type)s" % {'name':v.get('name',k),'type':v['type']} for (k,v) in nameToSql.items() ])
+        db.ddl("""
+        create table %s
+        (
+        id integer,
+        %s
+        )
+        """ % (table,sqlColDef),
+        dropList=["table %s" % (table,)])
+
+        inserter = db.makeBulkInserterFile(table=table,bufLen=500000)
+        #python guarantees the same order as from .values()
+        namesAndDefaults = [ (name,val.get('default',None)) for (name,val) in nameToSql.items() ]
+        for n in tree.iterDepthTop():
+            vals = [ getattr(n,name,default) for (name,default) in namesAndDefaults ]
+            # If all values are NULL (None), do not insert the record.
+            # Optimized for common case of all values non-NULL.
+            if None in vals:
+                allNone = True
+                for v in vals:
+                    if v is not None:
+                        allNone = False
+                        break
+                if allNone:
+                    continue
+            vals.insert(0,n.id)
+            inserter(vals)
+        inserter.flush()
+        namesToIndex = [ name for name in nameToSql if nameToSql[name].get('createIndex',False) ]
+        db.createIndices(table=table,primary="id",names=namesToIndex)
+
+
+    def loadSeqLen(self,
+            tree,
+            name="seq_len",
+            sql="select taxid,seq_len from taxa_seq_len"):
+        """Load sequence length from DB and also assign accumulated subtree sequence to attribute name+'_tot'
+        Parameters have the same meaning as for for loadAttribute().
+        Default value of 0L is used."""
+        self.loadAttribute(tree=tree,
+                           name=name,
+                           sql=sql,
+                           default=0L,
+                           setDefault=True,
+                           ignoreKeyError=True,
+                           typeCast=long)
+        tree.setTotal(srcAttr=name,dstAttr=name+"_tot")
+

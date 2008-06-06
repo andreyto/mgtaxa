@@ -2,7 +2,8 @@ from types import *
 import re
 import string, os
 from time import sleep
-from copy import copy
+import time
+from copy import copy, deepcopy
 from cPickle import dump, load
 from cStringIO import StringIO
 import numpy
@@ -142,6 +143,8 @@ def makedir(path,dryRun=False):
 def rmdir(path,dryRun=False):
     run(["rm","-rf",path],dryRun=dryRun)
 
+rmrf = rmdir
+
 def rmf(path,dryRun=False):
     try:
         os.remove(path)
@@ -185,7 +188,7 @@ def strAttributes(o,exclude=tuple(),delim=' | '):
     return delim.join([ name + ' : ' + str(val) for (name,val) in o.__dict__.items()
         if not name in exclude])
 
-class Struct:
+class Struct(object):
     """Class to create 'struct's on the fly.
     Example: o = Struct()
              o.i = 2
@@ -251,7 +254,7 @@ class Struct:
             raise KeyError(l[0])
             
     def strDense(self):
-        keys = self.__dict__.keys()
+        keys = self.keys()
         keys.sort()
         pairs = []
         for key in keys:
@@ -268,7 +271,7 @@ class Struct:
         return not re.match("^\<.+ instance at 0x[0-9a-z]+\>$",reprObj)
 
     def strPretty(self):
-        keys = self.__dict__.keys()
+        keys = self.keys()
         keys.sort()
         s = '\n'
         for key in keys:
@@ -285,13 +288,56 @@ class Struct:
         """Return dictionary mapping names of "scalar" attributes to values.
         "Scalar" attributes are non-sequence primitive types, such as Int, Float, String, None."""
         r = {}
-        for (key,val) in self.__dict__.items():
+        for key in self.keys():
+            val = self.__dict__(key)
             if type(val) in (NoneType,BooleanType,IntType,LongType,FloatType,StringType):
                 r[key] = val
         return r
 
     def copy(self):
         return copy(self)
+
+class Options(Struct):
+    
+    def copy(self):
+        """Deep copy semantics"""
+        return deepcopy(self)
+
+    def keys(self):
+        """Will ignore all attributes that start with _"""
+        return [ k for k in Struct.keys(self) if not k.startswith("_") ]
+
+    def freeze(self):
+        """Make this object read-only"""
+        Struct.__setattr__(self,"_is_frozen",True)
+        for name in self.keys():
+            val = getattr(self,name)
+            if isinstance(val,Options):
+                val.freeze()
+
+    def unfreeze(self):
+        """Make this object mutable again after previous call to freeze()"""
+        try:
+            Struct.__delattr__(self,"_is_frozen")
+        except AttributeError:
+            pass
+        for name in self.keys():
+            val = getattr(self,name)
+            if isinstance(val,Options):
+                val.unfreeze()
+
+    def __setattr__(self,name,value):
+        if getattr(self,"_is_frozen",False):
+            raise AttributeError(name)
+        else:
+            Struct.__setattr__(self,name,value)
+
+    def __delattr__(self,name):
+        if getattr(self,"_is_frozen",False):
+            raise AttributeError(name)
+        else:
+            Struct.__delattr__(self,name,value)
+
 
 class FastaReaderSink(object):
     

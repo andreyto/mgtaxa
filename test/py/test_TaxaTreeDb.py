@@ -11,8 +11,19 @@ tableSfxCmp = "tmp_test_cmp"
 
 storeDb = NodeStorageDb(db=db,tableSfx=tableSfx)
 
-taxaTree = TaxaTreeDb(storage=storeDump,db=db,tableSfx=tableSfx)
-taxaTree.loadSeqLen()
+taxaTree = TaxaTree(storage=storeDump)
+storeDb.loadSeqLen(taxaTree)
+
+tableAttr = 'tmp_attr_'+tableSfx
+
+storeDb.saveAttributes(tree=taxaTree,
+        nameToSql={'seq_len':{'type':'bigint','createIndex':True},
+                   'seq_len_tot':{'type':'bigint','name':'seq_len_tot'}},
+        table=tableAttr)
+
+attrTotal = db.selectScalar("select sum(seq_len) from %s" % tableAttr)
+rootTotal = taxaTree.getRootNode().seq_len_tot
+assert attrTotal == rootTotal, "Mismatch between computed and stored total sequence length: attrTotal = %s, rootTotal = %s" % (attrTotal,rootTotal)
 
 #for node in taxaTree.iterDepthTop():
 #    print node
@@ -24,7 +35,7 @@ storeDb.save(taxaTree)
 
 #sys.exit(0)
 
-taxaTreeCmp = TaxaTreeDb(storage=storeDb,db=db,tableSfx=tableSfx)
+taxaTreeCmp = TaxaTree(storage=storeDb)
 
 storeDbCmp = NodeStorageDb(db=db,tableSfx=tableSfxCmp)
 

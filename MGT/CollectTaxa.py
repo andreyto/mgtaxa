@@ -6,16 +6,16 @@ from MGT.Common import *
 from MGT.Taxa import *
 from MGT.Sql import *
 from MGT.BlastDb import BlastDb
-from SeqDb import pt, HdfSeqLoader, HdfSeqReaderSql
+from SeqDb import *
 
-class TaxaCollector(Options):
+class TaxaCollector(MGTOptions):
     """Collects data about taxonomically known sequence for training the classifier.
     Process the NCBI BLAST DB files by calling fastacmd.
     Aggregate, prioritize and partially remove redundancy along the taxonomy ids."""
     
     def __init__(self,dbSql):
         
-        Options.__init__(self)
+        MGTOptions.__init__(self)
         self.dbSql = dbSql
         self.blastDb = BlastDb()
         self.taxaTree = None
@@ -28,22 +28,10 @@ class TaxaCollector(Options):
         #self.loadRefseqAcc()
         #self.loadTaxTables()
         #self.loadSeq()
-        ## TMP_START
-        #self.loadTaxLevels()
-        #self.taxaTree.setAttribute("seq_len",0L)
-        #self.taxaTree.setAttribute("seq_len_tot",0L)
-        #self.taxaTreeDbStore.save(self.taxaTree)
-                                
-        #self.delDuplicateGiFromSeq()
-        db = self.dbSql
-        #db.ddl("analyze table seq",ifDialect="mysql")
-        #db.ddl("analyze table seq_hdr",ifDialect="mysql")
-        #self.createFullTextIndexSeqHeader()
-        ## TMP_END
         #self.loadSeqToHdf()
-        #self.selectTaxSource()
-        #self.selectSeqIds()
-        self.indexHdfSeq()
+        #self.indexHdfSeq()
+        #self.selectActiveSeq()
+        self.indexHdfActiveSeq()
         pass
 
     def loadTaxTables(self):
@@ -507,6 +495,12 @@ class TaxaCollector(Options):
                          names=["gi"],
                          attrib={"gi":{"unique":True}})
 
+    def selectActiveSeq(self):
+        """Select 'active' source sequence set - the one that can be used for training.
+        @post tables act_seq and act_src contain usable training sequence."""
+        self.excludePreSource()
+        self.selectSeqBySource()
+        self.excludePostSource()
 
     def excludePreSource(self):
         """Exclude some sequence before selectTaxSource()
@@ -514,12 +508,14 @@ class TaxaCollector(Options):
         ## Currently we use MySQL specific full text search
         db = self.dbSql
         db.createTableAs("seq_excl","""
-            (select id from seq_hdr where MATCH(hdr) AGAINST('"ribosomal RNA" "rRNA"' IN BOOLEAN MODE) )
+            (select id_seq as id from seq_hdr where MATCH(hdr) AGAINST('"ribosomal RNA" "rRNA"' IN BOOLEAN MODE) )
             """)
         db.createIndices(primary="id",table="seq_excl")
 
         
-    def selectTaxSource(self):
+    def selectSeqBySource(self):
+        """For each taxid, group available sequence by its source (refseq, wgs, htgs, nt) and select groups by priority.
+        @post table all_src that has all selected groups and synthetic primary key 'id' for each group."""
         db = self.dbSql
         db.createTableAs("taxa_src_1","""
             (SELECT taxid                ,
@@ -786,30 +782,23 @@ class TaxaCollector(Options):
         
         db.ddl("ANALYZE TABLE all_src",ifDialect="mysql")
 
-        db.createTableAs("taxa_seq_len","""
-        select taxid,sum(seq_len) as seq_len from all_src group by taxid
-        """)
-        db.createIndices(primary="taxid",table="taxa_seq_len")
-        db.ddl("ANALYZE TABLE taxa_seq_len",ifDialect="mysql")
-
 
     def excludePostSource(self):
         """Exclude some sequence after selectTaxSource().
-        @post table seq_src is table seq_ind with added
-        foreign key id_src into act_src and some records dropped.
+        @post table act_seq is mapping into seq and act_src
         @post table act_src is all_src with some records
         dropped and seq_len recomputed from seq_src.
         The compination of these two new tables allows to
         filter initial sequence set described by all_src 
         both at individual sequence level (e.g. drop short sequences)
         and at source id level (meaning origin,sequence type)
-        (e.g. retain only longest fully RefSeq strain for each species).
+        (e.g. retain only longest RefSeq strain for each species).
         Currently this method does not drop any sequence.
-        After this method, seq_src and act_src can be used
-        to randomly sample training and testing sets."""
+        After this method, act_seq and act_src can be used
+        to randomly sample for training and testing sets."""
         db = self.dbSql
 
-        db.createTableAs("seq_src","""
+        db.createTableAs("act_seq","""
         (SELECT         a.id,
                         b.id as id_src,
                         a.seq_len
@@ -823,38 +812,36 @@ class TaxaCollector(Options):
                     AND a.id not in (SELECT id FROM seq_excl)
         )
         """)
-        db.createIndices(names=["id_src"],primary="id",table="seq_src")
-        db.ddl("ANALYZE TABLE seq_src",ifDialect="mysql")
+        db.createIndices(names=["id_src"],primary="id",table="act_seq")
+        db.ddl("ANALYZE TABLE act_seq",ifDialect="mysql")
 
         db.createTableAs("act_src","""
-        (SELECT a.*            ,
-                        b.cat  ,
-                        c.divid,
-                        c.rank
-                FROM    all_src_1 a
-                        LEFT JOIN taxa_cat b
-                        ON      a.taxid = b.taxid
-                        LEFT JOIN taxa_node c
-                        ON      a.taxid = c.taxid
-                WHERE   not (
-                    a.taxid IS NULL
-                    OR a.taxid = 0
-                    OR c.divid IS NULL
-                    OR b.cat   IS NULL
-                    OR c.divid IN (7,8,11)
-                    )
+        (SELECT a.id,a.taxid,a.src_db,a.kind,a.project,a.cat,a.divid,
+                b.seq_len
+                FROM    all_src a,
+                        (SELECT id_src, sum(seq_len) as seq_len FROM act_seq GROUP BY id_src) b
+                WHERE  a.id = b.id_src
         )
         """)
 
-        db.ddl("ANALYZE TABLE all_src",ifDialect="mysql")
+        db.ddl("ANALYZE TABLE act_src",ifDialect="mysql")
 
-        db.createIndices(names=["taxid","src_db","kind","project","cat","divid","rank"],
-            table="all_src",
+        db.createIndices(names=["taxid","src_db","kind","project","cat","divid"],
+            table="act_src",
             primary="id",
             compounds={"src":"taxid,src_db,kind,project"},
             attrib={"src":{"unique":True}})
         
-        db.ddl("ANALYZE TABLE all_src",ifDialect="mysql")
+        db.ddl("ANALYZE TABLE act_src",ifDialect="mysql")
+
+        # This is more for reporting - operational counts are based
+        # on samples and created in LabelTaxa module
+        db.createTableAs("taxa_seq_len","""
+        select taxid,sum(seq_len) as seq_len from act_src group by taxid
+        """)
+        db.createIndices(primary="taxid",table="taxa_seq_len")
+        db.ddl("ANALYZE TABLE taxa_seq_len",ifDialect="mysql")
+
 
     def exportIdsForSeqDb(self):
         """Write text files with sequence ids that will be used to create sequence HDF5 files.
@@ -986,8 +973,12 @@ class TaxaCollector(Options):
         ## "a" opens file for writing w/o destroying existing data,
         ## "r+" is the same as "a" but file must exist
         seq_len_tot = long(self.dbSql.selectScalar("select sum(seq_len) from seq"))
+        seq_cnt = long(self.dbSql.selectScalar("select count(*) from seq"))
         hdfFile = pt.openFile(self.hdfSeqFile,mode="w")
-        hdfLoader = HdfSeqLoader(hdfFile=hdfFile,hdfGroupName=self.hdfSeqGroup,seqSizeEstimate=seq_len_tot)
+        hdfLoader = HdfSeqLoader(hdfFile=hdfFile,
+                hdfGroup=self.hdfSeqGroup,
+                seqSizeEstimate=seq_len_tot,
+                seqNumEstimate=seq_cnt)
         hdfLoader.loadBlastDb(giIdFile=self.seqGiIdFile)
         #hdfLoader.close()
         hdfFile.close()
@@ -996,9 +987,15 @@ class TaxaCollector(Options):
         """Create SQL tables that index sequence in HDF dataset."""
         db = self.dbSql
         hdfFile = pt.openFile(self.hdfSeqFile,mode="r")
-        hdfSeq = HdfSeqReaderSql(db=db,hdfFile=hdfFile,hdfGroupName=self.hdfSeqGroup)
+        hdfSeq = HdfSeqReaderSql(db=db,hdfFile=hdfFile,hdfGroup=self.hdfSeqGroup)
         hdfSeq.loadIndToSql()
         #hdfSeq.close()
+        hdfFile.close()
+
+    def indexHdfActiveSeq(self):
+        """Create HDF index dataset for active sequence (from act_seq table)."""
+        hdfFile = pt.openFile(self.hdfActSeqFile,mode="w")
+        hdfMakeActiveSeqInd(db=self.dbSql,hdfFile=hdfFile,hdfPath=self.hdfActSeqInd)
         hdfFile.close()
 
     def reportStat(self):

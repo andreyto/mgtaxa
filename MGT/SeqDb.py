@@ -1,4 +1,13 @@
-"""Random access database for collected taxonomically characterized sequence data.
+"""Random access database for sequence data.
+We store all sequence data in one flat character array compressed with zlib.
+A separate array is built to index the sequence data.
+Each index record is a tuple (id,begin,size) and thus describes an arbitrary contiguous chunk
+of sequence and its identifier.
+Initially we load sequences from NCBI and the original index represents individual NCBI sequence
+records.
+Later we can build other indices in separate HDF files to access sequence data from 'seq' dataset
+in this file. E.g. an index that describes a concatenation of concequtive original sequences
+with some sequences (e.g. 16S rRNA) omitted.
 """
 
 from MGT.Common import *
@@ -6,7 +15,7 @@ from MGT.Taxa import *
 from MGT.Sql import *
 from MGT.BlastDb import BlastDb
 
-import tables as pt
+from MGT.Hdf import *
 
 from itertools import izip
 
@@ -16,12 +25,11 @@ class HdfSeqInd(pt.IsDescription):
     begin     = pt.Int64Col(pos=2) # index of first element within 'seq' dataset
     size       = pt.Int64Col(pos=3) # size of sequences
 
-class HdfSeqLoader(Options):
+class HdfSeqLoader(MGTOptions):
 
-    def __init__(self,hdfFile,hdfGroupName,seqSizeEstimate):
-        Options.__init__(self)
+    def __init__(self,hdfFile,hdfGroup,seqSizeEstimate,seqNumEstimate):
+        MGTOptions.__init__(self)
         self.hdfFile = hdfFile
-        hdfGroup = hdfFile.createGroup(hdfFile.root,hdfGroupName)
         atomSeq = pt.StringAtom(itemsize=1)
         # Use ``a`` as the object type for the enlargeable array.
         seq = hdfFile.createEArray(hdfGroup,
@@ -30,12 +38,19 @@ class HdfSeqLoader(Options):
             (0,),
             "Sequence",
             expectedrows=seqSizeEstimate,
-            filters=pt.Filters(complevel=2, complib='zlib',shuffle=False)
+            filters=pt.Filters(complevel=2, complib='zlib',shuffle=False),
+            createparents=True
             )
         #size of internal memory buffer of this leaf
         seq.nrowsinbuf = 1024**2 #1M
         self.seq = seq
-        ind = hdfFile.createTable(hdfGroup, 'ind', HdfSeqInd, "Sequence Index")
+        ind = hdfFile.createTable(hdfGroup, 
+            'ind', 
+            HdfSeqInd, 
+            "Sequence Index",
+            expectedrows=seqNumEstimate,
+            createparents=True
+            )
         #size of internal memory buffer of this leaf
         ind.nrowsinbuf = 1024**2 #1M
         self.ind = ind
@@ -80,34 +95,32 @@ class HdfSeqLoader(Options):
             iRec += 1
             if iRec % 10000 == 0:
                 print "Done %s records of total length %s" % (iRec,indBegin)
+        self.ind.flush()
+        self.seq.flush()
         fastaInp.close()
         inpGiId.close()
         os.remove(giFile)
 
     def close(self):
-        self.seq.close()
         self.seq = None
-        self.ind.close()
         self.ind = None
         self.hdfFile.flush()
         self.hdfFile = None
 
-class HdfSeqReader(Options):
+class HdfSeqReader(MGTOptions):
 
-    def __init__(self,hdfFile,hdfGroupName):
-        Options.__init__(self)
+    def __init__(self,hdfFile,hdfGroup):
+        MGTOptions.__init__(self)
         self.hdfFile = hdfFile
-        seq = hdfFile.getNode("/"+hdfGroupName+"/seq")
+        seq = hdfFile.getNode(hdfGroup,"seq")
         seq.nrowsinbuf = 1024**2 #1M
         self.seq = seq
-        ind = hdfFile.getNode("/"+hdfGroupName+"/ind")
+        ind = hdfFile.getNode(hdfGroup,"ind")
         ind.nrowsinbuf = 1024**2 #1M
         self.ind = ind
 
     def close(self):
-        self.seq.close()
         self.seq = None
-        self.ind.close()
         self.ind = None
         self.hdfFile.flush()
         self.hdfFile = None
@@ -129,3 +142,45 @@ class HdfSeqReaderSql(HdfSeqReader):
         db.ddl("ANALYZE TABLE seq_ind",ifDialect="mysql")
         db.createIndices(names=["begin"],table="seq_ind",primary="id")
         db.ddl("ANALYZE TABLE seq_ind",ifDialect="mysql")
+
+
+def hdfMakeActiveSeqInd(db,hdfFile,hdfPath):
+    """Create new HdfSeqInd dataset in the current file that describes the "active sequence" view of HdfSeq sequence.
+    This lists all sequences with the same taxid consequtively, setting 'id' to 'taxid' with the exception 
+    that sequences not in 'act_seq' table are excluded."""
+    where,name = hdfSplitPath(hdfPath)
+    seq_cnt = long(db.selectScalar("select count(*) from act_seq"))
+    ind = hdfFile.createTable(where, 
+            name, 
+            HdfSeqInd, 
+            "Active Sequence Index",
+            expectedrows=seq_cnt,
+            createparents=True)
+    #size of internal memory buffer of this leaf
+    ind.nrowsinbuf = 1024**2 #1M
+
+    # Our ordering relies on the precondition that seq_ind was created in tree order
+    inp = db.exportToStream(\
+    """SELECT  c.taxid,a.id,a.begin,a.size""",
+    """
+    FROM            seq_ind a,
+                    act_seq b,
+                    act_src c
+    WHERE           b.id_src = c.id AND
+                    b.id = a.id
+    ORDER BY        a.begin
+    """,
+    fieldsTerm=' ',linesTerm=r'\n')
+    iter = ( (int(rec[0]),int(rec[1]),long(rec[2]),long(rec[3])) for rec in (line.split() for line in inp) )
+    indRec = ind.row
+    nRec = 0
+    for (taxid,id,begin,size) in iter:
+        indRec['id'] = taxid
+        indRec['begin'] = begin
+        indRec['size'] = size
+        indRec.append()
+        if nRec % 10000 == 0:
+            print "Indexed %s records" % nRec
+        nRec += 1
+    ind.flush()
+

@@ -5,17 +5,64 @@ from MGT.Common import *
 import os
 import numpy
 from numpy import array
-import itertools
-
+import itertools, operator
+from copy import copy
         
-class TaxaNode:
-    
+class TaxaNode(object):
+    """Node of a taxonomy tree."""
+
+    # This reduces memory consumption by removing __weakref__ dict attribute
+    __slots__ = '__dict__'
+
+    @staticmethod
+    def setDebugOnUpdate(hook):
+        """Sets new debugging hook to call on attribute update.
+        @param hook - unbound function with signature f(node,name,value) where
+        name is attribute name and value is its new value.
+        @return previous hook function (or None), which can be stored by the caller and
+        used later to restore the original behavior."""
+        if hasattr(TaxaNode,'_hookDebugOnUpdate'):
+            orig = TaxaNode._hookDebugOnUpdate
+        else:
+            orig = None
+        if hook is None:
+            TaxaNode.unsetDebugOnUpdate()
+        else:
+            TaxaNode._hookDebugOnUpdate = hook
+            TaxaNode.__setattr__ = TaxaNode._debugSetAttr
+        return orig
+
+    @staticmethod
+    def unsetDebugOnUpdate():
+        """Remove checks for debugging on attribute update previously set by setDebugOnUpdate().
+        This removes any run-time penalty for the debugging hook."""
+        if hasattr(TaxaNode,'_hookDebugOnUpdate'):
+            delattr(TaxaNode,'_hookDebugOnUpdate')
+            delattr(TaxaNode,'__setattr__')
+
     def __init__(self):
         self.children = []
     
     def __str__(self):
         return strAttributes(self,exclude=("children","par"))
-        
+
+    def __getstate__(self):
+        """Pickling support - exclude node cross references to improve memory and performance 100x.
+        The TaxaTree constructor can restore the internal tree structure from remaining data.
+        The TaxaTreeIO.NodeStoragePickle relies on this."""
+        # The copy/del combination is a little faster than the iter comprehension
+        #return dict((item for item in self.__dict__.iteritems() if item[0] not in ('par','children')))
+        # Shallow copy
+        newdict = copy(self.__dict__)
+        del (newdict['par'], newdict['children'])
+        return newdict
+
+    def _debugSetAttr(self,name,value):
+        """This method will replace the default __setattr__ and call the debugging hook.
+        This is set by by @see setDebugOnUpdate()."""
+        self._hookDebugOnUpdate(name,value)
+        object.__setattr__(self,name,value)
+
     def setParent(self,par):
         """Double-link this node and the parent node.
         For speed, we do not check that 'par' is not a parent of this node already,
@@ -164,28 +211,142 @@ class TaxaNode:
     def setNestedSetsIndex(self,startIndex=1):
         self._setNested(itertools.count(startIndex))
 
+    def setIndex(self,startIndex=0):
+        """Index nodes in a subtree in a depth first traversal order.
+        For each node in a subtree, set attribute lind is the index of the node itself, 
+        attribute rind is the maximum plus one
+        index of all nodes in a subtree, including the top node. Index starts at startIndex
+        and only incremented when node is entered the first time in depth first traversal.
+        Thus, for any subtree starting at some node, it is easy to create an attribute map as
+        a dense (Numpy) array: a = numpy.zeros(top.rind - top.lind); a[node.lind-top.lind] = value.
+        It also makes it easy and fast to work with any subtree below the node:
+        sub_a = a[sub_top.lind-top.lind:sub_top.rind-top.lind]
+        sub_a will densely list all values for nodes below the sub_top, with elements accessed as
+        sub_a[node.lind-sub_top.lind]."""
+        def actor(node,i):
+            node.lind = i
+            for child in node.children:
+                i = actor(child,i+1)
+            node.rind = i + 1
+            return i
+        actor(self,startIndex)
 
+    def makePropArrayZeros(self,dtype):
+        """Return (self.lind,numpy.zeros(number of nodes in subtree))."""
+        return (self.lind,numpy.zeros(self.rind - self.lind,dtype=dtype))
+
+    def setPropArrayFromAttrib(self,prop,name,base=None):
+        """Assign values of subtree node attributes to numpy property array.
+        @param prop - Numpy array
+        @param name - node attribute name
+        @param base - indexing will be done as prop[subnode.lind-base]. If 
+        base is None, the lind of this node will be used."""
+        if base is None:
+            base = self.lind
+        for node in self.iterDepthTop():
+            prop[node.lind-base] = getattr(node,name)
+
+    def setPropArrayFromFunc(self,prop,func,base=None):
+        """Assign return value of a func(subnode) to numpy property array.
+        @param prop - Numpy array
+        @param func - unary function acting on the subtree node
+        @param base - indexing will be done as prop[subnode.lind-base]. If 
+        base is None, the lind of this node will be used."""
+        if base is None:
+            base = self.lind
+        for node in self.iterDepthTop():
+            prop[node.lind-base] = func(node)
+    
+    def setAttribFromPropArray(self,prop,name,base=None):
+        if base is None:
+            base = self.lind
+        for node in self.iterDepthTop():
+            # a[i].item() converts to Python type,
+            # Numpy docs say it is supposed to be faster 
+            # than Numpy scalar, and it indeed speeds up
+            # tree operations by x10
+            setattr(node,name,prop[node.lind-base].item())
+
+    def makePropArrayFromAttrib(self,dtype,name):
+        (base,prop) = self.makePropArrayZeros(dtype=dtype)
+        self.setPropArrayFromAttrib(prop=prop,name=name,base=base)
+        return prop
+
+    def makePropArrayFromFunc(self,dtype,func):
+        (base,prop) = self.makePropArrayZeros(dtype=dtype)
+        self.setPropArrayFromFunc(prop=prop,func=func,base=base)
+        return prop
+    
     def setTotal(self,srcAttr,dstAttr):
         """Set total as 'dstAttr' attribute as a sum of 'srcAttr' attribute of this node and all its subnodes."""
         assert srcAttr != dstAttr
         
         def actor(node):
-            s = getattr(node,srcAttr)
-            for child in node.children:
-                #print "DEBUG: child node: ", child
-                s += getattr(child,dstAttr)
-            setattr(node,dstAttr,s)
+            setattr(node,dstAttr,sum((getattr(child,dstAttr) for child in node.children),getattr(node,srcAttr)))
         
         self.visitDepthBottom(actor)
 
 
+    def setReduction(self,extractor,dstAttr,reduction=None,condition=None):
+        """Assign to 'dstAttr' attribute the result of applying 'reduce(func,...)' to this node and its children.
+        Example: setTotal() that sums only for non "unclassified" children could be implemented as:
+        setReduction(lambda node: getattr(node,srcAttr),dstAttr,operator.add,lambda node: not node.isUnclassified()).
+        Note: extractor(node) is called unconditionally; condition is only applied when the computed values of
+        'dstAttr' attribute are accumulated for reduction.
+        @param extractor - unary function object that is applied to each node to extract the value that is accumulated.
+        As a convenient exception, if 'extractor' is a string, it is considered to be a node attribute name.
+        @param dstAttr - name of destination attribute to set in each node with accumulated result
+        @param reduction - binary function object that is passed as a first argument to 'reduce' built-in, defaults
+        to operator.add
+        @param condition - apply this condition to each child node to decide if it should contribute to the 'dstAttr'
+        of the parent."""
+        if isinstance(extractor,StringTypes):
+            srcAttr = extractor
+            extractor = lambda node: getattr(node,srcAttr)
+        if reduction is None:
+            reduction=operator.add
+        if condition is None:
+            condition=lambda node: True
+        def actor(node):
+            setattr(node,
+                    dstAttr,
+                    reduce(reduction,
+                           (getattr(child,dstAttr) for child in node.children if condition(node)),
+                           extractor(node)
+                          )
+                    )
+        self.visitDepthBottom(actor)
+
     def setAttribute(self,name,value):
         for node in self.iterDepthTop():
             setattr(node,name,value)
-    
+
+    def delAttribute(self,name):
+        for node in self.iterDepthTop():
+            try:
+                delattr(node,name)
+            except AttributeError:
+                pass
+
+    def isSubnode(self,other):
+        """Return true if this node is a descendant of the other node.
+        Uses pre-computed nested sets indexes, which must be up-to-date.
+        A node is not considered a subnode of itself."""
+        return self.lnest > other.lnest and self.rnest < other.rnest
 
 class TaxaTree(object):
     
+    @staticmethod
+    def setDebugOnUpdate(hook):
+        """Calls @see TaxaNode.setDebugOnUpdate()"""
+        return TaxaNode.setDebugOnUpdate(hook)
+
+
+    @staticmethod
+    def unsetDebugOnUpdate():
+        """Calls @see TaxaNode.unsetDebugOnUpdate()"""
+        TaxaNode.unsetDebugOnUpdate()
+
     def __init__(self,storage):
         """Take a storage instance (such as NodeStorageNcbiDump), extract node data from it, link nodes
         with python object references and setup other attributes if necessary.
@@ -233,12 +394,16 @@ class TaxaTree(object):
 
     def reindex(self):
         """Refresh internal derived indices (depth, nested sets).
-        You probably want to call it after changing the tree structure (e.g. deleting nodes)."""
+        You probably want to call it after changing the tree structure (e.g. deleting nodes).
+        This method DOES NOT call setIndex()."""
         self.setDepth()
         self.setNestedSetsIndex()
 
     def setTotal(self,srcAttr,dstAttr):
         self.getRootNode().setTotal(srcAttr,dstAttr)
+
+    def setReduction(self,extractor,dstAttr,reduction=None,condition=None):
+        self.getRootNode().setReduction(extractor,dstAttr,reduction,condition)
 
     def getNode(self,id):
         return self.nodes[id]
@@ -275,6 +440,13 @@ class TaxaTree(object):
         else:
             top = self.getNode(id)
         top.setAttribute(name,value)
+
+    def delAttribute(self,name,id=None):
+        if id is None:
+            top = self.getRootNode()
+        else:
+            top = self.getNode(id)
+        top.delAttribute(name)
 
     def visitDepthTop(self,func,id=None):
         if id is None:
@@ -317,7 +489,16 @@ class TaxaTree(object):
                 node.removeChild(child)
                 for n in child.iterDepthTop():
                     del nodes[n.id]
-        
+
+    def setIndex(self,startIndex=0,id=None):
+        """See TaxaNode.setIndex() description."""
+        if id is None:
+            top = self.getRootNode()
+        else:
+            top = self.getNode(id)
+        top.setIndex(startIndex=startIndex)
+
+
     def buildSubtreeMask(self,ids,values=None,other=-1):
         """Return a mask that 'paints' every node with a value from 'values' according to if a node is in a subtree
         of corresponding id from 'ids'. If 'values' is None, values of 'ids' are used.
@@ -374,6 +555,7 @@ class TaxaTree(object):
             self.buildIdPresenceMask()
             mask = self._mask_presence
         return (mask * value).astype(dtype)
+
 
 """
 total length of taxa
@@ -591,6 +773,9 @@ class TaxaLevels:
         for (i,level) in zip(range(len(self.levels)),self.levels):
             levelPos[level] = i
         self.levelPos = levelPos
+
+    def getLevelId(self,name):
+        return self.levelIds[name]
 
     def getLevelNames(self,order="ascend"):
         if order == "ascend":

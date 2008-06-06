@@ -133,7 +133,7 @@ bool test_KmerCounterCtor() {
 }
 
 bool test_KmerCounterNaive() {
-	int kmerLen = 8;
+	int kmerLen = 2;
 	std::string testSeq = g_testingSeq.substr(0,g_testingSeq.size());
 	for(int i = 0; i < testSeq.size() - 2; i += 37) { testSeq[i] = 'N'; testSeq[i+1] = 'N'; }
 	//ADT_LOG << "testSeq : \n" << testSeq << "\n";
@@ -142,13 +142,13 @@ bool test_KmerCounterNaive() {
 	//ADT_LOG << "testSeqRC : \n" << testSeqRC << "\n";	
 	KmerCounterNaive counterNaive;
 	counterNaive.fillFromSeq(testSeq,kmerLen);
-	//ADT_LOG << "counterNaive : \n";
-	//counterNaive.print(ADT_LOG) << "\n";
+	ADT_LOG << "counterNaive : \n";
+	counterNaive.print(ADT_LOG) << "\n";
 	MGT::KmerCounter counter(kmerLen);
 	KmerCounterNaive counterMgt;	
 	counterMgt.fillFromCounter(testSeq,counter);
-	//ADT_LOG << "counterMGT : \n";
-	//counterMgt.print(ADT_LOG) << "\n";
+	ADT_LOG << "counterMGT : \n";
+	counterMgt.print(ADT_LOG) << "\n";
 	const KmerStrMap& cntNai = counterNaive.getCounts();
 	const KmerStrMap& cntMgt = counterMgt.getCounts();
 	KmerStrMap cntAbsNaiMgt, cntAbsMgtNai, cntDiff;
@@ -157,19 +157,19 @@ bool test_KmerCounterNaive() {
 	compareMaps(cntMgt,cntNai,cntAbsMgtNai, cntDiff);
 	bool ret = true;
 	if( cntAbsNaiMgt.size() ) {
-		//ADT_LOG << ADT_OUTVAR(cntAbsNaiMgt.size()) << '\n';
+		ADT_LOG << ADT_OUTVAR(cntAbsNaiMgt.size()) << '\n';
 		ret = false;
 	}
 	if( cntAbsMgtNai.size() ) {
-		//ADT_LOG << ADT_OUTVAR(cntAbsMgtNai.size()) << '\n';
+		ADT_LOG << ADT_OUTVAR(cntAbsMgtNai.size()) << '\n';
 		ret = false;
 	}
 	if( cntDiff.size() ) {
 		ADT_LOG << ADT_OUTVAR(cntDiff.size()) << '\n';
 		ret = false;
 	}
-	//ADT_LOG << ADT_OUTVAR(cntNai.size()) << '\n';
-	//ADT_LOG << ADT_OUTVAR(cntMgt.size()) << '\n';	
+	ADT_LOG << ADT_OUTVAR(cntNai.size()) << '\n';
+	ADT_LOG << ADT_OUTVAR(cntMgt.size()) << '\n';	
 	return ret;
 }
 
@@ -177,13 +177,18 @@ bool test_KmerCounterNaive() {
 
 int add( int i, int j ) { return i+j; }
 
+// BUG: Any test will fail if the program is compiled
+// w/o debugging support, e.g. just -O3, w/o -g.
+// This was confirmed by commenting out everything but 
+// a trivial test with add() below.
+
 int test_main( int, char *[] )             // note the name!
 {
 	///BOOST_CHECK(test_KmerCounterCtor());
 	BOOST_CHECK(test_KmerCounterNaive());
     // six ways to detect and report the same error:
-/*    BOOST_CHECK( add( 2,2 ) == 4 );        // #1 continues on error
-    BOOST_REQUIRE( add( 2,2 ) == 5 );      // #2 throws on error
+    //BOOST_CHECK( add( 2,2 ) == 4 );        // #1 continues on error
+/*    BOOST_REQUIRE( add( 2,2 ) == 5 );      // #2 throws on error
     if( add( 2,2 ) != 4 )
       BOOST_ERROR( "Ouch..." );            // #3 continues on error
     if( add( 2,2 ) != 4 )

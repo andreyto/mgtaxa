@@ -26,14 +26,14 @@ seq = numpy.fromstring(seqStr,dtype="S1")
 
 print seqStr
 
-counter = KmerCounter(kmerLen)
+counter = KmerCounter(kmerLen,True)
 
 nSeq = len(seq)
 
 counts = numpy.zeros(nSeq,numpy.int32)
 indices = numpy.zeros(nSeq,numpy.int64)
 
-for it in range(1000000):
+for it in range(10000):
     counter.process(seq)
     (size,total) = counter.counts(counts,indices)
     #isort = numpy.argsort(indices[:size])
@@ -44,3 +44,12 @@ print size, total
 
 print indices
 print counts
+
+counter.openOutput("test_kmersx.svm")
+counter.process(seq)
+counter.process(seq)
+counter.frequencesWriteSvmSparseTxt(10)
+counter.process(seq)
+counter.frequencesWriteSvmSparseTxt(100)
+counter.closeOutput()
+

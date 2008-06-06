@@ -4,66 +4,13 @@ from MGT.Common import *
 from MGT.TaxaTree import *
 from MGT.Sql import *
 
-class TaxaTreeDb(TaxaTree):
-    """Taxonomy tree that generates and loads data for/from SQL DB."""
-    
-    def __init__(self,storage,db,tableSfx=None):
-        """Initialize new TaxaTreeDb instance.
-        @param db - DbSql object. 
-        @param tablePrefix - DB tables with data for this tree will have this prefix"""
-        TaxaTree.__init__(self,storage=storage)
-        self.db = db
-        self.tableSfx = tableSfx
-
-    def loadAttribute(self,name,sql,default=None,setDefault=True,ignoreKeyError=True,typeCast=None):
-        """Execute 'sql' which should return a unique mapping taxid -> value and assign result to each node.
-        @param name - name of the new tree node attribute to set
-        @param sql - statement to execute. It must return (id,value) pairs (in that order) with 'id' corresponding to tree node id's.
-        Actual column names do not matter.
-        @param default - assign this value to those nodes for which taxid is not present in the 'sql' result set (if 'setDeafult' is True)
-        @param setDefault - if False, do not assign default value to nodes
-        @param ignoreKeyError - if True, do not raise exception if 'sql' results set contains an id that is not present in the tree.
-        """
-        db = self.db
-        if setDefault:
-            self.setAttribute(name,default)
-        if typeCast is None:
-            typeCast = lambda v: v
-        curs = db.execute(sql)
-        curs.arraysize = 100000
-        while True:
-            rows = curs.fetchmany()
-            if not rows:
-                break
-            for row in rows:
-                try:
-                    setattr(self.getNode(int(row[0])),name,typeCast(row[1]))
-                except KeyError:
-                    if not ignoreKeyError:
-                        raise
-        
-    
-    def loadSeqLen(self,
-            name="seq_len",
-            sql="select taxid,seq_len from taxa_seq_len"):
-        """Load sequence length from DB and also assign accumulated subtree sequence to attribute name+'_tot'
-        Parameters have the same meaning as for for loadAttribute().
-        Default value of 0L is used."""
-        self.loadAttribute(name=name,
-                           sql=sql,
-                           default=0L,
-                           setDefault=True,
-                           ignoreKeyError=True,
-                           typeCast=long)
-        self.setTotal(srcAttr=name,dstAttr=name+"_tot")
-
 
 class TaxaLevelsDb(TaxaLevels,Options):
     """Load our selection of taxonomic ranks into SQL database, create column and row aggregates.
     """
 
     def __init__(self,db,taxaTree):
-        Options.__init__(self)
+        MGTOptions.__init__(self)
         self.taxaTree = taxaTree
         TaxaLevels.__init__(self)
         if self.taxaTree is not None:

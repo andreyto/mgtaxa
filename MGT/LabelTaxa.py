@@ -69,8 +69,646 @@ Two diferent origins are possible:
     taxonomic hierarchy).
 """
 
+
+from MGT.Common import *
+from MGT.Taxa import *
+from MGT.Sql import *
+from MGT.SampDb import *
+from MGT.PredictorDb import *
+from MGT.SampDbKmer import *
+
 def exclude_rRNA(self):
     db.createTableAs(
     """select * from seq_hdr where hdr rlike '[[:<:]]rRNA[[:>:]]'"""
     )
+
+
+class SamplerConcat(MGTOptions):
+    """Sample chunks of available training sequence by concatenating all sequences for each taxid.
+    Concatenating (as opposed to chunking each sequence individually) greatly simplifies random
+    sampling of taxid chunks w/o replacement and increases the amount of sample data for small
+    sequences. It creates chimeric k-mer vectors however (but not chimeric k-mers because we insert
+    spacers)."""
+
+    # Subtrees starting at these nodes are considered "testing terminal" -
+    # entire subtree is always selected for testing
+    # We need "sub..." ranks because there subspecies that do not have
+    # a species or genus node in their lineage.
+
+    termTopRanks = ("genus","species","subspecies","subgenus")
+
+    def __init__(self,db,sampLen,kmerLen,namePrefix):
+        """Constructor.
+        @param db - SqlDB instance
+        @param sampLen - length of sequence chunks to sample
+        @param kmerLen - length of k-mer (k)
+        @param namePrefix - files will be in a directory with this name and tables created by this 
+        object will have this prefix in their names.
+        """
+        MGTOptions.__init__(self)
+        self.stage = 2
+        self.db = db
+        self.sampLen = sampLen
+        self.kmerLen = kmerLen
+        self.namePrefix = namePrefix
+        self.tblPrefix = namePrefix + '_'
+        self.dirPrefix = namePrefix
+        makedir(self.dirPrefix)
+        self.hdfSampFile = self.getFileName("samp.hdf")
+        # @todo: after we debug this faster version, load the tree from SQL storage to reflect possible
+        # tree modifications saved from earlier stages
+        self.storePickle = NodeStoragePickleSep(fileName=self.getFileName(name="taxaTree.postMarkTraining.pkl"))
+        self.storeDump = NodeStorageNcbiDump(ncbiDumpFile=self.taxaNodesFile,
+                ncbiNamesDumpFile=self.taxaNamesFile)
+        self.levels = TaxaLevels()
+        print "DEBUG: Loading the tree"
+        if self.stage == 1:
+            self.taxaTree = TaxaTree(storage=self.storeDump)
+            self.levels.setLevels(self.taxaTree)
+        else:
+            self.taxaTree = TaxaTree(storage=self.storePickle)
+        print "DEBUG: tree loaded"
+        self.taxaTreeStore = NodeStorageDb(db=self.db,tableSfx=self.taxaTreeTableSfxMain)
+
+    def getTableName(self,name):
+        """Given a stem table name, return full table name unique for this object (prefix+name).
+        @param name - stem name
+        """
+        return self.tblPrefix+name.strip()
+
+    def getFileName(self,name):
+        """Same as getTableName() but for files."""
+        return os.path.join(self.dirPrefix,name)
+
+    def rebuild(self):
+        if self.stage == 1:
+            #self.mkDbSampleCounts()
+            print "DEBUG: loadSampleCountsMem()"
+            self.loadSampleCountsMem()
+            print "DEBUG: setIsUnderUnclassMem()"
+            self.setIsUnderUnclassMem()
+            print "DEBUG: markTrainable()"
+            self.markTrainable()
+            print "DEBUG: selectTestTaxa()"
+            self.selectTestTaxa()
+            print "DEBUG: markTraining()"
+            self.markTraining()
+            print "DEBUG: checkPostMarkTraining()"
+            self.checkPostMarkTraining()
+            print "DEBUG: saving the tree"
+            self.taxaTree.delAttribute('sampSel')
+            #raise ValueError(0)
+            self.storePickle.save(tree=self.taxaTree)
+            #print "DEBUG: Writing statistics"
+            #self.statTestTaxa()
+            #self.mkHdfSampleInd()
+        else:
+            print "DEBUG: writeTraining()"
+            self.setTrainTarget()
+            self.writeTraining()
+
+    def mkHdfSampleInd(self):
+        hdfFileActSeq = pt.openFile(self.hdfActSeqFile,mode="r")
+        hdfSeqInd = hdfFileActSeq.getNode(self.hdfActSeqInd)
+        hdfFileSamp = pt.openFile(self.hdfSampFile,mode="w")
+        hdfMakeSampIndexConcat(hdfFileSamp,self.hdfSampGroup,hdfSeqInd,self.sampLen)
+        hdfFileSamp.close()
+        hdfFileActSeq.close()
+
+    def mkDbSampleCounts(self):
+        """Make DB tables with sample counts per taxonomy id"""
+        db = self.db
+        # Because we concatenate sequence, we can get sample counts
+        # from act_src
+        tblTxSamp = self.getTableName("tx_samp")
+        db.createTableAs(tblTxSamp,"""
+        select taxid,floor(sum(seq_len)/%i) as samp_n from act_src group by taxid having samp_n > 0
+        """ % self.sampLen)
+        db.createIndices(primary="taxid",table=tblTxSamp)
+        db.analyze(tblTxSamp)
+
+    def loadSampleCountsMem(self):
+        """Transfer sample counts from DB into in-memory taxonomy tree object."""
+        tblTxSamp = self.getTableName("tx_samp")
+        loadDb = False
+        self.taxaTree.getRootNode().setIndex()
+        if loadDb:
+            self.taxaTreeStore.loadAttribute(tree=self.taxaTree,
+                                         name="samp_n",
+                                         sql="select taxid,samp_n from %s" % tblTxSamp,
+                                         default=0L,
+                                         setDefault=True,
+                                         ignoreKeyError=True,
+                                         typeCast=long)
+
+            samp_n = self.taxaTree.getRootNode().makePropArrayFromAttrib(dtype='i4',name='samp_n')
+            dumpObj(samp_n,"samp_n.pkl")
+        else:
+            samp_n = loadObj("samp_n.pkl")
+            print "DEBUG: samp_n.shape = ", samp_n.shape
+            self.taxaTree.getRootNode().setAttribFromPropArray(prop=samp_n,name="samp_n")
+        self.taxaTree.setTotal("samp_n","samp_n_tot")
+        # samp_n_tot_class excludes immediate unclassified children but includes
+        # unclassified grand-children
+        for node in self.taxaTree.iterDepthTop():
+            node.samp_n_tot_class = node.samp_n_tot - \
+                    sum( ( child.samp_n_tot for child in node.getChildren() if child.isUnclassified() ), 0 )
+        #self.taxaTree.setReduction("samp_n","samp_n_tot_class",condition=lambda node: not node.isUnclassified()) 
     
+    def setIsUnderUnclassMem(self):
+        """Set an attribute 'isUnderUnclass' for in-memory tree nodes.
+        It flags all nodes that have "unclassified" super-node somewhere in their lineage."""
+        taxaTree = self.taxaTree
+        iter = taxaTree.iterDepthTop()
+        root = iter.next()
+        root.isUnderUnclass = False
+        for node in iter:
+            if node.isUnclassified() or node.getParent().isUnderUnclass:
+                node.isUnderUnclass = True
+            else:
+                node.isUnderUnclass = False
+        
+    def markTrainable(self):
+        """Mark all nodes that have enough samples for training with and without validation.
+        When we train for subsequent validation with testing set, we cannot use any 'unclassified'
+        samples because they might actually represent the excluded testing set. On the other
+        hand, there is no reason not to use any 'unclassified' samples under a 'classified'
+        node for the final re-training.
+        @pre loadSampleCountsMem() and setInUnderUnclassMem() were called
+        @post in-memory taxaTree nodes have the following attributes set:
+            isTrainable - trainable with 'unclassifed' samples included
+            isTrainableTest - trainable for validation. A node can still be excluded from
+            testing later if extracting testing set will leave too few samples for training,
+            but it will be trained during testing stage - just will not have any true positive 
+            testing samples."""
+       
+        self.setSampSel()
+        taxaTree = self.taxaTree
+        for node in taxaTree.iterDepthTop():
+            # a quick filter that excludes nodes w/o any samples
+            # nodes under 'unclassfied' subtrees are never the training targets
+            if node.samp_n_tot > 0 and not node.isUnderUnclass:
+                node.isTrainable = ( node.samp_n_tot >= node.sampSel.prod.train.min )
+                testSampSel = node.sampSel.test
+                node.isTrainableTest = ( node.samp_n_tot_class >= (testSampSel.train.min + testSampSel.test.min) )
+                testTarget = max(\
+                        min(\
+                            int(round(node.samp_n_tot_class * testSampSel.test.ratio)),
+                            node.samp_n_tot_class - testSampSel.train.min\
+                            ),
+                        testSampSel.test.min)
+                node.nSampTestMax = testTarget
+            else:
+                node.isTrainable = False
+                node.isTrainableTest = False
+     
+    def setSampSel(self):
+        taxaTree = self.taxaTree
+        viralRoot = taxaTree.getNode(viralRootTaxid)
+        sampSel = self.sampSel
+        for node in taxaTree.iterDepthTop():
+            
+            if node.isSubnode(viralRoot):
+                node.sampSel = sampSel.vir
+            else:
+                node.sampSel = sampSel.all
+
+    def mkDbTestingTaxa(self,rank="genus",superRank="family"):
+        """Select complete 'rank' nodes uniformly distributed across 'superRank' super-nodes."""
+        pairs = self.lowRankTestPairs(rank=rank,superRank=superRank)
+        self.sampleTestPairs(pairs)
+
+    def lowRankTestPairs(self,rank,superRank):
+        """Return set of unique pairs (testing node,first supernode).
+        @param rank - entire nodes of this rank will be selected as testing samples (e.g. genus).
+        @param superRank - a second member of each pair will have at least this rank (e.g. family).
+        'superRank' nodes might not be 'isTrainable'. That should be filtered later."""
+
+        rankId = self.levels.getLevelId(rank)
+        superRankId = self.levels.getLevelId(superRank)
+        noRankId = self.levels.getLevelId(noRank)
+        #select all nodes with samples and their superrank super-nodes
+        #@todo idlevel is more coarse than it has to be for this purpose.
+        #ideally, we should pick superfamily if we could not find family -
+        # with current idlevels we will pick order.
+        taxaTree = self.taxaTree
+        pairs = set()
+        for node in taxaTree.iterDepthTop():
+            if node.samp_n > 0 and not node.isUnderUnclass:
+                sub = node
+                sup = None
+                for n in node.lineage():
+                    if n.idlevel != noRankId:
+                        #nodes as high as rankId will be selected in entirety
+                        if n.idlevel <= rankId:
+                            sub = n
+                        #nodes at least as high as superRankId will be uniformly sampled
+                        if n.idlevel >= superRankId:
+                            sup = n
+                            break
+                # this should always be true, but just in case
+                if sub.isSubnode(sup) and sup is not None:
+                    #adding pairs into a set object makes sure
+                    #that they are unique (we can hit one genus many times ascending from its species)
+                    pairs.add((sub,sup))
+        db = self.db
+        db.saveRecords(records = ( (sub.id,sup.id) for (sub,sup) in pairs ), 
+                       table = SqlTable(name="test_pairs",
+                                        fields = (SqlField("id_sub","integer"),SqlField("id_sup","integer"))))
+        return pairs
+
+    def sampleTestPairs(self,pairs):
+        """Randomly sample a list of (testing node,first supernode) pairs obtained with lowRankTestPairs()."""
+        #samp_n_tot - test check above for every genus
+        pass
+
+    def selectTestTaxa(self):
+        """Select nodes that will be used entirely for testing.
+        The method aims to achieve these goals:
+        - create a uniform random sampling of the tree
+        - sample as deep into the hierarchy as possible
+        - select entire genera or entire species if there is no genera above them
+        (we call such nodes "terminal" here)
+        This is done recursively: for a given node: 
+        a) all taxa selected as testing for its non-terminal children is also selected
+        b) and then terminal children are added at random until we reach the limit on 
+        testing samples set for this node.
+        The major alternative would be to do the (b) selection from a list of all
+        so far non-selected terminal subnodes in an entire sub-tree of a given node
+        (the method would have to return such a list from each recursive call, with the
+        parent concatenating the lists). This would provided better chances to reach the
+        testing ratio target for higher order taxa. However, this would also run a danger
+        of a non-uniform training and deteriorating perfomance. For example, if we have
+        a subtree (A,(B,C),D) and B was selected as testing for (B,C) subtree, we could also
+        select C as testing for (A,(B,C),D) subtree (it would still be used as training
+        for (B,C). However, we would have no trainig samples from (B,C) when trainig (A,(B,C),D),
+        which can become an issue.
+        @post Attributes are set for each node:
+            - is_test - if True, entire subtree is selected as testing sample. Set for every node
+            in such a subtree.
+            - has_test - if True, node has enough testing samples, but it is not 'is_test' itself.
+            - samp_n_tot_test - number of testing samples for this node
+            - samp_n_tot_train - number of training samples for this node.
+        Note that the presence of "unclassified" sequence still creates problems:
+        selection of even one testing sample excludes from training all unclassified nodes
+        which are immediate children of all nodes in testing sample lineage. Thus, any of these nodes
+        can become non-trainable even if it is trainable w/o testing. However, we need to accumulate
+        the testing sequence for use by upper nodes, so this seems unavoidable. To check the effect
+        of this tradeoff, temporarily make TaxaNode.isUnclassified() to always return False and re-run
+        the testing/training selection. So far this experiment shown little impact."""
+
+        taxaTree = self.taxaTree
+        rootNode = taxaTree.getRootNode()
+        for node in taxaTree.iterDepthTop():
+            node.is_test = False
+            node.has_test = False
+            node.samp_n_tot_test = 0
+            if not node.isUnderUnclass:
+                node.samp_n_tot_train = node.samp_n_tot
+            else:
+                node.samp_n_tot_train = 0
+
+        def actor(node):
+            # if a node is not even trainable in testing phase with minimum selection of testing samples, 
+            # set the number of testing samples to zero and return
+            if node.isUnderUnclass or node.samp_n_tot == 0:
+            #if node.samp_n_tot == 0:
+                node.samp_n_tot_test = 0
+                return
+            # Collect all classified child nodes with non-zero classified sample counts, for convenience
+            # This will be retained on stack during recursion, but our tree is not deep
+            children = [ child for child in node.getChildren() if not child.isUnclassified() and child.samp_n_tot > 0 ] 
+            # Genus and species subnodes, we mark as "testing terminal" meaning that we
+            # can only select the entire subnode for testing (we could actually only exclude
+            # from training entire subnodes, but allocate only part of their samples for testing,
+            # which would result in spreading the testing sample over wider set of subnodes. We
+            # do not do this, however, because that would reduce the feature space covered by
+            # training samples).
+            # For other subnodes, we call the same function recursively
+            for child in children:
+                if child.rank in self.termTopRanks:
+                    child.isTestTerm = True
+                    child.samp_n_tot_test = 0
+                    child.samp_n_tot_train = child.samp_n_tot
+                else:
+                    assert child.samp_n == 0, \
+                            "We currently cannot tolerate nodes that have directly attached sequence "+\
+                            "and are not 'testing terminal'. Examples would be some sequence assigned "+\
+                            "a family taxid rather than taxid of some species or 'unclassified' "+\
+                            "subnode under that family."
+                    child.isTestTerm = False
+                    actor(child)
+                    # there will be cases when it is not possible to select any testing samples 
+                    # from a subnode within provided constrains, and the total number of samples
+                    # is more than zero but less than the minimal training number.
+                    # In such case, we mark it as "testing terminal", free for selection,
+                    # 
+                    if child.samp_n_tot_test == 0 and child.samp_n_tot_train < child.sampSel.test.train.min:
+                        child.isTestTerm = True
+            termChildren = []
+            samp_n_tot_test = 0
+            samp_n_tot_train = 0
+            for child in children:
+                if child.isTestTerm:
+                    termChildren.append(child)
+                samp_n_tot_test += child.samp_n_tot_test
+                # Initially we set node's training to be a sum of traning of all subnodes,
+                # including all training terminal ones. Then we will be subtracting the counts
+                # of training terminals when we select them for testing
+                samp_n_tot_train += child.samp_n_tot_train
+            #assert node.samp_n_tot_class >= samp_n_tot_test,
+            #assert node.samp_n_tot_class - samp_n_tot_test >= node.sampSel.test.train.min, \
+            #    "Total number of samples selected for subnodes should never exceed"+\
+            #    " the total number of classified samples for the parent minus min training size."
+            # we selected samp_n_tot_test samples from subnodes so far
+            # the node will be considered testable if it has at least node.nSampTestMin test samples,
+            # with the target number of node.nSampTestMax and node.nNodesTestMax (which are computed earlier as a fixed
+            # percentage of all classified samples under the node but bound by the min number of training nodes to be left).
+            # Here, we sample randomly w/o substitution the "testing terminal" subnodes until we reach either one of the 
+            # upper bounds or exhaust the subnodes list.
+            nSampTestToAdd = node.nSampTestMax - samp_n_tot_test
+            # That assert is no longer applicable after we added code around 'new_test' below - now we allow
+            # to accumulate the amount of testing samples above the target ratio if this is the only way to
+            # select at least the minimum amount of testing (assuming that the remaining training is still
+            # sufficient)
+            # assert nSampTestToAdd >= 0, "Testing sample selection inside subnodes should not exceed parent's limit"
+            if nSampTestToAdd > 0:
+                nrnd.shuffle(termChildren)
+                #termChildren.sort(key=lambda n: n.samp_n_tot)
+                for child in termChildren:
+                    # We continue through the remaining children if adding the current one 
+                    # would exceed the selection limit. That means, the procedure is biased
+                    # somewhat toward the smaller nodes and not uniformly random anymore. This seems
+                    # to be a fair traidoff - otherwise we would have smaller number of testable nodes.
+                    # It is better to have some testing than no testing.
+                    if child.samp_n_tot <= nSampTestToAdd and \
+                        samp_n_tot_train - child.samp_n_tot >= node.sampSel.test.train.min:
+                        # When adding whole nodes for testing, we should not ignore "unclassified" content under them
+                        nSampTestToAdd -= child.samp_n_tot
+                        samp_n_tot_test += child.samp_n_tot
+                        samp_n_tot_train -= child.samp_n_tot
+                        # We currently just mark the child as selected for testing, and then
+                        # collect all such in another pass through the tree.
+                        # Calling the logging method here would be a more flexible solution because
+                        # it would not assume that the testing node is a direct child of a tested node, e.g.
+                        # self.logTestSamples(node,child)
+                        # But it would require more extensive coding for itself and other parts of the 
+                        # algorithm such as selection of the training set.
+                        for n in child.iterDepthTop():
+                            n.is_test = True
+                            n.has_test = False
+                            n.samp_n_tot_test = n.samp_n_tot
+                            n.samp_n_tot_train = 0
+                # A node might have two (or more) terminal subnodes, each larger than
+                # the target testing size. In that case we just take the smaller one
+                # assuming that remaining training size is above minimum
+                if samp_n_tot_test < node.sampSel.test.test.min:
+                    remTermChildren = [ child for child in termChildren if not child.is_test ]
+                    if len(remTermChildren) > 0:
+                        remTermChildren.sort(key=lambda n: n.samp_n_tot)
+                        child = remTermChildren[0]
+                        new_test = samp_n_tot_test + child.samp_n_tot
+                        new_train = samp_n_tot_train - child.samp_n_tot 
+                        if new_test >= node.sampSel.test.test.min and \
+                            new_train >= node.sampSel.test.train.min:
+                            samp_n_tot_test = new_test
+                            samp_n_tot_train = new_train
+                            for n in child.iterDepthTop():
+                                n.is_test = True
+                                n.has_test = False
+                                n.samp_n_tot_test = n.samp_n_tot
+                                n.samp_n_tot_train = 0
+
+
+
+            node.samp_n_tot_test = samp_n_tot_test
+            node.has_test = ( samp_n_tot_test >= node.sampSel.test.test.min )
+            node.samp_n_tot_train = samp_n_tot_train
+            # If no testing sequence was selected, we can use all (with "unclassified")
+            # sequence for training
+            if samp_n_tot_test == 0 and not node.isUnderUnclass:
+                for n in node.iterDepthTop():
+                    n.samp_n_tot_train = n.samp_n_tot
+
+
+        def debugOnNodeUpdate(node,name,value):
+            if node.id == 10781 or node.idpar == 10781:
+                print node.id, name, value
+
+        taxaTree.setDebugOnUpdate(debugOnNodeUpdate)
+        actor(rootNode)
+        iter = taxaTree.iterDepthTop()
+        iter.next() # skip the root
+        # if there is no testing sequence and it's not unclassified or it is unclassified
+        # under a classified node with no testing sequence, use all samples for training,
+        # including unclassified
+        for node in iter:
+            if node.samp_n_tot_test == 0 and \
+                    (not node.isUnderUnclass or \
+                    (node.getParent().samp_n_tot_test == 0 and \
+                    node.getParent().samp_n_tot_train != 0)):
+                node.samp_n_tot_train = node.samp_n_tot
+        taxaTree.unsetDebugOnUpdate()
+
+
+    def markTraining(self):
+        """Mark final training state for each node - 'is_class' and 'n_mclass' attributes.
+        Nodes that are not 'is_class' are ignored during training.
+        'is_class' means that a node can be used as a label in training the
+        multiclass classifier for the parent node.
+        'n_mclass' is also set to the number of classes below the node. 
+        This method must be called after selectTestTaxa() and uses node attributes set by
+        that method."""
+
+        taxaTree = self.taxaTree
+        iter = taxaTree.iterDepthTop()
+        rootNode = iter.next()
+        rootNode.is_class = True # need this for the condition below to work
+        for node in iter:
+            node.is_class = False
+            par = node.getParent()
+            # that will exclude every node below genus or species
+            if par.is_class and not par.rank in self.termTopRanks:
+                if node.samp_n_tot_train >= node.sampSel.test.train.min and \
+                        not node.isUnderUnclass:
+                    node.is_class = True
+        for node in taxaTree.iterDepthTop():
+            node.n_mclass = len([child for child in node.getChildren() if child.is_class])
+
+
+    def setTrainTarget(self):
+        self.setSampSel()
+        taxaTree = self.taxaTree 
+        for node in taxaTree.iterDepthTop():
+            node.samp_n_train_targ = min(node.sampSel.test.train.max,node.samp_n_tot_train)
+
+    def checkPostMarkTraining(self):
+        """Consistency check after a call to markTraining()."""
+        taxaTree = self.taxaTree
+        iter = taxaTree.iterDepthTop()
+        rootNode = iter.next()
+        for node in iter:
+            par = node.getParent()
+            assert par.samp_n_tot_train >= node.samp_n_tot_train
+            assert not (not par.is_class and node.is_class)
+            assert not (node.samp_n > 0 and node.has_test), \
+                    "Node with directly attached sequence cannot be marked as testable"
+            assert node.samp_n != 0 or \
+                    node.samp_n_tot_train == sum([ n.samp_n_tot_train for n in node.getChildren() ])
+
+    def statTestTaxa(self):
+        """Statistics about testing set selection.
+        Call aftere selectTestTaxa()"""
+        tblStat = self.getTableName("st_test")
+        taxaTree = self.taxaTree
+        self.taxaTreeStore.saveAttributes(tree=taxaTree,
+            nameToSql={'samp_n_tot_test':{'type':'integer'},
+                       'samp_n_tot_class':{'type':'integer'},
+                       'samp_n_tot_train':{'type':'integer'},
+                       'samp_n':{'type':'integer'},
+                       'isTrainableTest':{'type':'bool','name':'is_trainable_test'},
+                       'is_test':{'type':'bool'},
+                       'has_test':{'type':'bool'},
+                       'is_class':{'type':'bool'},
+                       'n_mclass':{'type':'integer'},
+                       'isTestTerm':{'type':'bool','name':'is_test_term'},
+                       'nSampTestMax':{'type':'integer','name':'n_samp_test_max'},
+                       'isUnderUnclass':{'type':'bool','name':'is_under_unclass'},
+                       'lnest':{'type':'integer'},
+                       'rnest':{'type':'integer'},
+                       'rank':{'type':'char(20)'},
+                       'idpar':{'type':'integer'}},
+            table=tblStat)
+        storeTreeView = NodeStorageHypView(fileName=tblStat+".hv3",
+            labeler=lambda n: "%s_%s_%s_N_%s_C_%s_T_%s" % (n.id,n.rank,n.name[:10],n.numChildren(),
+                n.samp_n_tot_class,n.samp_n_tot_test))
+
+        storeTreeView.save(taxaTree)
+
+
+    def writeTraining(self):
+        """Write training data set for each eligible node.
+        @pre Nodes have the following attributes: 
+        is_class - True for nodes that can serve as classes in SVM
+        n_mclass - number of trainable sub-classes
+        samp_n_tot_test - number of testing samples in a subtree
+        samp_n_tot_train - number of training samples in a subtree (excluding testing)
+        is_test - True if a subtree is used for testing
+        @post Data sets ready for SVM training are saved. This is done through the
+        creation of PredictorDb and descendants of Predictor class.
+        @post taxaTree.getRootNode().setIndex() resets internal node index.
+        This method must be called after markTraining() sets needed node attributes.
+        """
+        taxaTree = self.taxaTree
+        rootNode = taxaTree.getRootNode()
+        rootNode.setIndex()
+        self.sampNTrainTot = rootNode.makePropArrayFromAttrib(dtype='i4',name='samp_n_tot_train')
+        for node in taxaTree.iterDepthTop():
+            assert self.sampNTrainTot[node.lind] == node.samp_n_tot_train
+        ## @todo make conditional on not is_test
+        def samp_n_choice(node):
+            if node.is_test:
+                return 0
+            else:
+                return node.samp_n
+        self.sampNTrainSelf = rootNode.makePropArrayFromFunc(dtype='i4',func=samp_n_choice)
+        predDb = PredictorDb(db=self.db,reset=True)
+        kmerReader = KmerReader(hdfSampFile=self.hdfSampFile,sampLen=self.sampLen,kmerLen=self.kmerLen,spacer='N')
+        iPredictor = 0
+        print "DEBUG: Starting predictor iteration"
+        start = time.time()
+        for node in self.taxaTree.iterDepthTop(): 
+            if node.n_mclass > 1:
+                predictor = predDb.newPredictor(node=node,predType='ms')
+                #trainWriter = predictor.trainingWriter()
+                kmerReader.openOutput(predictor.trainFile)
+                for child in node.getChildren(): 
+                    if child.is_class:
+                        taxaSampChild = self.pickRandomSampleCounts(child)
+                        #print "DEBUG: taxaSampChild = ", \
+                        #        sum(taxaSampChild.values()),  \
+                        #        zip(taxaSampChild.itervalues(), \
+                        #        [ self.sampNTrainTot[node.lind] for node in ( taxaTree.getNode(id) for id in taxaSampChild.iterkeys() ) ])
+                        for taxidChild in taxaSampChild:
+                            kmerReader.randomFrequencesWriteSvmSparseTxt(taxid=taxidChild,
+                                    nSamples=taxaSampChild[taxidChild])
+                            continue
+                            for (vec,total) in kmerReader.randomFrequences(taxid=taxidChild,
+                                    nSamples=taxaSampChild[taxidChild]):
+                                trainWriter.write(label=taxidChild,
+                                        values=vec['values'],
+                                        indices=vec['indices'])
+                kmerReader.closeOutput()
+                #trainWriter.close()
+                iPredictor += 1
+                print "iPredictor = ", iPredictor
+                if iPredictor >= 50:
+                    break
+        print "DEBUG: Done predictor iteration in %s sec" % (time.time() - start)
+
+    def pickRandomSampleCounts(self,node):
+        """Randomly pick counts of available samples from taxonomy ids below the node.
+        @return dictionary { taxid -> count }.
+        Should be called from writeTraining() which sets up sampNTrainTot and sampNTrainSelf
+        node property arrays."""
+        taxaCounts = {}
+        taxaTree = self.taxaTree
+        rootNode = taxaTree.getRootNode()
+        # Here we rely on 'startIndex' been zero when rootNode.setIndex(startIndex) was called.
+        # We could select just a slice self.sampNTrainTot[node.lind:node.rind], but memory wise it 
+        # should not matter much because near the tree root the slice would be as big as the
+        # entire tree anyway, and indexing is faster with zero based full array.
+        # At each call, we create these copies fresh (which is very fast) and keep subtracting
+        # from them:
+        nTrainTot = self.sampNTrainTot.copy()
+        nTrainSelf = self.sampNTrainSelf.copy()
+        def actor(n):
+            choices = [ child for child in n.children if nTrainTot[child.lind] > 0 ]
+            nChoices = len(choices)
+            lind = n.lind
+            if nTrainSelf[lind] > 0:
+                # random_integers returns closed range [low,high]
+                iChoice = nrnd.random_integers(0,nChoices) - 1 # -1 <= iChoice < len(choices)
+                if iChoice < 0:
+                    nTrainSelf[lind] -= 1
+                    nTrainTot[lind] -= 1
+                    try:
+                        taxaCounts[n.id] += 1
+                    except KeyError:
+                        taxaCounts[n.id] = 1
+                    return
+                # If we got here, iChoice points to one of the subnodes
+            elif nChoices > 0:
+                iChoice = nrnd.randint(0,nChoices)
+            else:
+                raise ValueError("Tree error")
+            actor(choices[iChoice])
+            nTrainTot[lind] -= 1
+
+        nTrainTarget = node.samp_n_train_targ
+        nTrainDone = 0
+        while nTrainDone < nTrainTarget:
+            assert nTrainTot[node.lind] > 0
+            actor(node)
+            nTrainDone += 1
+        return taxaCounts
+
+
+    def mkDbTestingTaxaDb(self,rank="genus",superRank="family"):
+        """Select complete 'rank' nodes uniformly distributed across 'superRank' super-nodes."""
+        rankId = self.levels.getLevelId(rank)
+        superRankId = self.levels.getLevelId(superRank)
+        tblTxSamp = self.getTableName("tx_samp")
+        """
+        select id 
+        from %(tblTree)s tr_leaf, %(tblTxSamp) tx_samp, %(tblTree)s tr_sup
+        where 
+        tr_leaf.id = tx_samp.id and
+        %(subtreeLeafSup)s and
+        tr_sup.idlevel >= %(superRankId)i and min_depth
+        """ % { 'subtreeLeafSup' : sqlIsSubTree('tr_leaf', 'tr_sup'),
+                'superRankId'    : superRankId }
+            
+
+class RandomSampPicker:
+    pass

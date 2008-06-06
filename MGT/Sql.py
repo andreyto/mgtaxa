@@ -23,7 +23,7 @@ class SqlWatch:
             ##time.clock() seems to be broken on SuSe 10 x86_64 Python 2.4
             ##- it always returns the same value
             self.start = time.time()
-            print sql
+            print dedent(sql)
 
     def __call__(self):
         if self.debug > 0:
@@ -31,9 +31,10 @@ class SqlWatch:
             print "SQL finished in %.3f sec" % (finish-self.start)
             self.start = finish
 
-class DbSql(Options):
+class DbSql(MGTOptions):
     
     def __init__(self):
+        MGTOptions.__init__(self)
         atexit.register(dbClose, dbObj=self)
         self.debug = 1
 
@@ -194,6 +195,9 @@ class DbSql(Options):
     def dialectMatch(self,dialect):
         return dialect is None
 
+    def analyze(self,table):
+        self.ddl("ANALYZE TABLE " + table,ifDialect="mysql")
+
     def createTableAs(self,name,select):
         """Insulate 'create table as (select ...) [order by ...] with data' from SQL dialect differences.
         @param name - name of table to (re-)create
@@ -224,6 +228,41 @@ class DbSql(Options):
 
     def makeBulkReader(self,*l,**kw):
         return BulkReader(db=self,*l,**kw)
+
+    def saveRecords(self,records,table):
+        """Create a new table and save records into it.
+        @param records - iterable with each element been a sequence of field values itself
+        @param table - instance of SqlTable description class"""
+        self.ddl(table.createSql(),dropList=["table "+table.name])
+        inserter = self.makeBulkInserterFile(table=table.name)
+        for rec in records:
+            inserter(rec)
+        inserter.flush()
+
+
+# Classes that describe Sql Db objects as Python objects in a portable way
+
+class SqlField:
+
+    def __init__(self,name,type):
+        self.name = name
+        self.type = type
+
+class SqlTable:
+
+    def __init__(self,name,fields):
+        self.name = name
+        self.fields = fields
+
+
+    def createSql(self):
+        return """
+        create table %s
+        (
+        %s
+        )
+        """ % (self.name,',\n'.join( [ "%s %s" % (field.name,field.type) for field in self.fields ] ))
+
 
 class DbSqlLite(DbSql):
     
@@ -356,6 +395,14 @@ class DbSqlMy(DbSql):
         """ % (sql1,fileName,fieldsTerm,linesTerm,sql2))
         
 
+    def exportToStream(self,sql1,sql2,fieldsTerm='|',linesTerm=r'\n'):
+        (fobj,bulkFile) = makeTmpFile(dir=self.tmpDir,prefix="sqlBulkExp_",suffix=".csv",createParents=True)
+        fobj.close()
+        self.exportToFile(sql1=sql1,sql2=sql2,fileName=bulkFile,fieldsTerm=fieldsTerm,linesTerm=linesTerm)
+        fobj = open(bulkFile,'r',2**20)
+        os.remove(bulkFile) # will cause exception on Windows.
+        return fobj
+
 
 class DbSqlMonet(DbSql):
     
@@ -456,7 +503,7 @@ class BulkInserter:
 
 class BulkInserterFile:
     
-    def __init__(self,db,table,bufLen,workDir="."):
+    def __init__(self,db,table,bufLen=500000,workDir="."):
         """Bulk loading from files is not part of SQL standard.
         However, every DBMS seems to have a way to do it, and it is very fast
         (100x for MonetDB) compared to plain 'insert' from 'executemany'.
@@ -480,6 +527,8 @@ class BulkInserterFile:
                 escaped.append('"%s"' % (x,))
             elif x is None: #NULL
                 escaped.append('\N') #at least this is how MySQL encodes NULL
+            elif isinstance(x,bool):
+                escaped.append("%i" % x)
             else:
                 escaped.append(str(x))
         self.buf.write('|'.join(escaped)+'\n')
@@ -661,3 +710,5 @@ class BulkReader:
     def close(self):
         self.curs.close()
         self.db = None
+
+

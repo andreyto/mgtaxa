@@ -5,6 +5,9 @@
 #error THIS FILE MUST BE INCLUDED FROM kmers.hpp
 #endif
 
+#include <functional>
+#include <algorithm>
+
 namespace MGT {
 
 ////////////////////////////////////////////////////////////////
@@ -345,7 +348,24 @@ inline int KmerCounter::numKmers() const {
     return m_iDataEnd;
 }
 
-inline void KmerCounter::startKmer() {
+inline ULong KmerCounter::sumKmerCounts() const {
+    ULong sum = 0;
+    for(int iData = 0; iData < numKmers(); iData++) {
+        sum += m_data[iData].count;
+    }
+    return sum;
+}
+
+struct KmerStateLessCmp : public std::binary_function<KmerStateData,KmerStateData,bool> {
+    bool operator()(const KmerStateData& x, const KmerStateData& y) {
+        return x.idState() < y.idState();
+    }
+};
+
+inline void KmerCounter::startKmer(bool doSort) {
+    if( doSort ) {
+        std::sort(m_data.begin(),m_data.begin()+numKmers(),KmerStateLessCmp());
+    }
     m_iDataExtr = 0;
 }
 
@@ -353,9 +373,6 @@ inline void KmerCounter::nextKmer() {
     KmerStateData& dat = m_data[m_iDataExtr];
     //unlink state from this data
     m_pStates->setData(dat.getState(),0);
-    //this is not actually needed, but just in case,
-    //unlink data from state
-    dat.setState(0);
     dat.count = 0;
     //advance to the next data point
     m_iDataExtr++;

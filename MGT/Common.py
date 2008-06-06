@@ -1,5 +1,5 @@
 from MGT.Util import *
-from MGT.Config import Options, options
+from MGT.Config import *
 
 import numpy
 import numpy.random as nrnd
@@ -7,6 +7,7 @@ from numpy import array
 from random import sample as sampleWOR #Random sampling w/o replacement
 import os, sys, atexit, re, gzip
 import itertools
+from types import StringTypes
 
 import pdb
 

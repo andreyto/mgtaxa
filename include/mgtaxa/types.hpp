@@ -24,9 +24,10 @@ const int g_maxCNuc = 256;
 
 typedef unsigned long ULong;
 
-/** Upper bound on k-mer length.*/
+/** Upper bound on k-mer length.
+ * Selected to limit the required memory to ~1.7G on x86_64*/
 
-const int g_maxKmerLen = 10;
+const int g_maxKmerLen = 12;
 
 } // namespace
 

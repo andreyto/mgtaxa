@@ -4,10 +4,10 @@ Calls NCBI 'fastacmd' executable.
 
 from MGT.Common import *
 
-class BlastDb(Options):
+class BlastDb(MGTOptions):
 
     def __init__(self):
-        Options.__init__(self)
+        MGTOptions.__init__(self)
         self.ncbiDbs =  (
                          Struct(id='g',db='refseq_genomic'),
                          Struct(id='o',db='other_genomic'),

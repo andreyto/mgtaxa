@@ -23,6 +23,7 @@ std::ostream& KmerState::print(std::ostream& out, const PKmerState pFirstState) 
  */
 
 KmerStates::KmerStates(int kmerLen, const AbcConvCharToInt  *pAbcConv) {
+    m_firstIdState = 1; // start state IDs from 1 as per SVM sparse feature convention
 	m_pAbcConv = pAbcConv;
 	int nAbc = m_pAbcConv->nAbc();
 	if( kmerLen > g_maxKmerLen ) {
@@ -105,7 +106,7 @@ void KmerStates::initAllKmers() {
 /** Initialize reverse-complement links in KmerState objects.*/
 
 void KmerStates::initRevCompl() {
-	int idState = 0;
+	int idState = m_firstIdState;
 	PKmerState pStateFirst = &m_states[0];
 	for(int iState = 0; iState < m_states.size(); iState++) {
 		PKmerState pState = &m_states[iState];

@@ -2,9 +2,8 @@ from MGT.Common import *
 from MGT.TaxaTree import TaxaNode
 
 class NodeStorageNcbiDump:
-    """@todo All attempts to create a faster loading representation for nodes were unsuccessful.
-    cPickle, Numpy arrays as intermediate buffer for tree nodes were slower than parsing flat file."""
-
+    """Loads tree nodes from NCBI flat dump file(s).
+    This is 3x slower than loading through NodeStoragePickle representation."""
 
     fields = \
     (
@@ -25,8 +24,8 @@ class NodeStorageNcbiDump:
 
     nInputFields = 3
 
-    ## We will be parsing this string:
-    ## '1\t|\t1\t|\tno rank\t|\t\t|\t8\t|\t0\t|\t1\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|\n'
+    # We will be parsing this string:
+    # '1\t|\t1\t|\tno rank\t|\t\t|\t8\t|\t0\t|\t1\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|\n'
     
     def __init__(self,ncbiDumpFile=None,ncbiNamesDumpFile=None):
         """Load taxonomy tree nodes from NCBI dump files"""
@@ -39,7 +38,7 @@ class NodeStorageNcbiDump:
         n_splits = self.nInputFields
         #delimRe = re.compile(r"\s*\|\s*")
         for rec in inp:
-            ## On profiling, string methods outperformed regexes (compare next two lines):
+            # On profiling, string methods outperformed regexes (compare next two lines):
             #values = [ x.strip() for x in rec.split('\t|\t',n_splits)[:n_splits]]
             #values = delimRe.split(rec,n_splits)
             
@@ -134,6 +133,51 @@ class NodeStorageHypView:
             out.write("%s %s 0 html\n" % (node.getDepth(),self._quote(labeler(node))))
         out.close()
     
+
+class NodeStoragePickle:
+
+    def __init__(self,fileName):
+        self.fileName = fileName
+
+    def save(self,tree):
+        nodes = tree.getNodesDict()
+        #for node in nodes.itervalues():
+        #    del (node.par, node.children)
+        dumpObj(nodes,self.fileName)
+
+    def load(self):
+        nodes = loadObj(self.fileName)
+        for node in nodes.itervalues():
+            node.children = []
+        return nodes
+
+
+class NodeStoragePickleSep:
+
+    def __init__(self,fileName):
+        self.fileName = fileName
+
+    def save(self,tree):
+        nodes = tree.getNodesDict()
+        #for node in nodes.itervalues():
+        #    del (node.par, node.children)
+        out = openCompressed(self.fileName,"w")
+        for node in nodes.itervalues():
+            dump(node,out,-1)
+
+    def load(self):
+        #nodes = loadObj(self.fileName)
+        nodes = {}
+        inp = openCompressed(self.fileName,"rb")
+        try:
+            while True:
+                node = load(inp)
+                node.children = []
+                nodes[node.id] = node
+        except:
+            pass
+        inp.close()
+        return nodes
 
 class LibSeeElement:
 
