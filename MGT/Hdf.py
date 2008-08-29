@@ -6,6 +6,12 @@ import os.path
 def hdfSplitPath(path):
     return os.path.split(path)
 
+def hdfDtype(hdfObj):
+    """Return a numpy dtype corresponding to the PyTables datatype instance.
+    Currently only tested on Table instances.
+    @todo make sure it works for other datatypes."""
+    return hdfObj.description._v_dtype
+
 # Some PyTables gotchas:
 # 1. Answer to the problem below is that after row.append(),
 # the row object points to something past the end of table,

@@ -176,7 +176,7 @@ void update(int * vec, vector<int> & win, int & total_sum, int size, int k)
     }
 }
 
-void proc_count(string & seq, int * vec, int start, int end, string & name, ostream & outs, int * kmap, int size, int k)
+void proc_count(string & seq, int * vec, int start, int end, string & name, ostream & outs, int * kmap, int size, int k, int svmlight)
 {
 
     int total_sum=0;
@@ -213,21 +213,35 @@ void proc_count(string & seq, int * vec, int start, int end, string & name, ostr
 
     if (total_sum>0)
     {
-        outs << name << " " << start << " " << end << " " << k << " " << total_sum;
-        //    cout << name << " " << start << " " << end << " " << k << " " << total_sum << endl;
+        if ( svmlight ) {
+            outs << name;
+        }
+        else {
+            outs << name << " " << start << " " << end << " " << k << " " << total_sum;
+        }
         for (int i=0;i<size;i++)
         {
+            int count = 0;
             if (i==kmap[i])
             {
-                outs << " " << 0.0001*(int(1000000.0*vec[i]/total_sum));
+                count = vec[i];
                 vec[i]=0; // re-initializing
             }
             else if(i<kmap[i])
             {
                 int sum=vec[i]+vec[kmap[i]];
-                outs << " " << 0.0001*(int(1000000.0*sum/total_sum));
+                count = sum;
                 vec[i]=0;
                 vec[kmap[i]]=0;
+            }
+            double value = 0.0001*(int(1000000.0*count/total_sum));
+            if ( svmlight ) { 
+                if ( count > 0 ) {
+                    outs << ' ' << (i+1) << ':' << value;
+                }
+            }
+            else {
+                outs << ' ' << value;
             }
         }
 
@@ -245,7 +259,7 @@ bool get_char(FILE *inp, char& ch)
 ///
 }
 
-void process_fasta (FILE *ins, ostream & outs, int * kmap, int size, int k, int chunk)
+void process_fasta (FILE *ins, ostream & outs, int * kmap, int size, int k, int chunk, int svmlight)
 {
 
     int * vec;
@@ -304,7 +318,7 @@ void process_fasta (FILE *ins, ostream & outs, int * kmap, int size, int k, int 
                                 seq += ch;
                         }
                     }
-                    proc_count(seq,vec,1,seq.size(),name,outs,kmap,size,k);
+                    proc_count(seq,vec,1,seq.size(),name,outs,kmap,size,k,svmlight);
                 }
                 else
                 {
@@ -318,7 +332,7 @@ void process_fasta (FILE *ins, ostream & outs, int * kmap, int size, int k, int 
                             if (seq.size()==chunk)
                             {
                                 end=seq.size()+start-1;
-                                proc_count(seq,vec,start,end,name,outs,kmap,size,k);
+                                proc_count(seq,vec,start,end,name,outs,kmap,size,k,svmlight);
                             }
                         }
                         else
@@ -326,7 +340,7 @@ void process_fasta (FILE *ins, ostream & outs, int * kmap, int size, int k, int 
                             if (seq.size()==chunk)
                             {
                                 end=seq.size()+start-1;
-                                proc_count(seq,vec,start,end,name,outs,kmap,size,k);
+                                proc_count(seq,vec,start,end,name,outs,kmap,size,k,svmlight);
                                 seq.clear();
                             }
 
@@ -350,9 +364,10 @@ int main (int argc, char* argv[])
 {
     int k=6; // default k-mer size
     int chunk=0; // default chunk size, <=0 values mean that full sequence is considered
+    int svmlight=0; //generate SVMLight output
     int c;
 
-    while((c = getopt(argc, argv,"k:l:"))!=-1)
+    while((c = getopt(argc, argv,"k:l:s:"))!=-1)
     {
         switch(c)
         {
@@ -362,13 +377,15 @@ int main (int argc, char* argv[])
         case 'l':
             sscanf(optarg,"%d",&chunk);
             break;
+        case 's':
+            sscanf(optarg,"%d",&svmlight);
         default:
             break;
         }
     }
 
 
-    if (k<=0 || k>7)
+    if (k<=0 || k>10)
     {
         cerr << "kmer size is set to 6\n";
         k=6;
@@ -413,7 +430,7 @@ int main (int argc, char* argv[])
     ostream& outs = cout;
     //ifstream inp("test.fas");
     //ofstream outs("test.kmer");
-    process_fasta(stdin,outs,kmap,size,k,chunk);
+    process_fasta(stdin,outs,kmap,size,k,chunk,svmlight);
 
     delete[] kmap;
 

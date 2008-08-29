@@ -5,7 +5,7 @@ from MGT.TaxaTree import *
 from MGT.Sql import *
 
 
-class TaxaLevelsDb(TaxaLevels,Options):
+class TaxaLevelsDb(TaxaLevels,MGTOptions):
     """Load our selection of taxonomic ranks into SQL database, create column and row aggregates.
     """
 

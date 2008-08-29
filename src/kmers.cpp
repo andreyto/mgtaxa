@@ -19,11 +19,15 @@ std::ostream& KmerState::print(std::ostream& out, const PKmerState pFirstState) 
 /** Constructor.
  * @param kmerLen - length of k-mers
  * @param pAbcConv - pointer to AbcConvCharToInt alphabet convertor object 
- * (stored inside this KmerStates object but not managed)
+ * (stored inside this KmerStates object but not managed).
+ * @param firstIdState - start k-mer ids from this value.
  */
 
-KmerStates::KmerStates(int kmerLen, const AbcConvCharToInt  *pAbcConv) {
-    m_firstIdState = 1; // start state IDs from 1 as per SVM sparse feature convention
+KmerStates::KmerStates(int kmerLen, 
+                       const AbcConvCharToInt  *pAbcConv,
+                       KmerId firstIdState) {
+    m_firstIdState = firstIdState;
+    m_lastIdState = m_firstIdState; // will be computed during initialization
 	m_pAbcConv = pAbcConv;
 	int nAbc = m_pAbcConv->nAbc();
 	if( kmerLen > g_maxKmerLen ) {
@@ -88,6 +92,7 @@ void KmerStates::initAllKmers() {
 #endif
 		for(INuc c = 0; c < nCodes; c++) {
 			Kmer nKmer;
+            //**@todo Maybe use std::next_permutation()*/ 
 			nextKmer(cKmer,c,nKmer);
 			PKmerState pStateNext = kmerToState(nKmer);
 			pState->m_next[c] = pStateNext;
@@ -144,6 +149,7 @@ void KmerStates::initRevCompl() {
 		}
 	}
 	pStateFirst->m_isRevComp = false;
+    m_lastIdState = idState;
 }
 
 /** Print KmerStates object for debugging.*/
@@ -219,15 +225,18 @@ AbcConvCharToInt g_defAbcConvCharToInt(g_defNucAbc,g_defNucAbcRevCompl);
  * precalculated and stored in memory, so be reasonable with this parameter.
  * @param pAbcConv is a to AbcConvCharToInt alphabet convertor
  * (stored inside this KmerCounter object but not managed).
+ * @param firstIdState Start k-mer IDs from this value (default 1 as in SVMLight)
 */
 
-KmerCounter::KmerCounter(int kmerLen, const AbcConvCharToInt  *pAbcConv) {
+KmerCounter::KmerCounter(int kmerLen, 
+                         const AbcConvCharToInt  *pAbcConv,
+                         KmerId firstIdState) {
 	if( pAbcConv == 0 ) {
 		pAbcConv = & g_defAbcConvCharToInt;
 	}
 	m_pAbcConv = pAbcConv;
 	m_kmerLen = kmerLen;
-	m_pStates = new KmerStates(kmerLen,pAbcConv);
+	m_pStates = new KmerStates(kmerLen,pAbcConv,firstIdState);
 	m_data.resize(m_pStates->numStates());
 	PKmerState pStateZero = m_pStates->firstState();
 	m_dataDegen.setState(pStateZero);

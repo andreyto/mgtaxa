@@ -74,8 +74,8 @@ from MGT.Common import *
 from MGT.Taxa import *
 from MGT.Sql import *
 from MGT.SampDb import *
-from MGT.PredictorDb import *
 from MGT.SampDbKmer import *
+from MGT.PredictorDb import *
 
 def exclude_rRNA(self):
     db.createTableAs(
@@ -121,11 +121,12 @@ class SamplerConcat(MGTOptions):
         self.storeDump = NodeStorageNcbiDump(ncbiDumpFile=self.taxaNodesFile,
                 ncbiNamesDumpFile=self.taxaNamesFile)
         self.levels = TaxaLevels()
-        print "DEBUG: Loading the tree"
         if self.stage == 1:
+            print "DEBUG: Loading the tree from dump file"
             self.taxaTree = TaxaTree(storage=self.storeDump)
             self.levels.setLevels(self.taxaTree)
         else:
+            print "DEBUG: Loading the tree from pickle"
             self.taxaTree = TaxaTree(storage=self.storePickle)
         print "DEBUG: tree loaded"
         self.taxaTreeStore = NodeStorageDb(db=self.db,tableSfx=self.taxaTreeTableSfxMain)
@@ -142,7 +143,8 @@ class SamplerConcat(MGTOptions):
 
     def rebuild(self):
         if self.stage == 1:
-            #self.mkDbSampleCounts()
+            self.mkHdfSampleInd()
+            self.mkDbSampleCounts()
             print "DEBUG: loadSampleCountsMem()"
             self.loadSampleCountsMem()
             print "DEBUG: setIsUnderUnclassMem()"
@@ -159,13 +161,16 @@ class SamplerConcat(MGTOptions):
             self.taxaTree.delAttribute('sampSel')
             #raise ValueError(0)
             self.storePickle.save(tree=self.taxaTree)
-            #print "DEBUG: Writing statistics"
-            #self.statTestTaxa()
-            #self.mkHdfSampleInd()
+            print "DEBUG: Writing statistics into SQL"
+            self.statTestTaxa()
         else:
             print "DEBUG: writeTraining()"
+            #self.tmp_hdfSamplesConv()
+            #return
             self.setTrainTarget()
             self.writeTraining()
+            self.writeTesting()
+            self.tmp_hdfSamplesConv()
 
     def mkHdfSampleInd(self):
         hdfFileActSeq = pt.openFile(self.hdfActSeqFile,mode="r")
@@ -190,7 +195,7 @@ class SamplerConcat(MGTOptions):
     def loadSampleCountsMem(self):
         """Transfer sample counts from DB into in-memory taxonomy tree object."""
         tblTxSamp = self.getTableName("tx_samp")
-        loadDb = False
+        loadDb = True
         self.taxaTree.getRootNode().setIndex()
         if loadDb:
             self.taxaTreeStore.loadAttribute(tree=self.taxaTree,
@@ -495,7 +500,7 @@ class SamplerConcat(MGTOptions):
             if node.id == 10781 or node.idpar == 10781:
                 print node.id, name, value
 
-        taxaTree.setDebugOnUpdate(debugOnNodeUpdate)
+        #taxaTree.setDebugOnUpdate(debugOnNodeUpdate)
         actor(rootNode)
         iter = taxaTree.iterDepthTop()
         iter.next() # skip the root
@@ -508,7 +513,7 @@ class SamplerConcat(MGTOptions):
                     (node.getParent().samp_n_tot_test == 0 and \
                     node.getParent().samp_n_tot_train != 0)):
                 node.samp_n_tot_train = node.samp_n_tot
-        taxaTree.unsetDebugOnUpdate()
+        #taxaTree.unsetDebugOnUpdate()
 
 
     def markTraining(self):
@@ -516,7 +521,8 @@ class SamplerConcat(MGTOptions):
         Nodes that are not 'is_class' are ignored during training.
         'is_class' means that a node can be used as a label in training the
         multiclass classifier for the parent node.
-        'n_mclass' is also set to the number of classes below the node. 
+        'n_mclass' is also set to the number of classes below the node.
+        'samp_n_max' is the maximum leaf sample count under this node.
         This method must be called after selectTestTaxa() and uses node attributes set by
         that method."""
 
@@ -534,13 +540,23 @@ class SamplerConcat(MGTOptions):
                     node.is_class = True
         for node in taxaTree.iterDepthTop():
             node.n_mclass = len([child for child in node.getChildren() if child.is_class])
+        taxaTree.setReduction("samp_n",
+                "samp_n_max",
+                reduction=max,
+                condition=lambda node: not node.isUnclassified()) 
 
 
     def setTrainTarget(self):
         self.setSampSel()
         taxaTree = self.taxaTree 
+        sampLen = self.sampLen
         for node in taxaTree.iterDepthTop():
-            node.samp_n_train_targ = min(node.sampSel.test.train.max,node.samp_n_tot_train)
+            if node.n_mclass > 1:
+                child_targ = int(node.sampSel.test.train.max / node.n_mclass)
+                for child in node.getChildren():
+                    child.samp_n_train_targ = min(child_targ,child.samp_n_tot_train)
+            node.has_long_seq = node.samp_n_max * sampLen >= node.sampSel.longSeq
+            node.has_long_seq_self = node.samp_n * sampLen >= node.sampSel.longSeq
 
     def checkPostMarkTraining(self):
         """Consistency check after a call to markTraining()."""
@@ -557,8 +573,8 @@ class SamplerConcat(MGTOptions):
                     node.samp_n_tot_train == sum([ n.samp_n_tot_train for n in node.getChildren() ])
 
     def statTestTaxa(self):
-        """Statistics about testing set selection.
-        Call aftere selectTestTaxa()"""
+        """Save SQL statistics about testing/training set selection.
+        Call after markTraining()"""
         tblStat = self.getTableName("st_test")
         taxaTree = self.taxaTree
         self.taxaTreeStore.saveAttributes(tree=taxaTree,
@@ -566,6 +582,7 @@ class SamplerConcat(MGTOptions):
                        'samp_n_tot_class':{'type':'integer'},
                        'samp_n_tot_train':{'type':'integer'},
                        'samp_n':{'type':'integer'},
+                       'samp_n_max':{'type':'integer'},
                        'isTrainableTest':{'type':'bool','name':'is_trainable_test'},
                        'is_test':{'type':'bool'},
                        'has_test':{'type':'bool'},
@@ -574,14 +591,17 @@ class SamplerConcat(MGTOptions):
                        'isTestTerm':{'type':'bool','name':'is_test_term'},
                        'nSampTestMax':{'type':'integer','name':'n_samp_test_max'},
                        'isUnderUnclass':{'type':'bool','name':'is_under_unclass'},
+                       'lind':{'type':'integer'},
+                       'rind':{'type':'integer'},
                        'lnest':{'type':'integer'},
                        'rnest':{'type':'integer'},
+                       'depth':{'type':'integer'},
                        'rank':{'type':'char(20)'},
                        'idpar':{'type':'integer'}},
             table=tblStat)
         storeTreeView = NodeStorageHypView(fileName=tblStat+".hv3",
-            labeler=lambda n: "%s_%s_%s_N_%s_C_%s_T_%s" % (n.id,n.rank,n.name[:10],n.numChildren(),
-                n.samp_n_tot_class,n.samp_n_tot_test))
+            labeler=lambda n: "%s_%s_%s_N_%s_R_%s_T_%s_T_%s" % (n.id,n.rank,n.name[:10],n.numChildren(),
+                n.samp_n_tot_train,n.samp_n_tot_test,n.samp_n_max))
 
         storeTreeView.save(taxaTree)
 
@@ -603,8 +623,8 @@ class SamplerConcat(MGTOptions):
         rootNode = taxaTree.getRootNode()
         rootNode.setIndex()
         self.sampNTrainTot = rootNode.makePropArrayFromAttrib(dtype='i4',name='samp_n_tot_train')
-        for node in taxaTree.iterDepthTop():
-            assert self.sampNTrainTot[node.lind] == node.samp_n_tot_train
+        #for node in taxaTree.iterDepthTop():
+        #    assert self.sampNTrainTot[node.lind] == node.samp_n_tot_train
         ## @todo make conditional on not is_test
         def samp_n_choice(node):
             if node.is_test:
@@ -613,36 +633,81 @@ class SamplerConcat(MGTOptions):
                 return node.samp_n
         self.sampNTrainSelf = rootNode.makePropArrayFromFunc(dtype='i4',func=samp_n_choice)
         predDb = PredictorDb(db=self.db,reset=True)
-        kmerReader = KmerReader(hdfSampFile=self.hdfSampFile,sampLen=self.sampLen,kmerLen=self.kmerLen,spacer='N')
+        kmerReader = KmerReader(hdfSampFile=self.hdfSampFile,sampLen=self.sampLen,kmerLen=self.kmerLen,spacer='N'*self.kmerLen)
+        #kmerReader = KmerReaderComb(hdfSampFile=self.hdfSampFile,sampLen=self.sampLen,kmerLenRange=[6,self.kmerLen],spacer='N')
         iPredictor = 0
         print "DEBUG: Starting predictor iteration"
         start = time.time()
-        for node in self.taxaTree.iterDepthTop(): 
+        for node in self.taxaTree.iterDepthTop(id=self.labelTopNodeId): 
             if node.n_mclass > 1:
                 predictor = predDb.newPredictor(node=node,predType='ms')
-                #trainWriter = predictor.trainingWriter()
-                kmerReader.openOutput(predictor.trainFile)
-                for child in node.getChildren(): 
+                #svmWriter = predictor.trainingWriter()
+                if self.kmerRepr == "Sequences":
+                    svmWriter = SvmStringFeatureWriterTxt(os.path.join(self.predictorDir,self.svmTrainFile))
+                else:
+                    svmWriter = SvmSparseFeatureWriterTxt(os.path.join(self.predictorDir,self.svmTrainFile))
+                #kmerReader.openOutput(predictor.trainFile)
+                children = [ n for n in node.iterDepthTop() if n.level == self.labelLevel and n.is_class and n.id in (10811,10780) ] #and n.id in (10811,10780,10662,10699)]
+                bg_nodes = [ taxaTree.getNode(bg_id) for bg_id in (2,2157,2759) ]
+                #children.extend(bg_nodes)
+                child_targ = int(node.sampSel.test.train.max / len(children))
+                ids = numpy.zeros(len(children)+1,dtype='i4')
+                label = 1
+                for child in children:
+                    child.samp_n_train_targ = min(max(child_targ,child.sampSel.test.train.min),
+                        child.samp_n_tot_train)
+                    child.label = label
+                    ids[label] = child.id
+                    label += 1
+                for bg_node in bg_nodes:
+                    bg_node.bg_label = 1
+                    bg_node.samp_n_train_targ = 20000
+                dumpObj(ids,predictor.getFileName("labelToId.pkl"))
+                # log and pickle the sequences taxids and sample counts for each 'child'
+                taxaSampLog = {}
+                for child in children:
+                #for child in node.getChildren(): 
+                    print "Writing %s class out of %s" % (child.label,len(children))
                     if child.is_class:
                         taxaSampChild = self.pickRandomSampleCounts(child)
-                        #print "DEBUG: taxaSampChild = ", \
-                        #        sum(taxaSampChild.values()),  \
-                        #        zip(taxaSampChild.itervalues(), \
-                        #        [ self.sampNTrainTot[node.lind] for node in ( taxaTree.getNode(id) for id in taxaSampChild.iterkeys() ) ])
-                        for taxidChild in taxaSampChild:
-                            kmerReader.randomFrequencesWriteSvmSparseTxt(taxid=taxidChild,
-                                    nSamples=taxaSampChild[taxidChild])
+                        dryRun = False
+                        if dryRun:
+                            nSelected = sum(taxaSampChild.values())
+                            if True or nSelected != child.sampSel.test.train.max:
+                                print "DEBUG: taxaSampChild = ", \
+                                        sum(taxaSampChild.values()),  \
+                                        zip(taxaSampChild.itervalues(), \
+                                        [ (id,self.sampNTrainTot[node.lind],self.sampNTrainSelf[node.lind]) for (id,node) in 
+                                            ( (id,taxaTree.getNode(id)) for id in taxaSampChild.iterkeys() ) ])
+                                #pdb.set_trace()
                             continue
-                            for (vec,total) in kmerReader.randomFrequences(taxid=taxidChild,
-                                    nSamples=taxaSampChild[taxidChild]):
-                                trainWriter.write(label=taxidChild,
-                                        values=vec['values'],
-                                        indices=vec['indices'])
-                kmerReader.closeOutput()
-                #trainWriter.close()
+                        taxaSampLog[child.id] = taxaSampChild
+                        # we sort taxids by the physical order of sequence db for better performance
+                        sampNodes = [taxaTree.getNode(taxid) for taxid in taxaSampChild ]
+                        sampNodes.sort(key=lambda n: n.lnest)
+                        nWritten = 0
+                        for taxidSamp in (n.id for n in sampNodes):
+                            #nWritten += kmerReader.randomFrequencesWriteSvmSparseTxt(label=child.label,
+                            #        taxidSamples=taxidSamp,
+                            #        nSamples=taxaSampChild[taxidSamp])
+                            #continue
+                            kmerMethod = getattr(kmerReader,"random"+self.kmerRepr)
+                            for (feature,total) in kmerMethod(taxid=taxidSamp,
+                                    nSamples=taxaSampChild[taxidSamp]):
+                                sampNode = taxaTree.getNode(taxidSamp)
+                                assert sampNode is child or sampNode.isSubnode(child)
+                                svmWriter.write(child.label,
+                                                feature)
+                                nWritten += 1
+                        if nWritten < child.samp_n_train_targ:
+                            print "Warning: written samples %s - less than requested %s for label %s taxid %s min samples %s" % \
+                                    (nWritten,child.samp_n_train_targ,child.label,child.id,child.sampSel.test.train.min)
+                #kmerReader.closeOutput()
+                svmWriter.close()
+                dumpObj(taxaSampLog,os.path.join(self.predictorDir,"taxaSamp.train.pkl"))
                 iPredictor += 1
                 print "iPredictor = ", iPredictor
-                if iPredictor >= 50:
+                if iPredictor >= 1:
                     break
         print "DEBUG: Done predictor iteration in %s sec" % (time.time() - start)
 
@@ -664,9 +729,12 @@ class SamplerConcat(MGTOptions):
         nTrainSelf = self.sampNTrainSelf.copy()
         def actor(n):
             choices = [ child for child in n.children if nTrainTot[child.lind] > 0 ]
+            choicesLongSeq = [ child for child in choices if child.has_long_seq ]
+            if len(choicesLongSeq) > 0:
+                choices = choicesLongSeq
             nChoices = len(choices)
             lind = n.lind
-            if nTrainSelf[lind] > 0:
+            if nTrainSelf[lind] > 0 and (n.has_long_seq_self or len(choicesLongSeq) == 0):
                 # random_integers returns closed range [low,high]
                 iChoice = nrnd.random_integers(0,nChoices) - 1 # -1 <= iChoice < len(choices)
                 if iChoice < 0:
@@ -694,6 +762,131 @@ class SamplerConcat(MGTOptions):
         return taxaCounts
 
 
+    def writeTesting(self):
+        """Write testing data set.
+        Currently, we write one dataset and use it on all classifiers.
+        The reason is because we use external executables for prediction,
+        and starting the executable for different models along the tree
+        path for each sample would be too expensive. Instead, we subsample
+        all testing taxa and create a single file. Along the way, we
+        also create an HDF dataset with a lineage of predictors for 
+        each unique taxid among selected samples. We also save the taxid
+        of each sample in an HDF array.
+        @pre Nodes have the following attributes: 
+        is_class - True for nodes that can serve as classes in SVM
+        n_mclass - number of trainable sub-classes
+        samp_n_tot_test - number of testing samples in a subtree
+        is_test - True if a subtree is used for testing
+        This method must be called after markTraining() sets needed node attributes.
+        """
+        taxaTree = self.taxaTree
+        rootNode = taxaTree.getRootNode()
+        rootNode.setIndex()
+        class SampTest(pt.IsDescription):
+            lind = pt.Int32Col(pos=1)
+        hdfFile = pt.openFile(os.path.join(self.predictorDir,self.hdfTestFile), mode='w')
+        hdfSamples = hdfFile.createTable(hdfFile.root, 'sampTest', SampTest, "Testing Samples")
+        sampTestDtype = hdfDtype(hdfSamples) 
+        kmerReader = KmerReader(hdfSampFile=self.hdfSampFile,
+                sampLen=self.sampLen,
+                kmerLen=self.kmerLen,
+                spacer='N')
+        #kmerReader = KmerReaderComb(hdfSampFile=self.hdfSampFile,
+        #        sampLen=self.sampLen,
+        #        kmerLenRange=[6,self.kmerLen],
+        #        spacer='N')
+        kmerReader.setSubSamplerUniRandomEnd(minLen=self.minTestSampLen,maxLen=self.maxTestSampLen)
+        #kmerReader.openOutput(self.getFileName(self.svmTestFile))
+        if self.kmerRepr == "Sequences":
+            svmWriter = SvmStringFeatureWriterTxt(os.path.join(self.predictorDir,self.svmTestFile))
+        else:
+            svmWriter = SvmSparseFeatureWriterTxt(os.path.join(self.predictorDir,self.svmTestFile))
+        taxaSampLog = {}
+        children = [ n for n in self.taxaTree.iterDepthTop() if hasattr(n,"label") and not hasattr(n,'bg_label')]
+        for child in children:
+            taxaSampLog[child.id] = {}
+            for node in child.iterDepthTop():
+                if node.is_test and node.samp_n > 0:
+                    nSampTestTarg = min(node.samp_n,self.maxTestSampPerTaxa)
+                    #DEBUG TMP:
+                    #lin = node.lineage()
+                    #print [ n.name for n in reversed(lin) ]
+                    #nSampTestOut = kmerReader.randomFrequencesWriteSvmSparseTxt(label=child.label,
+                    #        taxidSamples=node.id,
+                    #        nSamples=nSampTestTarg)
+                    nSampTestOut = 0
+                    kmerMethod = getattr(kmerReader,"random"+self.kmerRepr)
+                    for (feature,total) in kmerMethod(taxid=node.id,
+                                nSamples=nSampTestTarg):
+                        assert node == child or node.isSubnode(child)
+                        svmWriter.write(child.label,
+                                        feature)
+                        nSampTestOut += 1
+                    samples = numpy.zeros(nSampTestOut,dtype=sampTestDtype)
+                    samples['lind'] = node.lind
+                    hdfSamples.append(samples)
+                    taxaSampLog[child.id][node.id] = nSampTestOut
+        #kmerReader.closeOutput()
+        kmerReader.clearSubSampler()
+        svmWriter.close()
+        dumpObj(taxaSampLog,os.path.join(self.predictorDir,"taxaSamp.test.pkl"))
+        hdfSamples.flush()
+
+    def tmp_hdfSamplesConv(self):
+
+        taxaTree = self.taxaTree
+        rootNode = taxaTree.getRootNode()
+        rootNode.setIndex()
+        hdfFile = pt.openFile(os.path.join(self.predictorDir,self.hdfTestFile), mode='r')
+        hdfSamples = hdfFile.getNode(hdfFile.root, 'sampTest')
+        sampTestDtype = hdfDtype(hdfSamples)
+        sampLind = hdfSamples.read(field='lind')
+        lindToId = rootNode.makePropArrayFromAttrib(dtype='i4',name='id')
+        sampId = lindToId[sampLind]
+        dumpObj(sampId,os.path.join(self.predictorDir,"sampTaxid.test.pkl"))
+        # make genus index and mark 2,3,4 splits as columns in Nx3 array where N is sample count
+        cnt = numpy.bincount(sampId)
+        idsGen = numpy.zeros_like(cnt)
+        for id in numpy.where(cnt>0)[0]:
+            nodeGen = taxaTree.getNode(id).findRankInLineage(rank="genus")
+            if nodeGen is not None:
+                idsGen[id] = nodeGen.id
+        sampIdGen = idsGen[sampId]
+        gen = numpy.unique(sampIdGen)
+        gen = gen.compress(gen>0)
+        nSplitSteps = 3 # will be splitted into (2,3,4) parts
+        sampSplit = numpy.zeros((len(sampIdGen),nSplitSteps),dtype='i2')
+        for iSplitStep in xrange(nSplitSteps):
+            nSplit = 2 + iSplitStep
+            genSplit = nrnd.random_integers(1,nSplit,len(gen))
+            sampSplit[:,iSplitStep] = genSplit[gen.searchsorted(sampIdGen)]
+            sampSplit[sampIdGen == 0,iSplitStep] = 0
+        dumpObj(sampSplit,os.path.join(self.predictorDir,"sampSplit.test.pkl"))
+        #pdb.set_trace()
+
+    def writeTestingTree(self):
+        """TMP: Write HDF file with tree structure data needed for loading testing results."""
+        taxaTree = self.taxaTree
+        # (id,rind)[lind]
+
+    def submitTraining(self):
+        "TMP: Submit training batch jobs"
+
+        btOpt = self.batchRun
+
+        bt = BatchSubmitter(PROJECT_CODE=btOpt.PROJECT_CODE,MEM=btOpt.MEM,ARCH=btOpt.ARCH)
+
+        iPredictor = 0
+        for predDir in [ os.path.join(self.predictorDir,d) for d in sorted(os.listdir(self.predictorDir)) ]:
+            svm = SVMLibLinear(workDir=os.path.join(predDir,"ms"))
+            bt.submitIf(maxQueued=btOpt.maxQueued,cmd=' '.join(svm.trainCmd(trainFile=os.path.join(predDir,"train.svm"))),
+                    scriptName="train",runDir=svm.workDir,sleepTime=1,dryRun=False)
+            print "DEBUG: iPredictor = ", iPredictor
+            iPredictor += 1
+            if iPredictor > 0:
+                break
+
+    
     def mkDbTestingTaxaDb(self,rank="genus",superRank="family"):
         """Select complete 'rank' nodes uniformly distributed across 'superRank' super-nodes."""
         rankId = self.levels.getLevelId(rank)

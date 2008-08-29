@@ -116,6 +116,17 @@ class TaxaNode(object):
                 lin.append(node)
         return lin
 
+    def findRankInLineage(self,rank,topNode=None):
+        node = self
+        if node.rank == rank:
+            return node
+        while node is not topNode:
+            node = node.par
+            if node is not None:
+                if node.rank == rank:
+                    return node
+        return None
+
     def lineageRanks(self,*l,**kw):
         return [ node.rank for node in self.lineage(*l,**kw) ]
     
@@ -169,6 +180,8 @@ class TaxaNode(object):
 
 
     def isUnclassified(self):
+        #DEBUG:
+        #return False
         return self.name.lower().startswith("unclassified")
 
     def getDepth(self):
@@ -824,11 +837,11 @@ class TaxaLevels:
         else:
             return [ (levelIds[n.level],n.id) for n in self.lineage(node)]
 
-    def lineageFixedList(self,node):
+    def lineageFixedList(self,node,null=None):
         """Return a list of taxids that correspond to the list of level names returned by getLevelNames().
-        If a given level is not present in this node's lineage, the corresponding element is None."""
+        If a given level is not present in this node's lineage, the corresponding element is 'null'."""
         levelPos = self.levelPos
-        ret = [None]*len(self.levels)
+        ret = [null]*len(self.levels)
         for n in self.lineage(node,withUnclass=False):
             ret[levelPos[n.level]] = n.id
         return ret

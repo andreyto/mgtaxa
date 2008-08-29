@@ -42,7 +42,7 @@ MKDIRP := mkdir -p
 RMRF := rm -rf
 MAKEDEPEND = $(MKDIRP) $(DEP_DIR); $(CXX) $(CXXFLAGS) $(EXTRA_CXXFLAGS) -MM -o $(DEP_DIR)/$*.d $<
 
-PROGRAMS       := 
+PROGRAMS       := fastaFilter 
 PROGRAMS_TEST  := test_kmers
 LIBRARIES      := libMGT.a
 #This should list only extensions that are to be installed, and omit testing ones
@@ -190,7 +190,7 @@ install: all
 	install -t $(extdir) $(PYEXT)
 	$(CPR) $(DOC_DIR)/html $(docdir)
 	install -t $(sysconfdir) mgtaxa.cshrc
-	#install -t $(exec_bindir) $(PROGRAMS)
+	install -t $(exec_bindir) $(PROGRAMS)
 
 .PHONY: clean
 clean:		
@@ -275,6 +275,9 @@ endef
 libMGT.a: kmers.o py_num_util.o
 	$(BUILD_LIB)
 
+fastaFilter: fastaFilter.o
+	$(LINK_EXE)
+
 test_kmers: test_kmers.o libMGT.a
 	$(LINK_EXE)
 
@@ -282,7 +285,7 @@ MGTX/sample_boost.so: sample_boost.o
 	$(LINK_EXT)
 
 MGTX/kmersx.so: kmersx.o libMGT.a
-	$(LINK_EXT)
+	$(LINK_EXT) -lz
 
 test_sample_boostx.so: test_sample_boostx.o
 	$(LINK_EXT)

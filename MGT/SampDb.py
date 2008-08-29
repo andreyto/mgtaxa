@@ -16,7 +16,7 @@ class HdfSampInd(pt.IsDescription):
     A sequence sample starts at some position in one sequence, possibly spans several
     full consequtive sequences and can end in an arbitrary position of the last sequence.
     The constant sample size is defined outside of this type. The indSeq and begin
-    fields are sufficient to pull the sample of sequence database.
+    fields are sufficient to pull the sample out from sequence database.
     The nSeq field is an optimization: it adds one byte to the size of the data structure.
     If the sample spans less than 256 sequences (including sequences where it starts and where it ends),
     nSeq holds that number. Otherwise, nSeq is set to zero. Knowing the number of sequences allows
@@ -27,7 +27,7 @@ class HdfSampInd(pt.IsDescription):
     begin     = pt.Int64Col(pos=2) # offset of this sample's first element relative to the start of sequence
     nSeq      = pt.UInt8Col(pos=3) # number of sequences
 
-# I could find in Numpy any methods to obtain numeric limits for integer datatypes (found only for floats).
+# I could not find in Numpy any methods to obtain numeric limits for integer datatypes (found only for floats).
 # This converts -1 to the type of nSeq, which should give the max possible value for any unsigned integer type.
 maxHdfSampInd_nSeq = HdfSampInd.columns['nSeq'].dtype.type(-1)
 assert maxHdfSampInd_nSeq > 0, "HdfSampInd.nSeq must be unsigned type"
@@ -172,6 +172,7 @@ class HdfSampleReader(MGTOptions):
         for row in self.hdfTaxaInd:
             taxaInd[row['id']] = (row['begin'],row['size'])
         self.taxaInd = taxaInd
+        self.clearSubSampler()
 
     def _openHdf(self):
         self.hdfFileSeq = pt.openFile(self.hdfSeqFile,mode="r")
@@ -252,11 +253,59 @@ class HdfSampleReader(MGTOptions):
     def randomSamples(self,taxid,nSamples):
         (beginSamp,sizeSamp) = self.taxaInd[taxid]
         indSampSel = random.sample(xrange(beginSamp,beginSamp+sizeSamp),nSamples)
+        for sampInd in self.hdfSampInd.itersequence(indSampSel, sort=True):
+            yield self.subSampler(self.getSampleSeq(sampInd))
+
+    def setSubSampler(self,subSampler):
+        self.subSampler = subSampler
+
+    def clearSubSampler(self):
+        self.subSampler = lambda sample: sample
+
+    def setSubSamplerUniRandomEnd(self,minLen,maxLen):
+        assert self.sampLen >= minLen and self.sampLen >= maxLen and minLen <= maxLen
+        self.setSubSampler(SubSamplerUniRandomEnd(minLen=minLen,maxLen=maxLen))
+
+    def checkFakeDb(self):
+        seqChecker = getFakeSequenceChecker()
+        seqChecker.loadGiTaxa()
+        taxaInd = self.taxaInd
+        taxind = taxaInd.items()
+        taxind.sort(key=lambda item: item[1][0])
+        hdfSampInd = self.hdfSampInd
         hdfSeqInd = self.hdfSeqInd
         hdfSeq = self.hdfSeq
         sampLen = self.sampLen
-        for sampInd in self.hdfSampInd.itersequence(indSampSel, sort=True):
-            yield self.getSampleSeq(sampInd)
+        iTaxa = 0
+        iMismatch = 0
+        for item in taxind:
+            taxid = item[0]
+            (beginSamp,sizeSamp) = item[1]
+            for sampInd in hdfSampInd.itersequence(range(beginSamp,beginSamp+sizeSamp), sort=True):
+                seqInd = hdfSeqInd.read(start=sampInd['indSeq'],stop=sampInd['indSeq']+1)[0]
+                if taxid != seqInd['id']:
+                    res = 'OK'
+                    if taxid != seqInd['id']:
+                        res = "!!"
+                    print "%s iTaxa = %s taxaInd = %s sampInd = %s seqInd = %s taxid(seq[:40]) = %s" % \
+                            (res,iTaxa,item,sampInd,seqInd,
+                                    seqChecker.gi2taxa[int(hdfSeq.read(start=seqInd['begin'],stop=seqInd['begin']+40)\
+                                            .tostring().split('x')[1])])
+                    iMismatch += 1
+            if iTaxa % 1000 == 0:
+                print "Done %s taxa out of %s, with %s mismatches" % ( iTaxa, len(taxind), iMismatch )
+            iTaxa += 1
+
+        iTaxa = 0
+        for item in taxind:
+            taxid = item[0]
+            nSamples = max(min(600,item[1][1]-2),1)
+            for samp in self.randomSamples(taxid=taxid,nSamples=nSamples):
+                seqChecker.checkArrayTaxid(taxid=taxid,seq=samp,spacer=self.spacer)
+            if iTaxa % 1000 == 0:
+                print "Done %s taxa out of %s" % ( iTaxa, len(taxind) )
+            iTaxa += 1
+
 
     def checkDb(self):
         """Perform some HDF database consistency checks to make sure that we correctly created the data."""
@@ -294,4 +343,18 @@ class HdfSampleReader(MGTOptions):
     def getTaxaInd(self):
         return self.taxaInd
 
+class SubSamplerUniRandomEnd:
+    """Uniform random [0,rnd_length] subsampler where rnd_length is in [minLen,maxLen]"""
+
+    def __init__(self,minLen,maxLen):
+        assert minLen > 0 and maxLen >= minLen
+        self.minLen = minLen
+        self.maxLen = maxLen
+
+    def __call__(self,samp):
+        """Return subsequence [0,random).
+        We always take from the beginning rather than from a random start,
+        because when subsampling short taxa with concatenation, this gives 
+        a better chance of not hitting spacer junction."""
+        return samp[0:nrnd.random_integers(self.minLen,min(len(samp),self.maxLen))]
 

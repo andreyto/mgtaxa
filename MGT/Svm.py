@@ -1,8 +1,13 @@
 from MGT.Taxa import *
-from MGT.Kmers import *
+from MGT import Kmers
 from itertools import izip
 
-class SvmSparseFeatureWriterTxt:
+class SvmSparseFeatureWriterTxt(Kmers.SvmSparseFeatureWriterTxt):
+
+    def write(self,label,feature):
+        Kmers.SvmSparseFeatureWriterTxt.write(self,label,feature['values'],feature['indices'])
+
+class SvmFastaFeatureWriterTxt:
     
     def __init__(self,out):
         if not hasattr(out,'write'):
@@ -13,16 +18,57 @@ class SvmSparseFeatureWriterTxt:
     def close(self):
         self.out.close()
 
-    def write(self,label,values,indices):
-        self.out.write("%d " % (label,))
-        strItems = ' '.join( ( "%d:%f" % item for item in izip(indices,values) ) )
-        self.out.write(strItems)
+    def write(self,label,feature):
+        self.out.write(">%d\n" % label)
+        self.out.write(feature.tostring())
         self.out.write("\n")
         self.nOut += 1
 
     def numRec(self):
         return self.nOut
+
+class SvmStringFeatureWriterTxt:
+    
+    def __init__(self,out):
+        if not hasattr(out,'write'):
+            out = open(out,'w', buffering=1024*1024)
+        self.out = out
+        self.nOut = 0
         
+    def close(self):
+        self.out.close()
+
+    def write(self,label,feature):
+        self.out.write("%d " % label)
+        self.out.write(feature.tostring())
+        self.out.write("\n")
+        self.nOut += 1
+
+    def numRec(self):
+        return self.nOut
+
+class SvmDenseFeatureWriterTxt:
+    
+    def __init__(self,out):
+        if not hasattr(out,'write'):
+            out = open(out,'w', buffering=1024*1024)
+        self.out = out
+        self.nOut = 0
+        self.formatStr = None
+        
+    def close(self):
+        self.out.close()
+
+    def write(self,label,values):
+        if self.formatStr is None:
+            self.formatStr = ' '.join( ("%d:%%g" % ind for ind in xrange(1,len(values)+1)) ) + '\n'
+        self.out.write("%d " % (label,))
+        self.out.write(self.formatStr % tuple(values))
+        self.nOut += 1
+
+    def numRec(self):
+        return self.nOut
+
 
 class SVMLibLinear:
     
@@ -34,10 +80,12 @@ class SVMLibLinear:
         self.binTrain = os.path.join(self.binDir,'train')
         self.binPredict = os.path.join(self.binDir,'predict')
         
-    def train(self,trainFile):
-        print "Starting training with %s samples of rank %s" % (iRec,len(rec.vals))        
-        run(["svm_multiclass_learn","-c","1","-m","2000",trainFile,self.modelFileRel], cwd=self.workDir)
-        print "Finished training"
+    def trainCmd(self,trainFile):
+        #cmd = [self.binTrain,"-c","4","-e","0.1","-s","3",trainFile,self.modelFileRel]
+        cmd = ["(zcat %s; echo '#'; zcat %s) |" % (trainFile,trainFile),
+                self.binTrain,"-c","0.01","-e","1","-s","3","-",self.modelFileRel]
+        return cmd
+        #run(cmd, cwd=self.workDir)
 
         
 

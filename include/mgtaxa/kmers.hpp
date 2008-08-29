@@ -233,7 +233,7 @@ class KmerStates {
 	typedef std::vector<KmerState> StateArray;
 	typedef std::vector<Kmer> KmerArray; 
 	public:
-		KmerStates(int kmerLen, const AbcConvCharToInt *pAbcConv);
+		KmerStates(int kmerLen, const AbcConvCharToInt *pAbcConv,KmerId firstIdState);
 		PKmerState nextState(PKmerState pState,INuc c);
 		PKmerState revCompState(PKmerState pState);
 		PKmerState revCompStateFirst(PKmerState pState);		
@@ -246,6 +246,8 @@ class KmerStates {
 		PKmerStateData getData(PKmerState pState);
 		void setData(PKmerState pState,PKmerStateData pStateData);
 		const Kmer& kmerState(PKmerState pState) const;
+        KmerId getFirstIdState() const;
+        KmerId getLastIdState() const;
 		std::ostream& print(std::ostream& out) const;
 	private:
 	/** Private copy constructor makes instances non-copyable.*/
@@ -272,8 +274,9 @@ class KmerStates {
 	/** Index of the first non-degenerate state in m_states.*/ 
 	int iFirstStateNonDegen;
 
-    /** IDs of output (non-degenerate, non-reverse-complement) k-mers start from this.*/
-    KmerId m_firstIdState;
+    /** IDs of output (non-degenerate, non-reverse-complement) k-mers fill 
+     * a half open interval [m_firstIdState,m_lastIdState).*/
+    KmerId m_firstIdState, m_lastIdState;
 };
 
 
@@ -286,7 +289,7 @@ class KmerCounter {
 	
 	public:
 	
-	KmerCounter(int kmerLen, const AbcConvCharToInt *pAbcConv = 0);
+	KmerCounter(int kmerLen, const AbcConvCharToInt *pAbcConv = 0,KmerId firstIdState=1);
 	~KmerCounter();
 	
 	void doCNuc(CNuc cnuc);
@@ -315,8 +318,13 @@ class KmerCounter {
 	/** Return number of k-mers found so far in current accumulation cycle.*/
 	int numKmers() const;
 	/** Return sum of non-degenerate k-mer counts found so far in current accumulation cycle.
-     * Can be only called outside of startKmer()...finishKmer() block.*/
+     * Can be only called outside of startKmer()...finishKmer() block.
+     * Complexity: linear in the number of found km-mers.*/
 	ULong sumKmerCounts() const;
+	/** Return sum of degenerate k-mer counts found so far in current accumulation cycle.
+     * Can be only called outside of startKmer()...finishKmer() block.
+     * Complexity: constant time*/
+	ULong sumDegenKmerCounts() const;
 	/** Prepare internal state for result extraction.
      * @param doSort - if true, the results will be sorted (complexity will be N*log(N) where
      * N is numKmers(). SVM sparse feature vector representation needs sorted results.*/
@@ -333,6 +341,9 @@ class KmerCounter {
 	void finishKmer();
 	/*@}*/ 
 	
+    KmerId getFirstIdState() const;
+    KmerId getLastIdState() const;
+
 	private:
 	/** Private copy constructor makes instances non-copyable.*/
     KmerCounter( const KmerCounter& );
@@ -362,7 +373,9 @@ class KmerCounter {
 	 * which in turn is set as a reverse-complement one for all other
 	 * degenerate states. This way, it serves as a sink counter for
 	 * all degenerate states. That in turn removes one branch condition
-	 * from the time-critical code in doINuc().*/ 
+	 * from the time-critical code in doINuc().
+     * We also query from it the total count of degenerate states in the
+     * last accumulation cycle.*/ 
 	KmerStateData m_dataDegen;
 	
 	/** Index of the first unused element in ::m_data.*/

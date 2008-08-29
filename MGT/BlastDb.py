@@ -70,7 +70,7 @@ class BlastDb(MGTOptions):
         finally:
             os.chdir(cwd)
 
-    def fastaStream(self,dbName,giFile=None,defLineTargetOnly=True):
+    def fastaStream(self,dbName,giFile=None,defLineTargetOnly=True,maxDegen=20):
         """Return an open file object that streams database records in FASTA format.
         @param dbName - database name (e.g. 'nt')
         @param giFile - text file with gi ids (one per line)
@@ -93,16 +93,25 @@ class BlastDb(MGTOptions):
             giFile = os.path.abspath(giFile)
             giListOpt = "-i %s" % (giFile,)
         # -l 60000 seqfaults fastacmd 2.2.15 SuSe 10 x86_64 (boxer)
-        cmd = "fastacmd -l 30000 -d %s %s %s" % (dbName,giListOpt,otherOpts)
+        if self.debugFakeSequence:
+            fastaCmdBin = "fastacmd_debug"
+        else:
+            fastaCmdBin = "fastacmd"
+        cmd = fastaCmdBin + " -l 30000 -d %s %s %s" % (dbName,giListOpt,otherOpts)
+        # Initially I implemented the pipe using 'Popen shell pipe' idiom (see subprocess module help),
+        # but it was x10 slower than the true shell pipe below.
+        if maxDegen is not None:
+                cmd = cmd + " | " + os.path.join(os.environ["MGT_EXEC_BIN"],"fastaFilter") + " -n %s -l %s" % (maxDegen,2**16)
         if self.debug > 0:
             print cmd
-        return Popen( cmd.split(),
+        return Popen( cmd,
                         cwd=self.blastDataDir,
                         env=os.environ,
                         bufsize=2**16,
                         stdout=PIPE,
+                        shell=True,
                         close_fds=True).stdout
 
-    def fastaReader(self,*l,**kw):
-        return FastaReader(self.fastaStream(*l,**kw))
+    def fastaReader(self,**kw):
+        return FastaReader(self.fastaStream(**kw))
 

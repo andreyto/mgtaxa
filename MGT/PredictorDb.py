@@ -21,6 +21,7 @@ class Predictor(MGTOptions):
                    predDb.predState.empty))
             id = predDb.db.selectScalar("SELECT LAST_INSERT_ID()")
         self.id = id
+        self.id_node = node.id
         self.workDir = os.path.join(predDb.predictorDir,"%07i" % id)
         makedir(self.workDir)
         self.trainFile = os.path.join(self.workDir,'train.svm')
@@ -28,6 +29,8 @@ class Predictor(MGTOptions):
     def trainingWriter(self):
         return SvmSparseFeatureWriterTxt(self.trainFile)
 
+    def getFileName(self,name):
+        return os.path.join(self.workDir,name)
 
 class MClassPredictor(Predictor):
     
@@ -73,3 +76,13 @@ class PredictorDb(MGTOptions):
 
     def newPredictor(self,node,predType,**kw):
         return self.predClass(predType)(predDb=self,node=node,id=None,**kw)
+
+    def predIter(self,taxaTree,predType):
+        db = self.db
+        curs = db.execute("select id,id_node from %s" % self.predictorTable)
+        while True:
+            row = curs.fetchone()
+            if not row:
+                break
+            yield self.predClass(predType)(predDb=self,node=taxaTree.getNode(row[1]),id=row[0])
+

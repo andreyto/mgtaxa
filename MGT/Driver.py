@@ -4,13 +4,14 @@ import sys, os
 
 from MGT.CollectTaxa import *
 from MGT.LabelTaxa import *
-#from MGT.Svm import *
+from MGT.Svm import *
 
 dbSql = createDbSql()
 #
 #txcol = TaxaCollector(dbSql=dbSql)
 #txcol.tmp_loadSeqHdr()
 #txcol.rebuild()
+#txcol.loadTaxLevelsSql()
 #sys.exit(0)
 #txcol.delDuplicateGiFromSeq()
 #txcol.selectSeqIds()
@@ -33,8 +34,10 @@ dbSql = createDbSql()
 #txcol.indexHdfSeq()
 
 
-sampler = SamplerConcat(db = dbSql,sampLen=1000,kmerLen=7,namePrefix="samp_1k")
+sampler = SamplerConcat(db = dbSql,sampLen=options.sampLen,kmerLen=options.kmerLen,namePrefix=options.sampNamePrefix)
+#sampler.mkHdfSampleInd()
 sampler.rebuild()
+#sampler.submitTraining()
 
 sys.exit(0)
 

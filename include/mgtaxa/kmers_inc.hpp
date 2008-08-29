@@ -217,10 +217,23 @@ inline const Kmer& KmerStates::kmerState(PKmerState pState) const {
 
 /** Return unique ID of the state's k-mer.
  * This is stable between invocations of the program.
- * ID starts from 0 (for the first non-degenerate k-mer).*/
+ * IDs fill the half-open interval [getFirstIdState(),getLastIdState()) 
+ * (for the first non-degenerate k-mer).*/
 
 inline KmerId KmerStates::idState(PKmerState pState) const {
     return pState->m_id;
+}
+
+/** Return first state ID (for non-degenerate k-mers).*/
+
+inline KmerId KmerStates::getFirstIdState() const {
+    return m_firstIdState;
+}
+
+/** Return last used plus one state ID (for non-degenerate k-mers).*/
+
+inline KmerId KmerStates::getLastIdState() const {
+    return m_lastIdState;
 }
 
 /** Return pointer to KmerState for a given Kmer object.
@@ -356,6 +369,10 @@ inline ULong KmerCounter::sumKmerCounts() const {
     return sum;
 }
 
+inline ULong KmerCounter::sumDegenKmerCounts() const {
+    return m_dataDegen.count;
+}
+
 struct KmerStateLessCmp : public std::binary_function<KmerStateData,KmerStateData,bool> {
     bool operator()(const KmerStateData& x, const KmerStateData& y) {
         return x.idState() < y.idState();
@@ -383,7 +400,8 @@ inline ULong KmerCounter::getKmerCount() const {
 }
 
 inline int KmerCounter::getKmerId() const {
-    return m_pStates->idState(m_data[m_iDataExtr].getState());
+    return m_data[m_iDataExtr].idState();
+    //return m_pStates->idState(m_data[m_iDataExtr].getState());
 }
  
 inline std::string KmerCounter::getKmerStr() const {
@@ -399,6 +417,18 @@ inline void KmerCounter::finishKmer() {
     m_iDataExtr = 0;
     //set current state to be the first state
     m_pSt = m_pStates->firstState();    
+}
+
+/** Return first state ID (for non-degenerate k-mers).*/
+
+inline KmerId KmerCounter::getFirstIdState() const {
+    return m_pStates->getFirstIdState();
+}
+
+/** Return last used plus one state ID (for non-degenerate k-mers).*/
+
+inline KmerId KmerCounter::getLastIdState() const {
+    return m_pStates->getLastIdState();
 }
 
 } // namespace MGT

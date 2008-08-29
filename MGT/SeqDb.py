@@ -69,6 +69,8 @@ class HdfSeqLoader(MGTOptions):
         blastAlias = self.blastSelAlias
         blastDb = BlastDb()
         blastDb.makeDbAlias(blastAlias,giFile)
+        if self.debugFakeSequence:
+            seqChecker = FakeSequenceChecker()
         #defLineTargetOnly is True because we should have already removed duplicate
         #records while collecting the sequence headers
         fastaInp = blastDb.fastaReader(dbName=blastAlias,giFile=giFile,defLineTargetOnly=True)
@@ -85,6 +87,8 @@ class HdfSeqLoader(MGTOptions):
             nSeq = 0
             indRec = self.ind.row
             for chunk in rec.seqArrays(chunkSize=chunkSize):
+                if self.debugFakeSequence:
+                    seqChecker.checkArrayGi(gi=gi,seq=chunk)
                 nSeq += len(chunk)
                 self.seq.append(chunk)
             indRec['id'] = id
@@ -183,4 +187,23 @@ def hdfMakeActiveSeqInd(db,hdfFile,hdfPath):
             print "Indexed %s records" % nRec
         nRec += 1
     ind.flush()
+
+
+def hdfCheckActiveSeqInd():
+    """Check database consistency of active sequence index.
+    Run it on the fake database that was created with options.debugFakeSequence set."""
+    seqChecker = getFakeSequenceChecker()
+    seqChecker.loadGiTaxa()
+    hdfFileSeq = pt.openFile(options.hdfSeqFile,mode="r")
+    hdfSeq = hdfFileSeq.getNode(options.hdfSeqGroup,'seq')
+    hdfFileActSeq = pt.openFile(options.hdfActSeqFile,mode="r")
+    hdfSeqInd = hdfFileActSeq.getNode(options.hdfActSeqInd)
+    iSeq = 0
+    for rowInd in hdfSeqInd:
+        taxid = rowInd['id']
+        seq = hdfSeq.read(start=rowInd['begin'],stop=rowInd['begin']+rowInd['size'])
+        seqChecker.checkArrayTaxid(taxid=taxid,seq=seq,spacer=None)
+        if iSeq % 1000 == 0:
+            print "Done %s sequences out of %s" % ( iSeq, hdfSeqInd.nrows )
+        iSeq += 1
 

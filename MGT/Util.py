@@ -88,7 +88,7 @@ def backsticks(*popenargs,**kwargs):
         print popenargs
         return dryRet
     else:
-        kw['stdout'] = subprocess.PIPE
+        kw['stdout'] = PIPE
         p = Popen(*popenargs, **kw)
         retout = p.communicate()[0]
         if p.returncode != 0:
@@ -297,6 +297,9 @@ class Struct(object):
     def copy(self):
         return copy(self)
 
+
+
+
 class Options(Struct):
     
     def copy(self):
@@ -360,89 +363,7 @@ class FastaReaderSinkMem(FastaReaderSink):
         self.seq.close()
 
 
-from cStringIO import StringIO
 
-class FastaReader(object):
-    def __init__(self,infile):
-        self.infile = infile
-        self.freshHdr = False
-        
-    def records(self):
-        infile = self.infile
-        while True:
-            if self.freshHdr:
-                self.freshHdr = False
-                yield self
-                continue
-            line = infile.readline()
-            if not line:
-                return
-            # skip blank lines
-            elif line.isspace():
-                continue
-            elif line.startswith(">"):
-                self.hdr = line
-                yield self
-    
-    def header(self):
-        return self.hdr
-
-    def getNCBI_Id(self):
-        """Assume that header starts with '>gi|1234567|' and return the id from second field."""
-        return self.hdr.split('|',2)[1]
-    
-    def seqLines(self):
-        infile = self.infile
-        while True:
-            line = infile.readline()
-            if not line:
-                break
-            elif line.isspace():
-                continue
-            elif line.startswith(">"):
-                self.hdr = line
-                self.freshHdr = True
-                return
-            yield line
-
-    def seqChunks(self,chunkSize):
-        seq = StringIO()
-        for line in self.seqLines():
-            seq.write(line.rstrip("\n"))
-            if seq.tell() >= chunkSize:
-                yield seq.getvalue()
-                seq.close()
-                seq = StringIO()
-        if seq.tell() > 0:
-            yield seq.getvalue()
-        seq.close()
-
-    def seqArrays(self,chunkSize):
-        for s in self.seqChunks(chunkSize):
-            yield numpy.fromstring(s,dtype='S1')
-
-    def sequence(self):
-        seq = StringIO()
-        for line in self.seqLines():
-            seq.write(line.rstrip("\n"))
-        s = seq.getvalue()
-        seq.close()
-        return s
-
-    def seqLen(self):
-        n = 0
-        for line in self.seqLines():
-            n += len(line) - 1
-            if not line.endswith("\n"):
-                n += 1
-        return n
-
-    def close(self):
-        self.infile.close()
-
-
-def fastaReaderGzip(fileName):
-    return FastaReader(openGzip(fileName,'r'))
 
 def seqIterLengths(recIter):
     return numpy.fromiter((rec.seqLen() for rec in recIter),int)
@@ -551,18 +472,18 @@ def splitFastaFile(inpFile,outBase,maxChunkSize):
 _BatchJobTemplate = \
 """#!/bin/tcsh
 #$$ -hard -P $PROJECT_CODE
-#$$ -l memory=${MEM}M -l msc -l arch="$ARCH"
+#$$ -l memory=${MEM}M -l arch="$ARCH"
 #$$ -cwd
 ## Submit as 'qsub -b n -S /bin/tcsh script_name'. Apparently admins changed the default value of -b to 'y'
 ## and by default qstat now thinks of script_name as a binary file and does not parse it for
 ## embedded options (09/14/07).  Shell NEEDS to be correctly specified both at the top and (?) 
 ## in qstat options for the user environment to be correctly sourced.
-echo "Initial environment begin"
-printenv | sort
-echo "Initial environment end"
-pstree
+## echo "Initial environment begin"
+## printenv | sort
+## echo "Initial environment end"
+## pstree
 source $$HOME/.cshrc
-printenv | sort
+## printenv | sort
 hostname
 uname -a
 pwd
@@ -593,6 +514,14 @@ class BatchSubmitter(object):
         finally:
             os.chdir(curdir)
         
+    def nQueued(self):
+        jobList = backsticks(["qstat","-u",os.environ['USER']]).strip().splitlines()
+        return len(jobList)
+
+    def submitIf(self,maxQueued,**kw):
+        while self.nQueued() >= maxQueued:
+            sleep(60)
+        self.submit(**kw)
 
 class HistogramRdnGenerator:
     """When initialized with a histogram (as returned by numpy.histogram(...,norm=False), 

@@ -24,14 +24,16 @@ class TaxaCollector(MGTOptions):
         
 
     def rebuild(self):
-        #self.loadGiTaxNumpy()
-        #self.loadRefseqAcc()
-        #self.loadTaxTables()
-        #self.loadSeq()
-        #self.loadSeqToHdf()
-        #self.indexHdfSeq()
-        #self.selectActiveSeq()
+        self.loadGiTaxNumpy()
+        self.loadRefseqAcc()
+        self.loadTaxTables()
+        self.loadSeq()
+        self.loadSeqToHdf()
+        self.indexHdfSeq()
+        self.selectActiveSeq()
         self.indexHdfActiveSeq()
+        # only for analysis:
+        #self.loadTaxLevelsSql()
         pass
 
     def loadTaxTables(self):
@@ -147,20 +149,7 @@ class TaxaCollector(MGTOptions):
     def loadSeqNCBI(self,db,inserterSeq,inserterSeqMultiId,inserterSeqHdr):
         print "Processing BLAST DB " + db.db
         inp = self.blastDb.fastaReader(dbName=db.db,defLineTargetOnly=False)
-        #curs = self.dbSql.cursor()
         iRec = 0
-        #bufLen = 50000
-        #sql = """
-        #insert into seq
-        #(id, gi, taxid, src_db, project, seq_len, acc_db, acc, kind, seq_hdr)
-        #values
-        #(%s,%s,%s,%s,%s,%s,%s,%s,%s)
-        #"""
-        #inserter = self.dbSql.makeBulkInserter(sql=sql,bufLen=bufLen)
-        #inserter.n = 1
-        #inserter.flush()
-        #inp.close()
-        #return
         for rec in inp.records():
             idSeq = self.idGenSeq()
             title = rec.header()[1:-1] #remove '>' and '\n'
@@ -370,9 +359,12 @@ class TaxaCollector(MGTOptions):
 
     def loadTaxLevels(self):
         self.loadTaxLevelsMem(withTaxTree=True)
-        #self.taxaLevels.loadTaxLevelsRows()
-        #self.taxaLevels.loadTaxLevelsColumns()
-        #self.taxaLevels.makeStatsTables()
+
+    def loadTaxLevelsSql(self):
+        self.loadTaxLevelsMem(withTaxTree=True)
+        self.taxaLevels.loadTaxLevelsRows()
+        self.taxaLevels.loadTaxLevelsColumns()
+        self.taxaLevels.makeStatsTables()
         
     def loadTaxLevelsMem(self,withTaxTree=False):
         if self.taxaLevels is None:

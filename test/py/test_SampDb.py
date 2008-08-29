@@ -1,9 +1,10 @@
+from MGT.SeqDb import hdfCheckActiveSeqInd
 from MGT.SampDb import *
 
 import time, random
 
-printTiming = True
-printData = False
+printTiming = False
+printData = True
 
 hdfSampFile = "samp_1k/samp.hdf"
 sampLen = 1000
@@ -54,9 +55,11 @@ def testRandomSamples():
                 (nLoops,nSamples,nSamplesTotal,timePerSamp)
 
 random.seed(1)
-testLocalSamples(taxid=262136)
-testRandomSamples()
+#testLocalSamples(taxid=262136)
+#testRandomSamples()
 ## This will take several hours
 #reader.checkDb()
-reader.close()
+#hdfCheckActiveSeqInd()
+reader.checkFakeDb()
+#reader.close()
 

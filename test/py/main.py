@@ -3,6 +3,7 @@ import unittest
 # list all test modules (without .py extension)
 tests = [
     'test_sample_boost',
+    'test_fastaFilter'
 	]
 
 # import all test modules

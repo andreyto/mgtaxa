@@ -239,14 +239,55 @@ class DbSql(MGTOptions):
             inserter(rec)
         inserter.flush()
 
+    def createTableFromArray(self,name,arr,withData=True,returnInserter=False):
+        """Create a table that reflects the fields of Numpy record array.
+        @ret SqlTable object
+        @param name The name of the new table
+        @param arr Numpy array to use as template
+        @param withData if True, also load data from array
+        @param returnInserter if True, return a BulkInserter object. 
+        The caller then is resposible for closing the inserter object.
+        All fields are constrained as NOT NULL, as Numpy does not have NULL values,
+        and NOT NULL constraint speeds up queries.
+        """
+        numMap = self.getNumpyTypeMap()
+        flds = numMap.sqlFromDtype(dtype=arr.dtype)
+        table = SqlTable(name=name,fields = [ SqlField(name=f[0],type=f[1],null=False) for f in flds ])
+        self.ddl(table.createSql(),dropList=["table "+table.name])
+        inserter = None
+        if withData or returnInserter:
+            inserter = self.makeBulkInserterFile(table=table.name)
+        if withData:
+            for rec in arr:
+                inserter(rec)
+            if not returnInserter:
+                inserter.close()
+        return inserter
+
+
+    def selectAsArray(self,sql):
+        """Execute SQL select and return the entire result set as Numpy record array."""
+        reader = self.makeBulkReader(sql=sql)
+        ret = reader.allAsArray()
+        reader.close()
+        return ret
+
+
 
 # Classes that describe Sql Db objects as Python objects in a portable way
 
 class SqlField:
 
-    def __init__(self,name,type):
+    def __init__(self,name,type,null=True):
         self.name = name
         self.type = type
+        self.null = null
+
+    def nullSql(self):
+        if self.null:
+            return ""
+        else:
+            return "NOT NULL"
 
 class SqlTable:
 
@@ -261,7 +302,7 @@ class SqlTable:
         (
         %s
         )
-        """ % (self.name,',\n'.join( [ "%s %s" % (field.name,field.type) for field in self.fields ] ))
+        """ % (self.name,',\n'.join( [ "%s %s %s" % (field.name,field.type,field.nullSql()) for field in self.fields ] ))
 
 
 class DbSqlLite(DbSql):
@@ -285,11 +326,11 @@ class DbSqlLite(DbSql):
 
 class DbSqlMy(DbSql):
     
-    def __init__(self,dryRun=False):
+    def __init__(self,dryRun=False,**kw):
         import MySQLdb as dbmod
         self.dbmod = dbmod
         DbSql.__init__(self)
-        self.open()
+        self.open(**kw)
         #self.dbmod.server_init(("phyla","--defaults-file=my.cnf"),('server',))
 
 
@@ -298,12 +339,12 @@ class DbSqlMy(DbSql):
         ## or
         ## _mysql_exceptions.OperationalError: (2013, 'Lost connection to MySQL server during query')
 
-    def open(self):
+    def open(self,**kw):
         import MySQLdb.cursors
         self.close()
         self.con = self.dbmod.connect(unix_socket="/tmp/atovtchi.mysql.sock",
                                       host="localhost",
-                                      db="mgtaxa",
+                                      db=kw.get('db',"mgtaxa"),
                                       user="root",
                                       passwd="OrangeN0",
                                       read_default_file="my.cnf",
@@ -517,6 +558,7 @@ class BulkInserterFile:
         self.n = 0
         (fobj,self.bulkFile) = makeTmpFile(dir=self.workDir,prefix="sqlBulkIns_"+self.table,suffix=".csv",createParents=True)
         fobj.close()
+        self.isClosed = False
 
             
     def __call__(self,record):
@@ -537,8 +579,15 @@ class BulkInserterFile:
             self.flush()
 
     def __del__(self):
-        self.db = None
-        os.remove(self.bulkFile)
+        self.close()
+
+    def close(self):
+        if not self.isClosed:
+            self.flush()
+            self.db = None
+            os.remove(self.bulkFile)
+            self.isClosed = True
+
             
     def flush(self):
         if self.n > 0:
@@ -664,20 +713,49 @@ class SqlNumpyTypeMap:
                 ## DATE is string for numpy
                 npy_t = 'S%s' % (fld[I_SIZE],)
             else:
-                raise TypeError("Unsuported SQL DBAPI typecode: %s. Field is %s" % (fld_t,fld))
+                # just try 'double' a a last resort. MySQL dbapi lacks NUMERIC (DECIMAL) constant
+                npy_t = 'f8'
+                #raise TypeError("Unsuported SQL DBAPI typecode: %s. Field is %s" % (fld_t,fld))
             dt.append((fld[I_NAME].lower(),npy_t))
         return dt
+
+    def sqlFromDtype(self,dtype):
+        sql = []
+        for fName in dtype.names:
+            fDtype = dtype.fields[fName][0]
+            kind = fDtype.kind
+            itemsize = fDtype.itemsize
+            if kind == 'b':
+                spec = 'bool'
+            elif kind in 'iu':
+                if itemsize <= 4:
+                    spec = 'integer'
+                else:
+                    spec = 'bigint'
+            elif kind == 'f':
+                spec = 'float(%s)' % itemsize
+            elif kind in 'cS':
+                spec = 'char(%s)' % itemsize
+            else:
+                raise ValueError("Unsupported Numpy datatype for SQL conversion: %s" % fDtype)
+            sql.append((fName,spec))
+            #pdb.set_trace()
+        return sql
+
 
 class BulkReader:
     """Class that executes SQL statement and provides an iterator to read results back in chunks as NumPy record arrays."""
 
-    def __init__(self,db,sql,bufLen):
+    def __init__(self,db,sql,bufLen=None):
         self.db = db
-        self.bufLen = bufLen
         self.sql = sql
         curs = db.execute(sql=sql)
         self.curs = curs
-        curs.arraysize = bufLen
+        if bufLen is not None:
+            curs.arraysize = bufLen
+        else:
+            bufLen = curs.arraysize
+        self.bufLen = bufLen
         self.dt = db.getNumpyTypeMap().dtype(curs.description)
         #print "descr = ", curs.description
         #print "dt = ", self.dt
@@ -706,6 +784,10 @@ class BulkReader:
             #print rows
             self.nrows_fetched += len(rows)
             yield numpy.rec.fromrecords(list(rows),dtype=dt)
+
+    def allAsArray(self):
+        """Return all (remaining) records as one numpy record array."""
+        return numpy.rec.fromrecords(list(self.curs.fetchall()),dtype=self.dt)
 
     def close(self):
         self.curs.close()
