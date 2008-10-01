@@ -139,8 +139,9 @@ for inSeq in opt.inSeq:
                                         if opt.maxSampCountPerSeq > len(sampStarts):
                                             sampStarts = sampStarts[:opt.maxSampCountPerSeq]
                                         for sampStart in sampStarts:
-                                            samp = seq[sampStart:sampStart+opt.sampLen]
-                                            if checkSaneAlphaHist(samp,nonDegenSymb,minNonDegenRatio=0.9):
+                                            samp = Struct(seq=seq[sampStart:sampStart+opt.sampLen],
+                                                    id=node.id)
+                                            if checkSaneAlphaHist(samp.seq,nonDegenSymb,minNonDegenRatio=0.9):
                                             #if len(samp) >= opt.sampLen*0.9:
                                                 famNode.splitSeq[splitId].append(samp)
                                             else:
@@ -177,7 +178,7 @@ for node in topNode.iterDepthTop():
                 print "Writing label %i for node %s" % (label,node.lineageStr())
                 for iSplit in xrange(nSplits):
                     for samp in node.splitSeq[iSplit]:
-                       svmWriters[iSplit].write(label,samp)
+                       svmWriters[iSplit].write(label,samp.seq,samp.id)
                 label += 1
                 isOther = False
         if isOther:
@@ -189,7 +190,7 @@ if doWriteOtherGroup:
     print "Writing label %i for node Other" % (labelOther,)
     for iSplit in xrange(nSplits):
         for samp in otherGroup.splitSeq[iSplit]:
-           svmWriters[iSplit].write(labelOther,samp)
+           svmWriters[iSplit].write(labelOther,samp.seq,samp.id)
 
 for svmWriter in svmWriters:
     svmWriter.close()

@@ -27,9 +27,37 @@ class SvmFastaFeatureWriterTxt:
     def numRec(self):
         return self.nOut
 
+def svmSaveId(ids,out):
+    if not hasattr(out,'write'):
+        out = openCompressed(out,'w')
+        ownOut = True
+    else:
+        ownOut = False
+    s = ''.join([ "%s\n" % x for x in ids ])
+    out.write(s)
+    if ownOut:
+        out.close()
+
+def svmLoadId(inp,dtype='i8'):
+    if not hasattr(inp,'read'):
+        inp = openCompressed(out,'r')
+        ownInp = True
+    else:
+        ownInp = True
+    x = n.fromfile(inp,sep='\n',dtype=dtype)
+    if ownInp:
+        inp.close()
+    return x
+    
+
 class SvmStringFeatureWriterTxt:
     
-    def __init__(self,out):
+    def __init__(self,out,outId=None):
+        if not hasattr(outId,'write'):
+            if outId is None:
+                assert isinstance(out,str)
+                outId = open(out+'.id','w', buffering=1024*1024)
+        self.outId = outId
         if not hasattr(out,'write'):
             out = open(out,'w', buffering=1024*1024)
         self.out = out
@@ -38,13 +66,16 @@ class SvmStringFeatureWriterTxt:
     def close(self):
         self.out.close()
 
-    def write(self,label,feature):
+    def write(self,label,feature,id=None):
         self.out.write("%d " % label)
         if isinstance(feature,str):
             self.out.write(feature)
         else:
             self.out.write(feature.tostring())
         self.out.write("\n")
+        if id is None:
+            id = label
+        self.outId.write("%s\n" % id)
         self.nOut += 1
 
     def numRec(self):
@@ -52,7 +83,12 @@ class SvmStringFeatureWriterTxt:
 
 class SvmDenseFeatureWriterTxt:
     
-    def __init__(self,out):
+    def __init__(self,out,outId=None):
+        if not hasattr(outId,'write'):
+            if outId is None:
+                assert isinstance(out,str)
+                outId = open(out+'.id','w', buffering=1024*1024)
+        self.outId = outId
         if not hasattr(out,'write'):
             out = open(out,'w', buffering=1024*1024)
         self.out = out
@@ -62,11 +98,14 @@ class SvmDenseFeatureWriterTxt:
     def close(self):
         self.out.close()
 
-    def write(self,label,values):
+    def write(self,label,feature,id=None):
         if self.formatStr is None:
-            self.formatStr = ' '.join( ("%d:%%g" % ind for ind in xrange(1,len(values)+1)) ) + '\n'
+            self.formatStr = ' '.join( ("%d:%%g" % ind for ind in xrange(1,len(feature)+1)) ) + '\n'
         self.out.write("%d " % (label,))
-        self.out.write(self.formatStr % tuple(values))
+        self.out.write(self.formatStr % tuple(feature))
+        if id is None:
+            id = label
+        self.outId.write("%s\n" % id)
         self.nOut += 1
 
     def numRec(self):
@@ -83,16 +122,18 @@ class SvmDenseFeatureWriterCsv:
         self.nOut = 0
         self.formatStr = None
         if writeHeader:
-            out.write("label,"+",".join([ "f%i" % iFeat for iFeat in xrange(nFeat) ])+"\n")
+            out.write("id,label,"+",".join([ "f%i" % iFeat for iFeat in xrange(nFeat) ])+"\n")
         
     def close(self):
         self.out.close()
 
-    def write(self,label,values):
+    def write(self,label,feature,id=None):
         if self.formatStr is None:
-            self.formatStr = ",%g"*len(values)+'\n'
-        self.out.write("%d" % (label,))
-        self.out.write(self.formatStr % tuple(values))
+            self.formatStr = ",%g"*len(feature)+'\n'
+        if id is None:
+            id = label
+        self.out.write("%s,%d" % (id,label))
+        self.out.write(self.formatStr % tuple(feature))
         self.nOut += 1
 
     def numRec(self):

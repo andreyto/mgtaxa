@@ -31,7 +31,7 @@ print "Program options are:\n%s\n" % (opt,)
 out = SvmStringFeatureWriterTxt(opt.outFeat)
 
 for rec in data:
-    out.write(rec['label'],rec['feature'])
+    out.write(rec['label'],rec['feature'],rec['id'])
 
 out.close()
 

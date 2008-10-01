@@ -86,3 +86,5 @@ print "WHD number feature dimensionality: %d" % feat_whd.get_num_features()
 lab = Labels(data['label'])
 feat_sparse.write_svmlight_file(opt.outFeat,lab)
 
+svmSaveId(data['id'],opt.outFeat+'.id')
+

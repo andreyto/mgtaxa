@@ -23,13 +23,15 @@ opt,args = getProgOptions()
 
 feat = SparseRealFeatures()
 lab = feat.load_svmlight_file(opt.inFeat).get_labels().astype('i4')
+id = svmLoadId(opt.inFeat+'.id')
 
 if opt.outFormat == "ghsom":
     ghsom = GHSOM(name=opt.name)
-    ghsom.writeInputFromShogunSparse(feat=feat,lab=lab)
+    ghsom.writeInputFromShogunSparse(feat=feat,lab=id)
 elif opt.outFormat == "csv":
     mat = feat.get_full_feature_matrix().transpose()
     writer = SvmDenseFeatureWriterCsv(opt.name,writeHeader=True,nFeat=mat.shape[1])
     for iRow in xrange(mat.shape[0]):
-        writer.write(lab[iRow],mat[iRow])
+        writer.write(lab[iRow],mat[iRow],id[iRow])
+    writer.close()
 

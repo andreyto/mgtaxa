@@ -96,7 +96,11 @@ def applyToFeatData(data,func):
     for rec in data:
         rec['feature'] = func(rec['feature'])
 
-def loadSeqs(inpFile,preProc=lambda lab,seq: ([lab], [seq])):
+def loadSeqs(inpFile,preProc=lambda lab,seq,id: ([lab], [seq], [id]),inpFileId=None):
+    if inpFileId is None:
+        assert isinstance(inpFile,str)
+        inpFileId = inpFile+'.id'
+    idsInp = svmLoadId(inpFileId)
     if isinstance(inpFile,str):
         inpFile=openCompressed(inpFile,'r')
         closeInp=True
@@ -104,19 +108,24 @@ def loadSeqs(inpFile,preProc=lambda lab,seq: ([lab], [seq])):
         closeInp=False
     labs = []
     seqs = []
+    ids  = []
+    iLine = 0
     for line in inpFile:
         lab, seq = line.split(None,1)
         lab = int(lab)
         if seq[-1] == '\n':
             seq = seq[:-1]
-        rec = preProc(lab,seq)
+        rec = preProc(lab,seq,idsInp[iLine])
         if rec is not None:
             labs.extend(rec[0])
             seqs.extend(rec[1])
+            ids.extend(rec[2])
+        iLine += 1
 
     label = numpy.asarray(labs,dtype='f8')
     feature = numpy.asarray(seqs,dtype='O')
-    data = numpy.rec.fromarrays((label,feature),names='label,feature')
+    id = numpy.asarray(ids,dtype='i8')
+    data = numpy.rec.fromarrays((label,feature,id),names='label,feature,id')
     if closeInp:
         inpFile.close()
     return data
