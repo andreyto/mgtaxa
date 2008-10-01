@@ -634,8 +634,9 @@ class SamplerConcat(MGTOptions):
         self.sampNTrainSelf = rootNode.makePropArrayFromFunc(dtype='i4',func=samp_n_choice)
         predDb = PredictorDb(db=self.db,reset=True)
         kmerReader = KmerReader(hdfSampFile=self.hdfSampFile,sampLen=self.sampLen,kmerLen=self.kmerLen,spacer='N'*self.kmerLen)
-        #kmerReader = KmerReaderComb(hdfSampFile=self.hdfSampFile,sampLen=self.sampLen,kmerLenRange=[6,self.kmerLen],spacer='N')
+        #kmerReader = KmerReaderComb(hdfSampFile=self.hdfSampFile,sampLen=self.sampLen,kmerLenRange=[2,self.kmerLen],spacer='N')
         iPredictor = 0
+        excludeBranches= [ taxaTree.getNode(id) for id in (35325,35237) ] #dsRNA, dsDNA
         print "DEBUG: Starting predictor iteration"
         start = time.time()
         for node in self.taxaTree.iterDepthTop(id=self.labelTopNodeId): 
@@ -644,11 +645,16 @@ class SamplerConcat(MGTOptions):
                 #svmWriter = predictor.trainingWriter()
                 if self.kmerRepr == "Sequences":
                     svmWriter = SvmStringFeatureWriterTxt(os.path.join(self.predictorDir,self.svmTrainFile))
+                    svmWriterSplits = (SvmStringFeatureWriterTxt(os.path.join(self.predictorDir,self. svmTrainFile+'.s.1')),SvmStringFeatureWriterTxt(os.path.join(self.predictorDir,self. svmTrainFile+'.s.2')))
+
                 else:
                     svmWriter = SvmSparseFeatureWriterTxt(os.path.join(self.predictorDir,self.svmTrainFile))
                 #kmerReader.openOutput(predictor.trainFile)
-                children = [ n for n in node.iterDepthTop() if n.level == self.labelLevel and n.is_class and n.id in (10811,10780) ] #and n.id in (10811,10780,10662,10699)]
-                bg_nodes = [ taxaTree.getNode(bg_id) for bg_id in (2,2157,2759) ]
+                #children = [ n for n in node.iterDepthTop() if n.level == self.labelLevel and n.is_class ] #and n.id in (10811,10780,10662,10699)]
+                #children = [ n for n in children if sum( (n.isSubnode(e) for e in excludeBranches) ) == 0 ]
+                children = [ n for n in node.iterDepthTop() if n.is_class and \
+                        n.id in ([2,2157]+list(viralTaxidLev2))] #and n.id in (10811,10780,10662,10699)]
+                bg_nodes = [ taxaTree.getNode(bg_id) for bg_id in (131567,) ] #(2,2157,2759) ]
                 #children.extend(bg_nodes)
                 child_targ = int(node.sampSel.test.train.max / len(children))
                 ids = numpy.zeros(len(children)+1,dtype='i4')
@@ -657,12 +663,14 @@ class SamplerConcat(MGTOptions):
                     child.samp_n_train_targ = min(max(child_targ,child.sampSel.test.train.min),
                         child.samp_n_tot_train)
                     child.label = label
+                    child.splitCounts = numpy.zeros(2,'i4')
                     ids[label] = child.id
                     label += 1
                 for bg_node in bg_nodes:
                     bg_node.bg_label = 1
                     bg_node.samp_n_train_targ = 20000
                 dumpObj(ids,predictor.getFileName("labelToId.pkl"))
+                print "Labels-Taxids: ", ids
                 # log and pickle the sequences taxids and sample counts for each 'child'
                 taxaSampLog = {}
                 for child in children:
@@ -696,6 +704,20 @@ class SamplerConcat(MGTOptions):
                                     nSamples=taxaSampChild[taxidSamp]):
                                 sampNode = taxaTree.getNode(taxidSamp)
                                 assert sampNode is child or sampNode.isSubnode(child)
+                                genNode = sampNode.findRankInLineage("genus")
+                                if genNode is not None and not genNode.isUnderUnclass:
+                                    try:
+                                        splitId = genNode.splitId
+                                    except AttributeError:
+                                        scnt = child.splitCounts
+                                        # among equal minimal counts, add to the randomly picked
+                                        splitIdMin = scnt.argmin()
+                                        splitIdsMin = numpy.where(scnt==scnt[splitIdMin])[0]
+                                        splitId = nrnd.permutation(splitIdsMin)[0]
+                                        genNode.splitId = splitId
+                                    child.splitCounts[splitId]+=1
+                                    svmWriterSplits[splitId].write(child.label,feature)
+
                                 svmWriter.write(child.label,
                                                 feature)
                                 nWritten += 1
@@ -704,6 +726,8 @@ class SamplerConcat(MGTOptions):
                                     (nWritten,child.samp_n_train_targ,child.label,child.id,child.sampSel.test.train.min)
                 #kmerReader.closeOutput()
                 svmWriter.close()
+                for svmWriterSplit in svmWriterSplits:
+                    svmWriterSplit.close()
                 dumpObj(taxaSampLog,os.path.join(self.predictorDir,"taxaSamp.train.pkl"))
                 iPredictor += 1
                 print "iPredictor = ", iPredictor
@@ -793,7 +817,7 @@ class SamplerConcat(MGTOptions):
                 spacer='N')
         #kmerReader = KmerReaderComb(hdfSampFile=self.hdfSampFile,
         #        sampLen=self.sampLen,
-        #        kmerLenRange=[6,self.kmerLen],
+        #        kmerLenRange=[2,self.kmerLen],
         #        spacer='N')
         kmerReader.setSubSamplerUniRandomEnd(minLen=self.minTestSampLen,maxLen=self.maxTestSampLen)
         #kmerReader.openOutput(self.getFileName(self.svmTestFile))

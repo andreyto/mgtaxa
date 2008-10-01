@@ -439,19 +439,10 @@ class TaxaCollector(MGTOptions):
         print sorted(((cnt,taxid) for (taxid,cnt) in taxaCnt.iteritems()))
 
     def loadGiTaxNumpy(self):
-        inp = openCompressed(self.taxaGiFile,'r')
-        #inp = open("test_gi_taxid_nucl.dmp",'r')
-        #twocol = numpy.loadtxt(inp,dtype=numpy.int32)
-        twocol = numpy.fromfile(inp,dtype="i4",sep='\n')
-        twocol.shape = (twocol.shape[0]/2,2)
-        gi2taxa = fromWhereItems({'ind':twocol[:,0], 'val':twocol[:,1]})
-        print gi2taxa.shape, gi2taxa.dtype
-        dumpObj(gi2taxa,self.taxaPickled)
-        #pdb.set_trace() 
-
+        makeGiTaxBin(self.taxaGiFile,self.taxaPickled)
 
     def loadGiTaxPickled(self):
-        self.gi2taxa = loadObj(self.taxaPickled)
+        self.gi2taxa = loadGiTaxBin(self.taxaPickled)
         #pdb.set_trace()
 
 

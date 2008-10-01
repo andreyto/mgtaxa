@@ -25,7 +25,9 @@ std::ostream& KmerState::print(std::ostream& out, const PKmerState pFirstState) 
 
 KmerStates::KmerStates(int kmerLen, 
                        const AbcConvCharToInt  *pAbcConv,
+                       RC_POLICY revCompPolicy,
                        KmerId firstIdState) {
+    m_revCompPolicy = revCompPolicy;
     m_firstIdState = firstIdState;
     m_lastIdState = m_firstIdState; // will be computed during initialization
 	m_pAbcConv = pAbcConv;
@@ -135,17 +137,26 @@ void KmerStates::initRevCompl() {
 			} 
 			pState->m_revComp = pStateRC;
 			pStateRC->m_revComp = pState;
-			if( pState <= pStateRC ) {
-				pState->m_isRevComp = false;
-				pStateRC->m_isRevComp = true;
+            if( m_revCompPolicy == RC_MERGE )
+            {
+                if( pState <= pStateRC ) {
+                    // In that order to work for palyndromes
+                    pStateRC->m_isRevComp = true;
+                    pState->m_isRevComp = false;
+                }
+                else {
+                    pState->m_isRevComp = true;
+                    pStateRC->m_isRevComp = false;
+                }
+            }
+            else {
+                pState->m_isRevComp = false;
+            }
+            if( ! pState->m_isRevComp ) {
 				// All other m_id are left to be 0 because we
 				// should never see them in the output
 				pState->m_id = idState++;
-			}
-			else {
-				pState->m_isRevComp = true;
-				pStateRC->m_isRevComp = false;
-			}
+            }
 		}
 	}
 	pStateFirst->m_isRevComp = false;
@@ -230,13 +241,15 @@ AbcConvCharToInt g_defAbcConvCharToInt(g_defNucAbc,g_defNucAbcRevCompl);
 
 KmerCounter::KmerCounter(int kmerLen, 
                          const AbcConvCharToInt  *pAbcConv,
+                         RC_POLICY revCompPolicy,
                          KmerId firstIdState) {
 	if( pAbcConv == 0 ) {
 		pAbcConv = & g_defAbcConvCharToInt;
 	}
 	m_pAbcConv = pAbcConv;
 	m_kmerLen = kmerLen;
-	m_pStates = new KmerStates(kmerLen,pAbcConv,firstIdState);
+    m_revCompPolicy = revCompPolicy;
+	m_pStates = new KmerStates(kmerLen,pAbcConv,m_revCompPolicy,firstIdState);
 	m_data.resize(m_pStates->numStates());
 	PKmerState pStateZero = m_pStates->firstState();
 	m_dataDegen.setState(pStateZero);
@@ -253,3 +266,4 @@ KmerCounter::~KmerCounter() {
 
 
 } // namespace MGT
+

@@ -34,19 +34,6 @@ def perfToSql(db,labToId,name,perf):
     predName = name+'_sen'
     db.createTableFromArray(name=predName,arr=arr,withData=True,returnInserter=False)
 
-def confMatrCsv(out,m,labToId):
-    lab = numpy.arange(len(m),dtype='i4')
-    id = labelToId(labToId,lab)
-    out.write('0,0,')
-    for l in lab: out.write("%i," % l)
-    out.write('\n')
-    out.write('0,0,')
-    for i in id: out.write("%i," % i)
-    out.write('\n')
-    for l in lab:
-        out.write("%i,%i," % (l,id[l]))
-        for x in m[l]: out.write("%i," % x)
-        out.write('\n')
 
 
 

@@ -136,6 +136,9 @@ class TaxaNode(object):
     def lineageRanksStr(self,*l,**kw):
         return ','.join([ "%s=%s" % (rank,taxid) for (rank,taxid) in self.lineageRanksTaxa(*l,**kw) ])
 
+    def lineageStr(self,*l,**kw):
+        return ' -> '.join([ "rank=%s : name='%s' : taxid=%s" % (node.rank,node.name,node.id) for node in self.lineage(*l,**kw) ])
+
     def visitDepthTop(self,func):
         """Apply function 'func' to each node traversing the subtree depth-first, applying 'func' before visiting the children.
         If function 'func' returns anything when applied to this node, stop the iteration and return w/o proceeding to the children."""
@@ -347,6 +350,20 @@ class TaxaNode(object):
         A node is not considered a subnode of itself."""
         return self.lnest > other.lnest and self.rnest < other.rnest
 
+    def setIsUnderUnclass(self):
+        """Set an attribute 'isUnderUnclass' for the nodes in this branch.
+        It flags all nodes that have "unclassified" super-node somewhere in their lineage
+        up to this node including. This node will be marked only if it isUnclassifed()."""
+        iter = self.iterDepthTop()
+        node = iter.next()
+        node.isUnderUnclass = node.isUnclassified()
+        for node in iter:
+            if node.isUnclassified() or node.getParent().isUnderUnclass:
+                node.isUnderUnclass = True
+            else:
+                node.isUnderUnclass = False
+
+
 class TaxaTree(object):
     
     @staticmethod
@@ -543,6 +560,11 @@ class TaxaTree(object):
         self.visitDepthTop(mask_setter)
         return mask
 
+    def makeNameToIdMap(self):
+        x = {}
+        for node in self.iterDepthTop():
+            x[node.name] = node.id
+        return x
 
     def maxId(self):
         try:
@@ -762,6 +784,18 @@ class RankFakerVisitor:
 
 
 viralRootTaxid = 10239
+
+viralTaxidLev2 = (\
+        35237, #dsDNA
+        35325, #dsRNA
+        35268, #retroid
+        29258, #ssDNA
+        439488, #ssRNA
+        )
+
+viroidsTaxid = 12884
+cellId = 131567 # cellular organisms - bact, arch & euk
+
 #main Linnaean ranks, modified with superkingdom in place of domain rank
 linnMainRanks = ("species","genus","family","order","class","phylum","kingdom","superkingdom")
 viralRanksTemplate = linnMainRanks

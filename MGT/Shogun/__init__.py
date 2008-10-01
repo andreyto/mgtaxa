@@ -17,6 +17,28 @@ def makeRandomSplits(nSamp,nSplits):
     splitIndex = nrnd.permutation(numpy.concatenate([numpy.arange(nSplits,dtype=int)]*n_ind))
     return splitIndex[:nSamp]
 
+def splitTwo(features,labels,ratio,fileName):
+    nSplits = int(1./ratio)
+    nFeat = features.get_num_vectors()
+    labVal = labels.get_labels()
+    assert nSplits > 1
+    splitIndex = makeRandomSplits(nFeat,nSplits)
+    assert len(splitIndex) == nFeat
+    splitCounts = numpy.bincount(splitIndex)
+    assert sum(splitCounts>0) >= 2, "At least two non-empty splits are required"
+    iSplit = 0
+    assert splitCounts[iSplit] > 0
+    indTs = numpy.where(splitIndex == iSplit)[0].astype('i4')
+    indTr = numpy.where(splitIndex != iSplit)[0].astype('i4')
+    lbTs = Labels(labVal[indTs])
+    lbTr = Labels(labVal[indTr])
+    ftTs = features.subsample(indTs)
+    ftTr = features.subsample(indTr)
+    print "Writing split with %d samples" % ftTr.get_num_vectors()
+    ftTr.write_svmlight_file(fileName+'.1',lbTr)
+    print "Writing split with %d samples" % ftTs.get_num_vectors()
+    ftTs.write_svmlight_file(fileName+'.2',lbTs)
+
 def crossValidate(svm,splitIndex=None,nSplits=None):
     """Perform a cross-validation.
     @param svm SVM object with labels and kernel assigned, which in turn has lhs features assigned
@@ -45,8 +67,8 @@ def crossValidate(svm,splitIndex=None,nSplits=None):
             ftTs = features.subsample(indTs)
             ftTr = features.subsample(indTr)
             lbVTr = labValTr[indTr]
-            print numpy.bincount(lbVTr.astype(int)+1)
-            pdb.set_trace()
+            #print numpy.bincount(lbVTr.astype(int)+1)
+            #pdb.set_trace()
             lbTr = Labels(lbVTr)
             kernel.init(ftTr,ftTr)
             svm.set_labels(lbTr)

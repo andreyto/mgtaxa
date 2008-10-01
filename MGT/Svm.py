@@ -40,7 +40,10 @@ class SvmStringFeatureWriterTxt:
 
     def write(self,label,feature):
         self.out.write("%d " % label)
-        self.out.write(feature.tostring())
+        if isinstance(feature,str):
+            self.out.write(feature)
+        else:
+            self.out.write(feature.tostring())
         self.out.write("\n")
         self.nOut += 1
 
@@ -69,6 +72,31 @@ class SvmDenseFeatureWriterTxt:
     def numRec(self):
         return self.nOut
 
+class SvmDenseFeatureWriterCsv:
+    
+    def __init__(self,out,writeHeader=True,nFeat=None):
+        assert not (writeHeader and nFeat is None)
+        self.nFeat = nFeat
+        if not hasattr(out,'write'):
+            out = open(out,'w', buffering=1024*1024)
+        self.out = out
+        self.nOut = 0
+        self.formatStr = None
+        if writeHeader:
+            out.write("label,"+",".join([ "f%i" % iFeat for iFeat in xrange(nFeat) ])+"\n")
+        
+    def close(self):
+        self.out.close()
+
+    def write(self,label,values):
+        if self.formatStr is None:
+            self.formatStr = ",%g"*len(values)+'\n'
+        self.out.write("%d" % (label,))
+        self.out.write(self.formatStr % tuple(values))
+        self.nOut += 1
+
+    def numRec(self):
+        return self.nOut
 
 class SVMLibLinear:
     

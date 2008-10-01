@@ -119,11 +119,11 @@ class KmerCounts:
                 try:
                     counts[taxid] += 1
                 except IndexError:
-                    counts.resize(taxid*2)
+                    counts.wrongResize(taxid*2)
                     counts[taxid] += 1
                 maxTaxid = max(maxTaxid,taxid)
             print "Read %s k-mer records out of %s" % (kmerReader.posRec(),kmerReader.numRec())
-        counts.resize(maxTaxid+1)
+        counts.wrongResize(maxTaxid+1)
         self.save(counts)
         return counts
         
@@ -501,7 +501,7 @@ class KmerTxtReader:
             try:
                 count[taxid] += 1
             except IndexError:
-                count.resize((taxid*2,))
+                count.wrongResize((taxid*2,))
                 count[taxid] += 1
             iRec += 1
             if debug and iRec % nRecDbg == 0:

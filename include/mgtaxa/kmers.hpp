@@ -185,6 +185,11 @@ class KmerStateData {
     KmerId m_id;
 };
 
+/** How to treat reverse complements */
+enum RC_POLICY { 
+    RC_MERGE, /** Sum up counts into the lexicographically first k-mer in each rev-comp pair */
+    RC_DIRECT /** Treat each k-mer independently */
+};
 
 /** State machine for k-mers along with a corresponding payload object
  * implemented in  KmerStates and  KmerCounter classes respectively. 
@@ -233,7 +238,10 @@ class KmerStates {
 	typedef std::vector<KmerState> StateArray;
 	typedef std::vector<Kmer> KmerArray; 
 	public:
-		KmerStates(int kmerLen, const AbcConvCharToInt *pAbcConv,KmerId firstIdState);
+		KmerStates(int kmerLen, 
+                const AbcConvCharToInt *pAbcConv,
+                RC_POLICY revCompPolicy=RC_MERGE,
+                KmerId firstIdState=1);
 		PKmerState nextState(PKmerState pState,INuc c);
 		PKmerState revCompState(PKmerState pState);
 		PKmerState revCompStateFirst(PKmerState pState);		
@@ -265,6 +273,7 @@ class KmerStates {
 	protected:
 	const AbcConvCharToInt *m_pAbcConv;	
 	int m_kmerLen;
+    RC_POLICY m_revCompPolicy;
 	std::vector<int> m_blockSize;
 	std::vector<int> m_blockStart;
 	
@@ -286,10 +295,12 @@ Internally, it maintains the KmerStateData payload data and moves through
 states of the KmerStates state machine in response to incoming nucleotides.*/
  
 class KmerCounter {
-	
 	public:
 	
-	KmerCounter(int kmerLen, const AbcConvCharToInt *pAbcConv = 0,KmerId firstIdState=1);
+	KmerCounter(int kmerLen, 
+            const AbcConvCharToInt *pAbcConv = 0,
+            RC_POLICY revCompPolicy=RC_MERGE,
+            KmerId firstIdState=1);
 	~KmerCounter();
 	
 	void doCNuc(CNuc cnuc);
@@ -358,6 +369,9 @@ class KmerCounter {
 	KmerStates *m_pStates;
 	
 	int m_kmerLen;
+
+    /** How reverse complements are treated - one of RC_XXX.*/
+    RC_POLICY m_revCompPolicy;
 	
 	/** Preallocated array of  KmerStateData objects.
 	 * Array size is equal to the total number of states.

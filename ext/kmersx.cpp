@@ -39,8 +39,8 @@ class KmerCounterPy : public KmerCounter {
 
 public:
 	
-    KmerCounterPy(int kmerLen,KmerId firstIdState=1,bool doSort=true) :
-	KmerCounter(kmerLen,0,firstIdState),
+    KmerCounterPy(int kmerLen,RC_POLICY revCompPolicy=RC_MERGE,KmerId firstIdState=1,bool doSort=true) :
+	KmerCounter(kmerLen,0,revCompPolicy,firstIdState),
     m_seqLen(0),
     m_doSort(doSort)
 	{
@@ -116,7 +116,7 @@ protected:
         finishKmer();
         m_seqLen = 0;
         if( divide ) {
-            CTypeCounts divider = CTypeCounts(totalCount)/100;
+            CTypeCounts divider = CTypeCounts(totalCount);
             for(npy_intp i = 0; i < outSize; i++) {
                 (*reinterpret_cast<CTypeCounts*>(pCounts+i*strideCounts)) /= divider;
             }
@@ -134,8 +134,8 @@ class KmerCounterWriterPy : public KmerCounterPy {
 
 public:
 	
-    KmerCounterWriterPy(int kmerLen,KmerId firstIdState=1,bool doSort=true) :
-	KmerCounterPy(kmerLen,firstIdState,doSort),
+    KmerCounterWriterPy(int kmerLen,RC_POLICY revCompPolicy=RC_MERGE,KmerId firstIdState=1,bool doSort=true) :
+	KmerCounterPy(kmerLen,revCompPolicy,firstIdState,doSort),
     m_file(0)
 	{
         //ADT_LOG << ADT_OUTVAR(kmerLen) << '\n';
@@ -307,7 +307,7 @@ BOOST_PYTHON_MODULE(kmersx)
     numeric::array::set_module_and_type("numpy", "ndarray");
     
     class_<MGT::KmerCounterWriterPy,boost::noncopyable>("KmerCounter", 
-            init<int,optional<MGT::KmerId,bool> >())
+            init<int,optional<MGT::RC_POLICY,MGT::KmerId,bool> >())
         .def("process", &MGT::KmerCounterWriterPy::process)
         .def("counts", &MGT::KmerCounterWriterPy::counts)
         .def("numKmers", &MGT::KmerCounterWriterPy::numKmers)
@@ -327,5 +327,11 @@ BOOST_PYTHON_MODULE(kmersx)
         .def("write", &MGT::SvmSparseFeatureWriterTxt::writePy)
         .def("close", &MGT::SvmSparseFeatureWriterTxt::close)
         .def("numRec", &MGT::SvmSparseFeatureWriterTxt::numRec);
+    
+    enum_<MGT::RC_POLICY>("RC_POLICY")
+        .value("MERGE", MGT::RC_MERGE)
+        .value("DIRECT", MGT::RC_DIRECT)
+        ;
+
 }
 

@@ -9,7 +9,7 @@ class KmerReader(HdfSampleReader,KmerCounter):
         self.maxDegen = maxDegen
         self.nDegenSkipped = 0
         HdfSampleReader.__init__(self,hdfSampFile=hdfSampFile,sampLen=sampLen,spacer=spacer)
-        KmerCounter.__init__(self,kmerLen)
+        KmerCounter.__init__(self,kmerLen,RC_POLICY.MERGE)
         self.max_seqLen = sampLen * 2
         self.result = numpy.zeros(self.max_seqLen,dtype=numpy.dtype([('values','i4'),('indices','i8')]))
         self.resultF = numpy.zeros(self.max_seqLen,dtype=numpy.dtype([('values','f4'),('indices','i8')]))

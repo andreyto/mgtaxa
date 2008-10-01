@@ -345,6 +345,7 @@ inline void KmerCounter::doCNuc(CNuc cnuc) {
 */
 
 inline void KmerCounter::doINuc(INuc inuc) {
+
     m_pSt = m_pStates->nextState(m_pSt,inuc);
     PKmerState pSt = m_pStates->revCompStateFirst(m_pSt);
     PKmerStateData pDat = m_pStates->getData(pSt);

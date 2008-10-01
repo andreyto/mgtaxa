@@ -5,6 +5,7 @@ from MGT.Config import *
 import numpy
 import numpy.random as nrnd
 from numpy import array
+import random
 from random import sample as sampleWOR #Random sampling w/o replacement
 import os, sys, atexit, re, gzip
 import itertools
@@ -12,25 +13,6 @@ from types import StringTypes
 
 import pdb
 
-def masksToInd(maskVal,maskInd):
-    """Convert value[0:someN] and index[0:someN] into value[index]. 
-    Assumes N->1 relation between index and value. In particular, that means
-    value[i] == 0 && value[j] != 0 && index[i] == index[j] is not allowed.
-    No checking is made for the above prerequsite - the caller is responsible."""
-    val = numpy.zeros(numpy.max(maskInd)+1,dtype=maskVal.dtype)
-    val[maskInd] = maskVal
-    return val
-    
-def whereItems(arr,condition):
-    wh = numpy.where(condition)
-    return numpy.rec.fromarrays((wh[0],arr[wh]),names='ind,val')
-
-def fromWhereItems(whItems,defVal=0):
-    wh =  whItems['ind']
-    a = numpy.empty(numpy.max(wh) + 1, dtype = whItems['val'].dtype)
-    a[:] = defVal
-    a[wh] = whItems['val']
-    return a
 
 
 def taxidFromPhyFastaHeader(hdr):

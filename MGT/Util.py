@@ -139,6 +139,12 @@ def makeTmpFile(*l,**kw):
 def makedir(path,dryRun=False):
     run(["mkdir","-p",path],dryRun=dryRun)
 
+def makeFilePath(fileName):
+    """Assume that the argument is a file name and make all directories that are part of it"""
+    dirName = os.path.dirname(fileName)
+    if dirName not in ("","."):
+        makedir(dirName)
+
 #perhaps use shutil.rmtree instead?    
 def rmdir(path,dryRun=False):
     run(["rm","-rf",path],dryRun=dryRun)
@@ -166,6 +172,26 @@ def strToFile(s,fileName,mode="w",dryRun=False):
     else:
         print "Write to file %s mode %s:" % (fileName,mode)
         print s
+
+def stripSfx(s,sep='.'):
+    """Remove right-most instance of separator string and everything past it.
+    Primary use is to remove the file name 'extension'.
+    @return input string s without the suffix or original input if suffix is not found"""
+    return s.rsplit(sep,1)[0]
+
+class SymbolRunsCompressor:
+
+    def __init__(self,sym,minLen):
+        assert len(sym) == 1
+        self.rex = re.compile('%s{%i,}'%(sym,minLen+1))
+        self.rep = sym*minLen
+
+    def __call__(self,s):
+        return re.sub(self.rex,self.rep,s)
+
+def isSamePath(path1,path2):
+    paths = [ os.path.abspath(os.path.realpath(p)) for p in (path1,path2) ]
+    return paths[0] == paths[1]
 
 def openCompressed(filename,mode,**kw):
     if filename.endswith('.gz'):
@@ -584,3 +610,25 @@ def seqLengthDistribFromSample(recIter,*l,**kw):
     lenHist = seqIterLengthsHistogram(recIter,*l,**kw)
     gen = HistogramRdnGenerator(lenHist)
     return gen
+
+def masksToInd(maskVal,maskInd):
+    """Convert value[0:someN] and index[0:someN] into value[index]. 
+    Assumes N->1 relation between index and value. In particular, that means
+    value[i] == 0 && value[j] != 0 && index[i] == index[j] is not allowed.
+    No checking is made for the above prerequsite - the caller is responsible."""
+    val = numpy.zeros(numpy.max(maskInd)+1,dtype=maskVal.dtype)
+    val[maskInd] = maskVal
+    return val
+    
+def whereItems(arr,condition):
+    wh = numpy.where(condition)
+    return numpy.rec.fromarrays((wh[0],arr[wh]),names='ind,val')
+
+def fromWhereItems(whItems,defVal=0):
+    wh =  whItems['ind']
+    a = numpy.empty(numpy.max(wh) + 1, dtype = whItems['val'].dtype)
+    a[:] = defVal
+    a[wh] = whItems['val']
+    return a
+
+
