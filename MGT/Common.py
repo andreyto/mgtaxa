@@ -4,6 +4,7 @@ from MGT.Config import *
 
 import numpy
 import numpy.random as nrnd
+n = numpy
 from numpy import array
 import random
 from random import sample as sampleWOR #Random sampling w/o replacement
