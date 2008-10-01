@@ -784,6 +784,9 @@ class RankFakerVisitor:
 
 
 viralRootTaxid = 10239
+virTaxId = viralRootTaxid
+bacTaxId = 2
+archTaxId = 2157
 
 viralTaxidLev2 = (\
         35237, #dsDNA

@@ -1,7 +1,7 @@
 from MGT.Common import *
 import pylab as pl
 
-def somPlotScatter(mod):
+def somPlotScatter(mod,markerSize=64,alpha=0.75):
     # size in points ^2
     unit = mod.unit
     n_vect = sum( ( len(x) for x in unit.flat ) )
@@ -16,11 +16,11 @@ def somPlotScatter(mod):
         x[i_vect:i_vect+n_v] = shifts[:,0] + ind[0]
         y[i_vect:i_vect+n_v] = shifts[:,1] + ind[1]
         #shuffle labels because ordered would occlude one class more often
-        c[i_vect:i_vect+n_v] = nrnd.permutation(vects) 
-        s[i_vect:i_vect+n_v] = 64
+        c[i_vect:i_vect+n_v] = mod.sampLabels(nrnd.permutation(vects)).astype(float)
+        s[i_vect:i_vect+n_v] = markerSize
         i_vect += n_v
 
-    pl.scatter(x,y,c=c,s=s, alpha=0.9)
+    pl.scatter(x,y,c=c,s=s, alpha=alpha)
 
     #ticks = arange(-0.06, 0.061, 0.02)
     xt = n.arange(0,unit.shape[0]+1,dtype=float)

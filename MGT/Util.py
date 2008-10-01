@@ -7,6 +7,7 @@ from copy import copy, deepcopy
 from cPickle import dump, load
 from cStringIO import StringIO
 import numpy
+n = numpy
 import numpy.random as nrnd
 from tempfile import mkstemp
 from textwrap import dedent
@@ -631,4 +632,20 @@ def fromWhereItems(whItems,defVal=0):
     a[wh] = whItems['val']
     return a
 
+def logicalAnd(*arrays):
+    res = n.logical_and(arrays[0],arrays[1])
+    if len(arrays) == 2:
+        return res
+    for a in arrays[2:]:
+        res = n.logical_and(res,a)
+    return res
+
+def binCount(seq):
+    cnt = {}
+    for x in seq:
+        try:
+            cnt[x] += 1
+        except KeyError:
+            cnt[x] = 1
+    return cnt
 

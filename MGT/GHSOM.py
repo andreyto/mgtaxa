@@ -8,7 +8,13 @@ http://www.ifs.tuwien.ac.at/~andi/ghsom/
 """
 
 class SOMModel(Struct):
-    pass
+    
+    def setLabel(self,label):
+        self.label = label
+
+    def sampLabels(self,sampIds):
+        lab = self.label
+        return numpy.asarray([ lab[id] for id in sampIds ])
 
 class GHSOM:
     def __init__(self,name):

@@ -47,6 +47,7 @@ def gosToSvm(inpSeq,svmWriter,opt):
     fldValues = []
     allLen = []
     iRec = 0
+    symCompr = SymbolRunsCompressor('N',20)
     for rec in inpSeq.records():
         hdr = rec.header()
         parts = hdr.split()
@@ -54,10 +55,10 @@ def gosToSvm(inpSeq,svmWriter,opt):
         pairs = [ (pair[0].split('/')[1],pair[1]) for pair in 
                 ( part.split('=') for part in parts[1:] ) ]
         pairs = dict(pairs)
-        seq = rec.sequence()[int(pairs["clr_range_begin"]):int(pairs["clr_range_end"])]
+        seq = symCompr(rec.sequence()[int(pairs["clr_range_begin"]):int(pairs["clr_range_end"])])
         lenSeq = len(seq)
         if lenSeq >= opt.minSampLen:
-            svmWriter.write(0,seq)
+            svmWriter.write(0,seq,id_read)
             fldValues.append((id_read,
                         int(pairs["mate"]),
                         pairs["sequencing_direction"] == "forward",
@@ -84,7 +85,7 @@ def caToSvm(inpSeq,svmWriter,opt):
         seq = symCompr(rec.sequence())
         lenSeq = len(seq)
         if lenSeq >= opt.minSampLen:
-            svmWriter.write(0,seq)
+            svmWriter.write(0,seq,id)
             fldValues.append((id,
                         lenSeq))
         allLen.append(lenSeq)

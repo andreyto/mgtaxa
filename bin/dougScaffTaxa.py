@@ -9,8 +9,6 @@ def getProgOptions():
         action="store", type="string",dest="inFile"),
         make_option("-o", "--out-file",
         action="store", type="string",dest="outFile"),
-        make_option("-b", "--balance",
-        action="store", type="int",dest="balance",default=-1),
     ]
     parser = OptionParser(usage = "usage: %prog [options]",option_list=option_list)
     (options, args) = parser.parse_args()

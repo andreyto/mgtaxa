@@ -60,7 +60,7 @@ topNode = taxaTree.getRootNode() #viralNode #taxaTree.getNode(35237) #dsDNA
 viroidsNode = taxaTree.getNode(12884)
 dsDnaNode = taxaTree.getNode(35237)
 cellNode = taxaTree.getNode(131567) # cellular organisms - bact, arch & euk
-famNodes = (dsDnaNode,cellNode)
+famNodes = (viralNode,cellNode)
 
 #viralTaxidLev2 = (\
 #        35237, #dsDNA

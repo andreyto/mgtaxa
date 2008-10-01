@@ -1,4 +1,5 @@
 from MGT.Common import *
+from MGT.Svm import *
 
 class RevCompl:
     def __init__(self):
@@ -124,7 +125,7 @@ def loadSeqs(inpFile,preProc=lambda lab,seq,id: ([lab], [seq], [id]),inpFileId=N
 
     label = numpy.asarray(labs,dtype='f8')
     feature = numpy.asarray(seqs,dtype='O')
-    id = numpy.asarray(ids,dtype='i8')
+    id = numpy.asarray(ids,dtype='O')
     data = numpy.rec.fromarrays((label,feature,id),names='label,feature,id')
     if closeInp:
         inpFile.close()

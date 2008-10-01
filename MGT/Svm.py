@@ -38,13 +38,13 @@ def svmSaveId(ids,out):
     if ownOut:
         out.close()
 
-def svmLoadId(inp,dtype='i8'):
+def svmLoadId(inp,dtype='O'):
     if not hasattr(inp,'read'):
-        inp = openCompressed(out,'r')
+        inp = openCompressed(inp,'r')
         ownInp = True
     else:
         ownInp = True
-    x = n.fromfile(inp,sep='\n',dtype=dtype)
+    x = n.asarray([ s.strip() for s in inp ],dtype=dtype)
     if ownInp:
         inp.close()
     return x
