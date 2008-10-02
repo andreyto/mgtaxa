@@ -34,6 +34,8 @@ def getProgOptions():
 
     return options,args
 
+def showSvmDataCounts(data):
+    return "%s records: %s" % (len(data),sorted(binCount(data['label'].astype('i4')).items()))
 
 def otherVsRest(data,otherLabel):
     data['label'][:] = numpy.select([data['label'] == otherLabel],[1],default=2)
@@ -44,9 +46,10 @@ opt,args = getProgOptions()
 data = loadSeqs(opt.inSeq)
 
 ##data = otherVsRest(data,2)
-
-if opt.balance >= 0:
+print "Loaded " + showSvmDataCounts(data)
+if opt.balance >= -1:
     data = balance(data,opt.balance,labTargets={opt.otherGroupLab:-1})
+print "Balanced to " + showSvmDataCounts(data)
 ##TMP:
 ##data = splitStringFeat(data,750)
 if opt.alphabet == 'dna':
@@ -72,7 +75,7 @@ else:
 
 print "Program options are:\n%s\n" % (opt,)
 
-print "Computing features: len(data) = %s counts(data) = %s" % (len(data), numpy.bincount(data['label'].astype(int)))
+print "Computing features: " + showSvmDataCounts(data) 
 
 feat_char=StringCharFeatures(shogAlpha)
 feat_char.set_string_features(data['feature'].tolist())
@@ -87,4 +90,6 @@ lab = Labels(data['label'])
 feat_sparse.write_svmlight_file(opt.outFeat,lab)
 
 svmSaveId(data['id'],opt.outFeat+'.id')
+
+print "Wrote " + showSvmDataCounts(data)
 

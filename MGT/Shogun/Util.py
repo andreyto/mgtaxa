@@ -63,11 +63,15 @@ def balance(data,maxCount=0,labTargets={}):
                     tcnt = min(labTargets[lab],cnt[lab])
                 else:
                     tcnt = cnt[lab]
+            elif maxCount < 0:
+                tcnt = cnt[lab]
             if tcnt > 0:
                 dataLab = data[data['label'].astype('i4') == lab]
                 dataLab = dataLab[random.sample(xrange(len(dataLab)),tcnt)]
                 dataSel.append(dataLab)
     dataSel = numpy.concatenate(dataSel)
+    #numpy permutation or shuffle do not work on arrays with 'O' datatypes
+    dataSel = dataSel[nrnd.permutation(n.arange(len(dataSel),dtype=int))]
     return dataSel
 
 def addRevComplRows(data):
