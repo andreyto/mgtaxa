@@ -20,6 +20,9 @@ class SOMModel(Struct):
         unit = self.unit
         return n.concatenate([x for x in unit.flat])
 
+    def sampLabelCounts(self):
+        return binCount(self.label.values())
+
 class GHSOM:
     def __init__(self,name):
         self.name = name

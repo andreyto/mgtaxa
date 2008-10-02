@@ -16,6 +16,40 @@ def getProgOptions():
 
     return options,args
 
+class LabelMapper:
+    def __init__(self,taxaTree):
+        self.taxaTree = taxaTree
+        self.topNodes = [ taxaTree.getNode(id) for id in micVirTaxids ]
+        
+    def label(self,id):
+        (idPref,idSuf) = id.rsplit('_',1)
+        if idPref == 'NCBIVM':
+            idTopNode = self.taxaTree.getNode(int(idSuf)).whichSupernode(self.topNodes).id
+            if idTopNode == 2157:
+                idTopNode = 2
+            lab = "%s_%s" % (idPref,idTopNode)
+        elif idPref.startswith('GSIOVIR'):
+            lab = 'GSIOVIR'
+        elif idPref == 'GSIOMIC_10239':
+            lab = 'GSIOVIR'
+        elif idPref == 'GSIOMIC_2157':
+            lab = 'NCBIVM_2'
+        else:
+            lab = idPref
+        return lab
+
+    def color(self,lab):
+        if lab == 'NCBIVM_2':
+            col = 'r'
+        elif lab == 'NCBIVM_10239':
+            col = 'b'
+        elif lab == 'GSIOVIR':
+            col = 'g'
+        elif lab == 'GSIOMIC_2':
+            col = 'c'
+        else:
+            raise ValueError("Unknown label for color assignment %s" % lab)
+        return col
 
 opt,args = getProgOptions()
 
@@ -31,22 +65,23 @@ som.setModelDir('.')
 mod = som.loadModel()
 idsSom = mod.sampIds()
 idToLab = {}
-topNodes = [ taxaTree.getNode(id) for id in micVirTaxids ]
+labMapper = LabelMapper(taxaTree=taxaTree)
 for id in idsSom:
-    (idPref,idSuf) = id.rsplit('_',1)
-    if idPref == 'NCBIVM':
-        idTopNode = taxaTree.getNode(int(idSuf)).whichSupernode(topNodes).id
-        lab = "%s_%s" % (idPref,idTopNode)
-    elif idPref.startswith('GSIOVIR'):
-        lab = 'GSIOVIR'
-    else:
-        lab = idPref
-    idToLab[id] = lab
+    idToLab[id] = labMapper.label(id)
 lab = sorted(set(idToLab.values()))
-color = dict(zip(lab,n.arange(len(lab))))
-colorMap = {}
-for (id,lab) in idToLab.items():
-    colorMap[id] = color[lab]
-mod.setLabels(colorMap)
-somPlotScatter(mod,markerSize=16)
+#print lab
+#col = n.arange(len(lab),dtype=float) + 10
+col = [ labMapper.color(l) for l in lab ]
+print zip(lab,col)
+#pdb.set_trace()
+#cmap = pl.cm.spectral
+#cnorm = pl.normalize(0,col.max())
+#col = cmap(cnorm(col))
+col = plib.colors.colorConverter.to_rgba_list(col)
+color = dict(zip(lab,col))
+#colorMap = {}
+#for (id,lab) in idToLab.items():
+#    colorMap[id] = color[lab]
+mod.setLabels(idToLab)
+somPlotScatter(mod,colorMap=color,markerSize=24,figSizeScatter=(26,26),figSizePie=(8,8))
 
