@@ -28,6 +28,12 @@ def getProgOptions():
         make_option("-a", "--alphabet",
         action="store", type="choice",choices=("dna","protein"),
         dest="alphabet",default="dna"),
+        make_option("-x", "--shred-len",
+        action="store", type="int",dest="shredLen",default=-1),
+        make_option("-y", "--shred-offset",
+        action="store", type="int",dest="shredOffset",default=0),
+        make_option("-z", "--shred-num",
+        action="store", type="int",dest="shredNum",default=0),
     ]
     parser = OptionParser(usage = "usage: %prog [options]",option_list=option_list)
     (options, args) = parser.parse_args()
@@ -43,7 +49,13 @@ def otherVsRest(data,otherLabel):
 
 opt,args = getProgOptions()
 
-data = loadSeqs(opt.inSeq)
+if opt.shredLen > 0:
+    loadSeqPreproc = LoadSeqPreprocShred(sampLen=opt.shredLen,
+            sampNum=opt.shredNum,
+            sampOffset=opt.shredOffset)
+else:
+    loadSeqPreproc = loadSeqPreprocIdent
+data = loadSeqs(opt.inSeq,preProc=loadSeqPreProc)
 
 ##data = otherVsRest(data,2)
 print "Loaded " + showSvmDataCounts(data)
