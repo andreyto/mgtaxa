@@ -9,12 +9,16 @@ http://www.ifs.tuwien.ac.at/~andi/ghsom/
 
 class SOMModel(Struct):
     
-    def setLabel(self,label):
+    def setLabels(self,label):
         self.label = label
 
     def sampLabels(self,sampIds):
         lab = self.label
         return numpy.asarray([ lab[id] for id in sampIds ])
+
+    def sampIds(self):
+        unit = self.unit
+        return n.concatenate([x for x in unit.flat])
 
 class GHSOM:
     def __init__(self,name):
@@ -91,9 +95,9 @@ class GHSOM:
                 nr_vec_mapped = int(dat)
             elif key == 'MAPPED_VECS':
                 if nr_vec_mapped == 0:
-                    mapped_vecs = n.zeros(nr_vec_mapped,dtype='i4')
+                    mapped_vecs = n.zeros(nr_vec_mapped,dtype='O')
                 else:
-                    mapped_vecs = n.fromstring(dat,sep=' ',dtype='i4')
+                    mapped_vecs = n.asarray(dat.split(),dtype='O')
                 assert nr_vec_mapped == len(mapped_vecs)
                 grid[pos_x,pos_y] = mapped_vecs
             elif key == 'NR_SOMS_MAPPED':

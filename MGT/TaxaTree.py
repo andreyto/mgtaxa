@@ -350,6 +350,13 @@ class TaxaNode(object):
         A node is not considered a subnode of itself."""
         return self.lnest > other.lnest and self.rnest < other.rnest
 
+    def whichSupernode(self,others):
+        """Return node from others that is a supernode of self, or None"""
+        for o in others:
+            if self.isSubnode(o):
+                return o
+        return None
+
     def setIsUnderUnclass(self):
         """Set an attribute 'isUnderUnclass' for the nodes in this branch.
         It flags all nodes that have "unclassified" super-node somewhere in their lineage
@@ -784,9 +791,9 @@ class RankFakerVisitor:
 
 
 viralRootTaxid = 10239
-virTaxId = viralRootTaxid
-bacTaxId = 2
-archTaxId = 2157
+virTaxid = viralRootTaxid
+bacTaxid = 2
+archTaxid = 2157
 
 viralTaxidLev2 = (\
         35237, #dsDNA
@@ -797,7 +804,8 @@ viralTaxidLev2 = (\
         )
 
 viroidsTaxid = 12884
-cellId = 131567 # cellular organisms - bact, arch & euk
+cellTaxid = 131567 # cellular organisms - bact, arch & euk
+micVirTaxids = (virTaxid,bacTaxid,archTaxid)
 
 #main Linnaean ranks, modified with superkingdom in place of domain rank
 linnMainRanks = ("species","genus","family","order","class","phylum","kingdom","superkingdom")
