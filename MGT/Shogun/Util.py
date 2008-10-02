@@ -101,7 +101,32 @@ def applyToFeatData(data,func):
     for rec in data:
         rec['feature'] = func(rec['feature'])
 
-def loadSeqs(inpFile,preProc=lambda lab,seq,id: ([lab], [seq], [id]),inpFileId=None):
+class LoadSeqPreprocShred:
+
+    def __init__(self,sampLen,sampNum=0,sampOffset=0):
+        self.sampLen = sampLen
+        self.sampNum = sampNum
+        self.sampOffset = sampOffset
+        self.sampStride = sampLen + sampOffset
+        assert sampLen > 0
+        assert self.sampStride > 0
+
+    def __call__(self,lab,seq,id):
+        sampLen = self.sampLen
+        sampStride = self.sampStride
+        sampStartEnd = len(seq)-sampLen+1
+        if sampStartEnd <= 0:
+            return [],[],[]
+        sampStart = nrnd.permutation(n.arange(0,sampStartEnd,sampStride,dtype=int))
+        if  self.sampNum > 0 and self.sampNum < len(sampStarts):
+            sampStarts = sampStarts[:self.sampNum]
+        sampSeq = [ seq[start:start+sampLen] for start in sampStarts ]
+        return [lab]*len(sampSeq),sampSeq,[id]*len(sampSeq)
+
+def loadSeqPreprocIdent(lab,seq,id):
+    return ([lab], [seq], [id])
+
+def loadSeqs(inpFile,preProc=loadSeqPreprocIdent,inpFileId=None):
     if inpFileId is None:
         assert isinstance(inpFile,str)
         inpFileId = inpFile+'.id'

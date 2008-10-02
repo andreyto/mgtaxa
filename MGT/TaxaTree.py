@@ -794,6 +794,7 @@ viralRootTaxid = 10239
 virTaxid = viralRootTaxid
 bacTaxid = 2
 archTaxid = 2157
+eukTaxid = 2759
 
 viralTaxidLev2 = (\
         35237, #dsDNA
@@ -806,6 +807,7 @@ viralTaxidLev2 = (\
 viroidsTaxid = 12884
 cellTaxid = 131567 # cellular organisms - bact, arch & euk
 micVirTaxids = (virTaxid,bacTaxid,archTaxid)
+skingdomTaxids = (virTaxid,bacTaxid,archTaxid,eukTaxid,viroidsTaxid)
 
 #main Linnaean ranks, modified with superkingdom in place of domain rank
 linnMainRanks = ("species","genus","family","order","class","phylum","kingdom","superkingdom")

@@ -135,8 +135,8 @@ for inSeq in opt.inSeq:
                                         famNode.splitCounts[splitId]+=1
                                         seq = symCompr(rec.sequence())
                                         stride = opt.sampLen + opt.sampOffset
-                                        sampStarts = range(0,len(seq)-opt.sampLen,stride)
-                                        if opt.maxSampCountPerSeq > len(sampStarts):
+                                        sampStarts = nrnd.permutation(range(0,len(seq)-opt.sampLen,stride))
+                                        if opt.maxSampCountPerSeq < len(sampStarts):
                                             sampStarts = sampStarts[:opt.maxSampCountPerSeq]
                                         for sampStart in sampStarts:
                                             samp = Struct(seq=seq[sampStart:sampStart+opt.sampLen],
