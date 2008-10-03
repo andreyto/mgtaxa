@@ -55,7 +55,7 @@ if opt.shredLen > 0:
             sampOffset=opt.shredOffset)
 else:
     loadSeqPreproc = loadSeqPreprocIdent
-data = loadSeqs(opt.inSeq,preProc=loadSeqPreProc)
+data = loadSeqs(opt.inSeq,preProc=loadSeqPreproc)
 
 ##data = otherVsRest(data,2)
 print "Loaded " + showSvmDataCounts(data)

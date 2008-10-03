@@ -803,7 +803,7 @@ viralTaxidLev2 = (\
         29258, #ssDNA
         439488, #ssRNA
         )
-
+phageTailedTaxid = 28883
 viroidsTaxid = 12884
 cellTaxid = 131567 # cellular organisms - bact, arch & euk
 micVirTaxids = (virTaxid,bacTaxid,archTaxid)

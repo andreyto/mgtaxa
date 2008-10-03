@@ -8,6 +8,8 @@ def getProgOptions():
     option_list = [
         make_option("-o", "--out-file",
         action="store", type="string",dest="outFile"),
+        make_option("-l", "--samp-len",
+        action="store", type="int",dest="sampLen",default=5000),
     ]
     parser = OptionParser(usage = "usage: %prog [options]",option_list=option_list)
     (options, args) = parser.parse_args()
@@ -26,13 +28,32 @@ inNCBI = Struct(inDir='NCBIVM',inFile='inp.samp.s.0')
 
 opt,args = getProgOptions()
 
+sampNumMIC = 1
+
+_virSfx = "_%s" % virTaxid
+def sampNumFuncMIC(label,seq,id):
+    if id.endswith(_virSfx):
+        return -1
+    else:
+        return sampNumMIC
+
+# this will shred to all available samples for viral scaffolds, but only sampNumMIC max for others
+sampPreProcMIC = LoadSeqPreprocShred(sampLen=opt.sampLen,sampNum=sampNumFuncMIC,sampOffset=0)
+# this will shred to all available samples
+sampPreProcOthers = LoadSeqPreprocShred(sampLen=opt.sampLen)
+
 data = []
 for o in inVir + [inAll,inNCBI]:
-    d = loadSeqs(os.path.join(o.inDir,o.inFile))
+    if o.inDir.startswith('GSIOMIC'):
+        sampPreProc = sampPreProcMIC
+    else:
+        sampPreProc = sampPreProcOthers
+    d = loadSeqs(os.path.join(o.inDir,o.inFile),preProc=sampPreProc)
     for rec in d:
         rec['id'] = o.inDir+'_'+rec['id']
     if o.inDir.startswith('NCBI'):
-        d = balance(d,-1)
+        # balance by labels
+        d = balance(d,1000)
     data.append(d)
 
 data = n.concatenate(data)

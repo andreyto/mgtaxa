@@ -28,6 +28,8 @@ def getProgOptions():
         make_option("-a", "--alphabet",
         action="store", type="choice",choices=("dna","protein"),
         dest="alphabet",default="dna"),
+        make_option("-e", "--degen-len",
+        action="store", type="int",dest="degenLen",default=1),
     ]
     parser = OptionParser(usage = "usage: %prog [options]",option_list=option_list)
     (options, args) = parser.parse_args()
@@ -37,8 +39,11 @@ def getProgOptions():
 
 opt,args = getProgOptions()
 
-if opt.alphabet == "dna":
+if opt.alphabet == "dna" and opt.degenLen >= 0:
     nonDegenSymb = 'ACGT'
+    symCompr = SymbolRunsCompressor('N',opt.degenLen)
+else:
+    symCompr = lambda s: s
 
 nSplits = opt.nSplits
 
@@ -60,7 +65,10 @@ topNode = taxaTree.getRootNode() #viralNode #taxaTree.getNode(35237) #dsDNA
 viroidsNode = taxaTree.getNode(12884)
 dsDnaNode = taxaTree.getNode(35237)
 cellNode = taxaTree.getNode(131567) # cellular organisms - bact, arch & euk
-famNodes = (viralNode,cellNode)
+phageTailedNode = taxaTree.getNode(phageTailedTaxid)
+#the order is important here because phageTailedNode is a subnode of viralNode
+#whichSuperNode should find phages first
+famNodes = (phageTailedNode,viralNode,cellNode)
 
 #viralTaxidLev2 = (\
 #        35237, #dsDNA
@@ -78,7 +86,6 @@ def whichSupernode(node,others):
             return o
     return None
 
-symCompr = SymbolRunsCompressor('N',20)
 
 otherGroup = Struct()
 otherGroup.splitSeq = numpy.zeros(nSplits,'O')

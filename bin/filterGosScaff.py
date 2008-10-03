@@ -30,7 +30,7 @@ def filterScaff(sca,idPref=''):
                        sca['length']>=5000,
                        sca['num_pep']*1000>=sca['length'])
             ]
-    idsSel = (virTaxId,bacTaxId,archTaxId)
+    idsSel = (virTaxid,bacTaxid,archTaxid)
     idMap = {}
     counts = {}
     for idSel in idsSel:

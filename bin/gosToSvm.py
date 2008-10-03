@@ -17,6 +17,8 @@ def getProgOptions():
         action="store", type="int",dest="minSampLen",default=750),
         make_option("-f", "--inp-format",
         action="store", type="choice",choices=("gos","ncbi","ca"),dest="inFormat",default="gos"),
+        make_option("-e", "--degen-len",
+        action="store", type="int",dest="degenLen",default=1),
     ]
     parser = OptionParser(usage = "usage: %prog [options]",option_list=option_list)
     (options, args) = parser.parse_args()
@@ -31,10 +33,14 @@ assert len(opt.inSeq) > 0, "Need at least one in-seq option"
 def fastaToSvm(inFileFasta,outName,opt):
     svmWriter = SvmStringFeatureWriterTxt(outName+".samp")
     inpSeq = FastaReader(inFileFasta)
+    if opt.degenLen >= 0:
+        symCompr = SymbolRunsCompressor('N',opt.degenLen)
+    else:
+        symCompr = lambda s: s
     if opt.inFormat == "gos":
-        meta, allLen = gosToSvm(inpSeq,svmWriter,opt)
+        meta, allLen = gosToSvm(inpSeq,svmWriter,symCompr,opt)
     elif opt.inFormat == "ca":
-        meta, allLen = caToSvm(inpSeq,svmWriter,opt)
+        meta, allLen = caToSvm(inpSeq,svmWriter,symCompr,opt)
     inpSeq.close()
     svmWriter.close()
     print "Saved %i samples out of %i total from file %s" % (len(meta.samp),len(allLen),inFileFasta)
@@ -42,12 +48,11 @@ def fastaToSvm(inFileFasta,outName,opt):
     print "Original sample length histogram:\n%s\n%s" % lenHist
     dumpObj(meta,outName+".meta")
 
-def gosToSvm(inpSeq,svmWriter,opt):
+def gosToSvm(inpSeq,svmWriter,symCompr,opt):
     fldDtype=[("id","i8"),("id_mate","i8"),("forward",bool),("len_lib","i4"),("len_samp","i4")]
     fldValues = []
     allLen = []
     iRec = 0
-    symCompr = SymbolRunsCompressor('N',20)
     for rec in inpSeq.records():
         hdr = rec.header()
         parts = hdr.split()
@@ -73,12 +78,11 @@ def gosToSvm(inpSeq,svmWriter,opt):
     meta = Struct(samp=sampMeta)
     return meta,allLen
 
-def caToSvm(inpSeq,svmWriter,opt):
+def caToSvm(inpSeq,svmWriter,symCompr,opt):
     fldDtype=[("id","i8"),("len_samp","i4")]
     fldValues = []
     allLen = []
     iRec = 0
-    symCompr = SymbolRunsCompressor('N',20)
     for rec in inpSeq.records():
         hdr = rec.header()
         id = int(hdr.split(">scf")[1])

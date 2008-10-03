@@ -49,6 +49,10 @@ def checkSaneAlphaHistOld(seq,nonDegenSymb,minNonDegenRatio=0.9):
     return float(nNonD)/len(seq) >= minNonDegenRatio
 
 def balance(data,maxCount=0,labTargets={}):
+    """Balance sample counts by to data['label'] and randomly shuffle entire set.
+    @param data samples, must have data['label'] field
+    @param maxCount if 0 - balance to the min class count, if <0 - only shuffle, else - to this count
+    @param labTargets dict with optional per label maxCount values with the same semantics"""
     cnt = numpy.bincount(data['label'].astype('i4'))
     targCnt = cnt[cnt > 0].min()
     if maxCount > 0:
@@ -105,6 +109,9 @@ class LoadSeqPreprocShred:
 
     def __init__(self,sampLen,sampNum=0,sampOffset=0):
         self.sampLen = sampLen
+        if isinstance(sampNum,int):
+            sampNumConst = sampNum
+            sampNum = lambda lab,seq,id: sampNumConst
         self.sampNum = sampNum
         self.sampOffset = sampOffset
         self.sampStride = sampLen + sampOffset
@@ -117,9 +124,10 @@ class LoadSeqPreprocShred:
         sampStartEnd = len(seq)-sampLen+1
         if sampStartEnd <= 0:
             return [],[],[]
-        sampStart = nrnd.permutation(n.arange(0,sampStartEnd,sampStride,dtype=int))
-        if  self.sampNum > 0 and self.sampNum < len(sampStarts):
-            sampStarts = sampStarts[:self.sampNum]
+        sampStarts = nrnd.permutation(n.arange(0,sampStartEnd,sampStride,dtype=int))
+        sampNumVal = self.sampNum(lab,seq,id)
+        if  sampNumVal > 0 and sampNumVal < len(sampStarts):
+            sampStarts = sampStarts[:sampNumVal]
         sampSeq = [ seq[start:start+sampLen] for start in sampStarts ]
         return [lab]*len(sampSeq),sampSeq,[id]*len(sampSeq)
 
