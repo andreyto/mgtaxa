@@ -19,7 +19,7 @@ def getProgOptions():
 class LabelMapper:
     def __init__(self,taxaTree):
         self.taxaTree = taxaTree
-        self.topNodes = [ taxaTree.getNode(id) for id in micVirTaxids ]
+        self.topNodes = [ taxaTree.getNode(id) for id in (phageTailedTaxid,)+micVirTaxids ]
         
     def label(self,id):
         (idPref,idSuf) = id.rsplit('_',1)
@@ -43,10 +43,12 @@ class LabelMapper:
             col = 'r'
         elif lab == 'NCBIVM_10239':
             col = 'b'
+        elif lab == 'NCBIVM_28883':
+            col = 'c'
         elif lab == 'GSIOVIR':
             col = 'g'
         elif lab == 'GSIOMIC_2':
-            col = 'c'
+            col = 'y'
         else:
             raise ValueError("Unknown label for color assignment %s" % lab)
         return col
@@ -83,5 +85,5 @@ color = dict(zip(lab,col))
 #for (id,lab) in idToLab.items():
 #    colorMap[id] = color[lab]
 mod.setLabels(idToLab)
-somPlotScatter(mod,colorMap=color,markerSize=24,figSizeScatter=(26,26),figSizePie=(8,8))
+somPlotScatter(mod,colorMap=color,markerSize=40,figSizeScatter=(12,12),figSizePie=(8,8))
 
