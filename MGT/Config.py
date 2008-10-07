@@ -14,6 +14,8 @@ class MGTOptions:
         self.debugFakeSequence = False
         self.tmpDir = "/usr/local/scratch/atovtchi"
         self.dataDir = "/home/atovtchi/work/mgtdata"
+        self.srcDir = "/home/atovtchi/work/mgtaxa"
+        self.testDataDir = os.path.join(self.srcDir,"test_data")
         self.taxaPickled = 'taxa.pkl.gz'
         # Max length to store for a full header. It is stored in a separate table,
         # so size does not matter that much

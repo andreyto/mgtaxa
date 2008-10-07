@@ -1,29 +1,12 @@
-from MGT.Common import *
-import pdb
-
 """Interface to GHSOM Hierarchical self-organizing maps program.
 A Rauber, D Merkl, M Dittenbach - Neural Networks, IEEE Transactions on, 2002
 The growing hierarchical self-organizing map: exploratory analysis of high-dimensional data.
 http://www.ifs.tuwien.ac.at/~andi/ghsom/
 """
 
-class SOMModel(Struct):
-    
-    def setLabels(self,label):
-        self.label = label
-
-    def sampLabels(self,sampIds):
-        lab = self.label
-        return numpy.asarray([ lab[id] for id in sampIds ])
-
-    def sampIds(self):
-        unit = self.unit
-        return n.concatenate([x for x in unit.flat])
-
-    def sampLabelCounts(self):
-        """Return dict label->count accumulated over all vectors"""
-        lab = self.label
-        return binCount([ lab[id] for id in self.sampIds() ])
+from MGT.Common import *
+from MGT.SOM import *
+import pdb
 
 class GHSOM:
     def __init__(self,name):
@@ -114,11 +97,58 @@ class GHSOM:
         inp.close()
         return grid
 
+    def loadWeights(self):
+        inp = open(self.getName(kind="wgt"),'r')
+        for line in inp:
+            line = line.strip()
+            if line == '' or line.startswith('#'):
+                continue
+            parts = line.split(None,1)
+            if len(parts) == 1:
+                key = parts[0]
+                dat = ""
+            else:
+                key, dat = parts
+            assert key.startswith("$")
+            key = key[1:]
+            if key == 'TYPE':
+                assert dat == "rect","Only rectangular grid currently supported"
+            elif key == 'XDIM':
+                xdim = int(dat)
+                ydim = None
+            elif key == 'YDIM':
+                ydim = int(dat)
+                grid = None
+            elif key == 'VEC_DIM':
+                vec_dim = int(dat)
+                grid = n.zeros((xdim,ydim,vec_dim),dtype='f8')
+                grid_filled = n.zeros((xdim,ydim),dtype='b')
+                break
+        for line in inp:
+            if line == '\n' or line.startswith('#'):
+                continue
+            parts = line.rsplit(None,1)
+            vec = n.fromstring(parts[0],sep=' ',dtype='f8')
+            assert len(vec) == vec_dim
+            # parse the row,col from "1_1_0/0_<row_number>/<col_number>"
+            irow,icol = parts[1].split('/')[1:3]
+            irow = int(irow.split('_')[1])
+            icol = int(icol)
+            grid[irow,icol] = vec
+            assert grid_filled[irow,icol] == False
+            grid_filled[irow,icol] = True
+        assert grid_filled.all()
+        inp.close()
+        return grid
+
     def loadModel(self,components=("unit",)):
         mod = SOMModel()
         if "unit" in components:
             unit = self.loadUnit()
             mod.unit = unit
+        if "weights" in components:
+            weights = self.loadWeights()
+            mod.weights = weights
         return mod
 
 
