@@ -21,7 +21,9 @@ class SOMModel(Struct):
         return n.concatenate([x for x in unit.flat])
 
     def sampLabelCounts(self):
-        return binCount(self.label.values())
+        """Return dict label->count accumulated over all vectors"""
+        lab = self.label
+        return binCount([ lab[id] for id in self.sampIds() ])
 
 class GHSOM:
     def __init__(self,name):
