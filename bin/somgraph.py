@@ -29,7 +29,8 @@ taxaTree = loadTaxaTree(ncbiDumpFile=os.path.join(taxaDir,"nodes.dmp"),
 
 som = GHSOM(opt.inName)
 som.setModelDir('.')
-mod = som.loadModel()
+mod = som.loadModel(components=("unit","weights"))
+mod.makeUMatrix()
 idsSom = mod.sampIds()
 idToLab = {}
 labMapper = LabelMapper(taxaTree=taxaTree)
@@ -50,5 +51,7 @@ color = dict(zip(lab,col))
 #for (id,lab) in idToLab.items():
 #    colorMap[id] = color[lab]
 mod.setLabels(idToLab)
-somPlotScatter(mod,colorMap=color,markerSize=40,figSizeScatter=(12,12),figSizePie=(8,8))
+plot = SOMPlot(mod=mod,labColorMap=color,markerSize=40,figSizeScatter=12,figSizePie=8,figSizeUMat=12)
+plot.plot()
+
 
