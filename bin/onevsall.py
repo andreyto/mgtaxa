@@ -335,10 +335,10 @@ class App:
                 svmMul.trainMany(trainLabels=trainLabels,opt=opt)
 
         elif opt.mode in ("test","predict"):
-            if hasattr(opt,"labToId"):
+            if hasattr(opt,"labToId") and opt.labToId is not None:
                 labToId = loadObj(opt.labToId)
             else:
-                labToId = None
+                labToId = n.arange(20000)
             self.labToId = labToId
             if opt.method == "svm":
                 if len(trainLabels) == 1 and trainLabels[0] == -1:

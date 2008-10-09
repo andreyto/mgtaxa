@@ -150,7 +150,7 @@ def loadSeqs(inpFile,preProc=loadSeqPreprocIdent,inpFileId=None):
     iLine = 0
     for line in inpFile:
         lab, seq = line.split(None,1)
-        lab = int(lab)
+        lab = float(lab)
         if seq[-1] == '\n':
             seq = seq[:-1]
         rec = preProc(lab,seq,idsInp[iLine])
@@ -159,7 +159,6 @@ def loadSeqs(inpFile,preProc=loadSeqPreprocIdent,inpFileId=None):
             seqs.extend(rec[1])
             ids.extend(rec[2])
         iLine += 1
-
     label = numpy.asarray(labs,dtype='f8')
     feature = numpy.asarray(seqs,dtype='O')
     id = numpy.asarray(ids,dtype='O')
@@ -167,4 +166,20 @@ def loadSeqs(inpFile,preProc=loadSeqPreprocIdent,inpFileId=None):
     if closeInp:
         inpFile.close()
     return data
+
+def saveSeqs(data,outFile,outFileId=None):
+    if outFileId is None:
+        assert isinstance(outFile,str)
+        outFileId = outFile+'.id'
+    svmSaveId(data['id'],outFileId)
+    if isinstance(outFile,str):
+        outFile=openCompressed(outFile,'w')
+        closeOut=True
+    else:
+        closeOut=False
+    for rec in data:
+        outFile.write("%s %s\n" % (rec['label'],rec['feature']))
+    if closeOut:
+        outFile.close()
+
 
