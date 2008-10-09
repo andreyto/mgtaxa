@@ -31,6 +31,10 @@ som = GHSOM(opt.inName)
 som.setModelDir('.')
 mod = som.loadModel(components=("unit","weights"))
 mod.makeUMatrix()
+umat = mod.umat
+mod.makeUMatrixTest()
+umat_test = mod.umat
+assert n.allclose(umat,umat_test)
 idsSom = mod.sampIds()
 idToLab = {}
 labMapper = LabelMapper(taxaTree=taxaTree)

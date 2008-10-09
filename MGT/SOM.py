@@ -40,6 +40,8 @@ class SOMModel(Struct):
         dy = n.sqrt(((w[: ,1:,:] - w[:  ,:-1,:])**2).sum(axis=2))
         # - upper left diagonal neighbour
         dd = n.sqrt(((w[1:,1:,:] - w[:-1,:-1,:])**2).sum(axis=2))
+        # - upper right diagonal neighbour
+        ee = n.sqrt(((w[1:, :-1,:] - w[:-1,1:,:])**2).sum(axis=2))
         # for every pair of corresponding neighbours,
         # we accumulate distance sums in 'u', and counts in 'c'
         u[  :-1,  :  ] += dx
@@ -54,6 +56,10 @@ class SOMModel(Struct):
         c[  :-1,  :-1] += 1
         u[ 1:  , 1:  ] += dd
         c[ 1:  , 1:  ] += 1
+        u[  :-1, 1:  ] += ee
+        c[  :-1, 1:  ] += 1
+        u[ 1:  ,  :-1] += ee
+        c[ 1:  ,  :-1] += 1
         # find the average in 'u'
         # @todo If learning neighbourhood was declining too fast, it seems that some 
         # nodes w/o samples assigned to
@@ -62,5 +68,29 @@ class SOMModel(Struct):
         #u[c>0] /= c[c>0]
         assert (c>0).all()
         u /= c
+        #u /= (n.sqrt((w**2).sum(axis=2))/w.shape[2])
+        self.umat = u
+
+    def makeUMatrixTest(self):
+        w = self.weights
+        #wl = n.sqrt((w**2).sum(axis=2))
+        #w /= wl[:,:,n.newaxis]
+        # the result, accumulate sum of distances to neighbours for each cell
+        u = n.zeros(w.shape[:2],dtype='f8')
+        for i in xrange(u.shape[0]):
+            for j in xrange(u.shape[1]):
+                li = max(i-1,0)
+                lj = max(j-1,0)
+                ui = min(i+1,u.shape[0]-1)
+                uj = min(j+1,u.shape[1]-1)
+                d = 0.
+                c = 0
+                for k in xrange(li,ui+1):
+                    for l in xrange(lj,uj+1):
+                        if not (i == k and j == l):
+                            d += n.sqrt(((w[i,j]-w[k,l])**2).sum())
+                            c += 1
+                d /= c
+                u[i,j] = d
         self.umat = u
 

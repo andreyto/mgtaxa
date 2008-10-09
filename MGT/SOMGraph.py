@@ -73,9 +73,16 @@ class SOMPlot:
     def plotUmat(self):
         iFig=3
         pl.figure(iFig,figsize=self.figSizeUMat)
-        umat = n.zeros_like(self.mod.umat)
-        for x in xrange(umat.shape[0]):
-            for y in xrange(umat.shape[1]):
-                umat[x,y] = x*umat.shape[1]+y
-        pl.imshow(n.transpose(umat),aspect="equal",origin="lower")
+        mode = "prod"
+        if mode == "test1":
+            umat = n.zeros_like(self.mod.umat)
+            for x in xrange(umat.shape[0]):
+                for y in xrange(umat.shape[1]):
+                    umat[x,y] = x*umat.shape[1]+y*10
+        else:
+            umat = self.mod.umat
+            #pdb.set_trace()
+            #umat = umat.clip(0.03,1.)
+        umat = n.transpose(umat)
+        pl.imshow(umat,aspect="equal",origin="lower",interpolation="nearest")
 
