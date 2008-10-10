@@ -1,4 +1,8 @@
 from MGT.Common import *
 
-from MGTX.kmersx import *
+try:
+    from MGTX.kmersx import *
+except ImportError:
+    class SvmSparseFeatureWriterTxt:
+        pass
 

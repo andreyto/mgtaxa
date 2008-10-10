@@ -12,11 +12,18 @@ class LabelMapper:
             idTopNode = self.taxaTree.getNode(int(idSuf)).whichSupernode(self.topNodes).id
             if idTopNode == 2157:
                 idTopNode = 2
-            lab = "%s_%s" % (idPref,idTopNode)
+            if idTopNode == 2:
+                lab = "NCBI Microbial"
+            elif idTopNode == 10239:
+                lab = "NCBI Viral non-phage"
+            elif idTopNode == 28883:
+                lab = "NCBI Phage"
         elif idPref.startswith('GSIOVIR'):
-            lab = 'GSIOVIR'
-        elif idPref == 'GSIOMIC_2157':
-            lab = 'NCBIVM_2'
+            lab = 'GOS Viral Fraction'
+        elif idPref in ('GSIOMIC_2157','GSIOMIC_2'):
+            lab = 'GOS Microbial'
+        elif idPref == 'GSIOMIC_10239':
+            lab = 'GOS Viral Large Fraction'
         else:
             lab = idPref
         return lab
@@ -73,17 +80,17 @@ class LabelMapper:
         return col
     
     def color(self,lab,format="fullName"):
-        if lab == 'NCBIVM_2':
+        if lab == 'NCBI Microbial':
             col = 'red'
-        elif lab == 'NCBIVM_10239':
+        elif lab == 'NCBI Viral non-phage':
             col = 'blue'
-        elif lab == 'NCBIVM_28883':
+        elif lab == 'NCBI Phage':
             col = 'cyan'
-        elif lab == 'GSIOVIR':
+        elif lab == 'GOS Viral Fraction':
             col = 'green'
-        elif lab == 'GSIOMIC_2':
+        elif lab == 'GOS Microbial':
             col = 'yellow'
-        elif lab == 'GSIOMIC_10239':
+        elif lab == 'GOS Viral Large Fraction':
             col = 'violet'
         else:
             raise ValueError("Unknown label for color assignment %s" % lab)

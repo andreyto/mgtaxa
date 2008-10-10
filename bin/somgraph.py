@@ -39,12 +39,15 @@ if not os.path.isfile(opt.modDump):
     samp = loadSparseSeqsAsDense(opt.inSamp)
     mod.setSamples(samp)
     print "Mapping samples..."
-    mod.mapSamples(pmRadius=mod.paretoRadiusLenNormSamp)
-    mod.makeUMatrix()
+    #mod.mapSamples(pmRadius=mod.paretoRadiusLenNormSamp)
+    mod.mapSamples(pmRadius=0.2) #0.2
+    #mod.mapSamples(pmRadius=None)
+    mod.makeData()
     dumpObj(mod,opt.modDump)
 else:
     mod = loadObj(opt.modDump)
 mod.makeUStarMatrix()
+mod.makeUnit()
 #umat = mod.umat
 #mod.makeUMatrixTest()
 #umat_test = mod.umat
@@ -74,7 +77,8 @@ color = dict(zip(lab,col))
 #for (id,lab) in idToLab.items():
 #    colorMap[id] = color[lab]
 mod.setLabels(idToLab)
-plot = SOMPlot(mod=mod,labColorMap=color,markerSize=40,figSizeScatter=12,figSizePie=8,figSizeMat=12)
+pl.gray()
+plot = SOMPlot(mod=mod,labColorMap=color,markerSize=40,figSizeScatter=12,figSizePie=5,figSizeMat=12)
 plot.plot()
 
 

@@ -128,9 +128,37 @@ class SOMModel(Struct):
     def makeUStarMatrix(self):
         pmat = self.pmat
         iord = pmat.argsort(axis=None) #sort flattened view
-        pdb.set_trace()
+        plowmat = n.zeros_like(pmat)
+        plowmatf = plowmat.reshape(len(iord))
+        n_ord = len(iord)
+        plowmatf[:] = n_ord - 1
+        plowmatf[(iord,)] -= n.arange(n_ord,dtype='i4')
+        plowmatf /= n_ord
+        self.plowmat = plowmat
+        self.usmat = self.umat*plowmat
 
-    def paretoRadius(self,maxNSamp=2000,paretoRatio=0.18):
+    def makeUnit(self):
+        sampNode = self.sampNode
+        gr_dim = self.weights.shape[:-1]
+        grid = n.zeros(gr_dim,dtype='O')
+        nGrid = n.multiply.accumulate(gr_dim)[-1]
+        gridf = grid.reshape(nGrid)
+        for i in xrange(nGrid):
+            gridf[i] = []
+        samp = self.samp
+        for i in xrange(len(samp)):
+            samp_n = sampNode[i]
+            grid[samp_n[0],samp_n[1]].append(samp[i]['id'])
+        for i in xrange(nGrid):
+            gridf[i] = n.asarray(gridf[i],dtype='O')
+        self.unit = grid
+
+
+    def makeData(self):
+        self.makeUMatrix()
+        self.makeUStarMatrix()
+
+    def paretoRadius(self,maxNSamp=500,paretoRatio=0.18):
         # for k-mer frequency vectors on a unit sphere,
         # we get 0.398
         samp = self.samp['feature']
@@ -144,7 +172,7 @@ class SOMModel(Struct):
             for j in xrange(0,i):
                 d[c] = n.sqrt(n.square(x-samp[j]).sum())
                 c+=1
-        cnt,bin = n.histogram(d,bins=10000,new=True)
+        cnt,bin = n.histogram(d,bins=10000)
         cntsum = cnt.cumsum().astype('f4')/cnt.sum()
         paretoRad = bin[n.where(cntsum>=paretoRatio)[0][0]]
         return paretoRad

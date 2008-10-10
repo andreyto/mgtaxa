@@ -1,4 +1,6 @@
 from MGT.Common import *
+#import matplotlib
+#matplotlib.rcParams['font.size'] = 24
 import pylab as pl
 import matplotlib as plib
 
@@ -22,6 +24,7 @@ class SOMPlot:
         self.plotPie()
         self.plotMat(self.mod.umat)
         self.plotMat(self.mod.pmat)
+        self.plotMat(self.mod.usmat)
         pl.show()
 
     def nextIFig(self,iFig=0):
@@ -64,9 +67,9 @@ class SOMPlot:
         pl.scatter(x,y,c=c,s=s, alpha=alpha)
 
         #ticks = arange(-0.06, 0.061, 0.02)
-        xt = n.arange(0,unit.shape[0]+1,dtype=float)
+        xt = n.arange(0,unit.shape[0]+1,10,dtype=float)
         pl.xticks(xt)
-        yt = n.arange(0,unit.shape[1]+1,dtype=float)
+        yt = n.arange(0,unit.shape[1]+1,10,dtype=float)
         pl.yticks(yt)
         pl.xlabel(r'X', fontsize=20)
         pl.ylabel(r'Y', fontsize=20)
@@ -80,7 +83,8 @@ class SOMPlot:
         iFig = self.nextIFig(iFig)
         pl.figure(iFig, figsize=self.figSizePie)
         labCounts = self.mod.sampLabelCounts()
-        pl.pie(labCounts.values(), labels=labCounts.keys(), colors=[ self.labColorMap[l] for l in labCounts.keys() ],
+        keys = sorted(labCounts.keys())
+        pl.pie([ labCounts[l] for l in keys ], labels=keys, colors=[ self.labColorMap[l] for l in keys ],
                 autopct='%1.1f%%', shadow=True)
         pl.savefig(self.figFileName(iFig))
 
