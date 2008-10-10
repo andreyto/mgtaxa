@@ -4,24 +4,36 @@ import matplotlib as plib
 
 class SOMPlot:
 
-    def __init__(self,mod,labColorMap,markerSize=64,alpha=0.75,figSizeScatter=12,figSizePie=8,figSizeUMat=12):
+    def __init__(self,mod,labColorMap,markerSize=64,alpha=0.75,figSizeScatter=12,figSizePie=8,figSizeMat=12,name="som_plot"):
         self.mod=mod
         self.labColorMap=labColorMap
         self.markerSize=markerSize
         self.alpha=alpha
         gridAspect=float(mod.unit.shape[1])/mod.unit.shape[0]
         self.figSizeScatter=(figSizeScatter,figSizeScatter*gridAspect)
-        self.figSizeUMat=(figSizeUMat,figSizeUMat*gridAspect)
+        self.figSizeMat=(figSizeMat,figSizeMat*gridAspect)
         self.figSizePie=(figSizePie,figSizePie)
+        self.iFig = 0
+        self.name = name
 
     def plot(self):
+        self.iFig = 0
         self.plotScatter()
         self.plotPie()
-        self.plotUmat()
+        self.plotMat(self.mod.umat)
+        self.plotMat(self.mod.pmat)
         pl.show()
 
-    def plotScatter(self):
-        iFig=1
+    def nextIFig(self,iFig=0):
+        iFigNext = max(self.iFig+1,iFig)
+        self.iFig = iFigNext
+        return iFigNext
+
+    def figFileName(self,iFig):
+        return "%s-%03i.png"%(self.name,iFig)
+
+    def plotScatter(self,iFig=0):
+        iFig = self.nextIFig(iFig)
         mod=self.mod
         colorMap=self.labColorMap
         markerSize=self.markerSize
@@ -62,27 +74,30 @@ class SOMPlot:
         pl.grid(True)
         pl.savefig("scat.png")
         #pl.colorbar()
+        pl.savefig(self.figFileName(iFig))
 
-    def plotPie(self):
-        iFig=2
+    def plotPie(self,iFig=0):
+        iFig = self.nextIFig(iFig)
         pl.figure(iFig, figsize=self.figSizePie)
         labCounts = self.mod.sampLabelCounts()
         pl.pie(labCounts.values(), labels=labCounts.keys(), colors=[ self.labColorMap[l] for l in labCounts.keys() ],
                 autopct='%1.1f%%', shadow=True)
+        pl.savefig(self.figFileName(iFig))
 
-    def plotUmat(self):
-        iFig=3
-        pl.figure(iFig,figsize=self.figSizeUMat)
+    def plotMat(self,mat,iFig=0):
+        iFig = self.nextIFig(iFig)
+        pl.figure(iFig,figsize=self.figSizeMat)
         mode = "prod"
         if mode == "test1":
-            umat = n.zeros_like(self.mod.umat)
-            for x in xrange(umat.shape[0]):
-                for y in xrange(umat.shape[1]):
-                    umat[x,y] = x*umat.shape[1]+y*10
+            mat = n.zeros_like(self.mod.umat)
+            for x in xrange(mat.shape[0]):
+                for y in xrange(mat.shape[1]):
+                    mat[x,y] = x*mat.shape[1]+y*10
         else:
-            umat = self.mod.umat
+            pass
             #pdb.set_trace()
             #umat = umat.clip(0.03,1.)
-        umat = n.transpose(umat)
-        pl.imshow(umat,aspect="equal",origin="lower",interpolation="nearest")
+        mat = n.transpose(mat)
+        pl.imshow(mat,aspect="equal",origin="lower",interpolation="nearest")
+        pl.savefig(self.figFileName(iFig))
 

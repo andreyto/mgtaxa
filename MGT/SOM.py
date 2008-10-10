@@ -6,6 +6,9 @@ U-matrix computation, segmentation and clustering on the maps."""
 from MGT.Common import *
 
 class SOMModel(Struct):
+
+    # Pareto radius for eucl distance between length-normalized uniformly distributed samples
+    paretoRadiusLenNormSamp = 0.398
     
     def setLabels(self,label):
         self.label = label
@@ -93,4 +96,56 @@ class SOMModel(Struct):
                 d /= c
                 u[i,j] = d
         self.umat = u
+
+    def setSamples(self,samp):
+        self.samp = samp
+
+    def mapSamples(self,pmRadius=None):
+        samp = self.samp['feature']
+        assert len(samp.shape) == 2 and samp.shape[1] == self.weights.shape[-1]
+        if pmRadius is None:
+            pmRadius = self.paretoRadius()
+        nSamp = len(samp)
+        w = self.weights
+        gr_dim = w.shape[:-1]
+        nGrid = n.multiply.accumulate(gr_dim)[-1]
+        # view w as flattened except the last dimension
+        wf = w.reshape(nGrid,-1)
+        # coords of best node for each sample
+        bn = n.zeros((nSamp,len(gr_dim)),dtype='i4')
+        pmat = n.zeros(gr_dim,dtype='f8')
+        pmatf = pmat.reshape(nGrid)
+        pmRadiusSq = pmRadius**2
+        for iSamp in xrange(nSamp):
+            df = n.square(wf-samp[iSamp]).sum(axis=1)
+            pmatf[df<=pmRadiusSq] += 1
+            bn[iSamp] = n.unravel_index(df.argmin(),gr_dim)
+            if iSamp % 100 == 0:
+                print "Mapped %d samples out of %d" % (iSamp+1,nSamp)
+        self.sampNode = bn
+        self.pmat = pmat
+
+    def makeUStarMatrix(self):
+        pmat = self.pmat
+        iord = pmat.argsort(axis=None) #sort flattened view
+        pdb.set_trace()
+
+    def paretoRadius(self,maxNSamp=2000,paretoRatio=0.18):
+        # for k-mer frequency vectors on a unit sphere,
+        # we get 0.398
+        samp = self.samp['feature']
+        if len(samp) > maxNSamp:
+            samp = samp[(random.sample(xrange(len(samp)),maxNSamp),)]
+        nSamp = len(samp)
+        d = n.zeros(nSamp*(nSamp-1)/2,dtype='f4')
+        c = 0
+        for i in xrange(1,nSamp):
+            x = samp[i]
+            for j in xrange(0,i):
+                d[c] = n.sqrt(n.square(x-samp[j]).sum())
+                c+=1
+        cnt,bin = n.histogram(d,bins=10000,new=True)
+        cntsum = cnt.cumsum().astype('f4')/cnt.sum()
+        paretoRad = bin[n.where(cntsum>=paretoRatio)[0][0]]
+        return paretoRad
 
