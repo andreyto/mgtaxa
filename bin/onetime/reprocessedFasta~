@@ -1,0 +1,7 @@
+tar -zxf /usr/local/projects/GOSII/ANNOTATION/GSIOVIR110-I-01-3-4KB_reprocessed/split_multifasta.tgz
+find . -name '*.fsa' -type f -print | xargs -n 1 grep -v '^$' > GSIOVIR110-I-01-3-4KB.fasta
+cp GSIOVIR110-I-01-3-4KB.fasta /usr/local/projects/GOSII/ANNOTATION/GSIOVIR110-I-01-3-4KB_reprocessed/
+
+# sanity check
+
+grep '>' /usr/local/projects/GOSII/ANNOTATION/GSIOVIR110-I-01-3-4KB_reprocessed/GSIOVIR110-I-01-3-4KB.fasta | awk '{ print $1 }' | awk -F'_' '{ print ">"$3 }' | sort > fasta.id.tmp

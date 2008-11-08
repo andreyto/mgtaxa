@@ -59,11 +59,6 @@ labMapper = LabelMapper(taxaTree=taxaTree)
 for id in idsSom:
     idToLab[id] = labMapper.label(id)
 lab = sorted(set(idToLab.values()))
-### print taxa of samples close to myoviridae
-#samp = mod.getSamples()
-#for iSamp in len(samp):
-#    label = idToLab[samp[iSamp]["id"]]
-#    if label == "NCBI Myoviridae"
 #print lab
 #col = n.arange(len(lab),dtype=float) + 10
 col = [ labMapper.color(l) for l in lab ]

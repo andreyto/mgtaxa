@@ -1,0 +1,13 @@
+#!/bin/bash
+
+kmerLen=7
+
+$MGT_HOME/bin/rm-res
+$MGT_EXEC_BIN/generate_kmer_freq -l 1000 -s 1 -k $kmerLen < ../train.p.svm > train.svm
+$MGT_EXEC_BIN/generate_kmer_freq -l 1000 -s 1 -k $kmerLen < ../test.p.svm > test.svm
+python $MGT_HOME/bin/svmweights.py train.svm | head -n 2 > counts.log
+#python $MGT_HOME/bin/svmweights.py train.svm | tail -n 1 > weights.log
+python $MGT_HOME/bin/svmbalance.py train.svm 560
+mv train.svm.b train.svm
+qsub -b n -S /bin/tcsh -t 1-12 train.qsub
+

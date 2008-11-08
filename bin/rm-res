@@ -1,0 +1,6 @@
+#!/bin/bash
+#Remove results from training/testing run dir (current dir)
+rm model-*
+rm test-*
+rm train*.qsub.*
+

@@ -137,7 +137,7 @@ class TaxaNode(object):
         return ','.join([ "%s=%s" % (rank,taxid) for (rank,taxid) in self.lineageRanksTaxa(*l,**kw) ])
 
     def lineageStr(self,*l,**kw):
-        return ' -> '.join([ "rank=%s : name='%s' : taxid=%s" % (node.rank,node.name,node.id) for node in self.lineage(*l,**kw) ])
+        return ' <<->> '.join([ "rank=%s : name=\"\"\"%s\"\"\" : taxid=%s" % (node.rank,node.name,node.id) for node in self.lineage(*l,**kw) ])
 
     def visitDepthTop(self,func):
         """Apply function 'func' to each node traversing the subtree depth-first, applying 'func' before visiting the children.
@@ -792,9 +792,15 @@ class RankFakerVisitor:
 
 viralRootTaxid = 10239
 virTaxid = viralRootTaxid
+myovirTaxid = 10662 # Myoviridae - most of cyanophages are where
 bacTaxid = 2
 archTaxid = 2157
 eukTaxid = 2759
+micTaxids = (bacTaxid,archTaxid)
+
+diatomsTaxid = 2836 # unicellular euk phytoplankton, major group of euk algae
+cyanobacTaxid = 1117 # Cyanobacteria phylum
+shewanTaxid = 22 # Shewanella genus
 
 viralTaxidLev2 = (\
         35237, #dsDNA

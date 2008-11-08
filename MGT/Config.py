@@ -50,7 +50,7 @@ class MGTOptions:
                 all=Options(
                     longSeq = 100000,
                     prod=Options(
-                        train=Options(min=40,max=160000) #40 35000
+                        train=Options(min=40,max=35000) #40 35000
                         ),
                     test=Options(
                         test=Options(min=5,ratio=0.1) #5 0.3
@@ -71,19 +71,19 @@ class MGTOptions:
         sampSel.vir = vir
         sampSel.freeze()
         self.sampSel = sampSel
-        self.maxTestSampLen = 1000
-        self.minTestSampLen = 1000
+        self.maxTestSampLen = 5000
+        self.minTestSampLen = 5000
         self.labelTopNodeId = 1 #35237 #10239 - all vir, 35237 - dsDNA vir
         #self.labelLevel = "superkingdom"
         self.labelLevel = "family"
-        self.sampLen = 1000
+        self.sampLen = 5000
         self.kmerLen = 6
         self.maxTestSampPerTaxa = 300
         #self.kmerRepr = "Frequences"
         #self.kmerRepr = "Bits"
         self.kmerRepr = "Sequences"
-        self.sampNamePrefix = "samp_1k"
-        self.predictorDir = os.path.join(self.tmpDir,"pred-1k-dsdna_vir-01")
+        self.sampNamePrefix = "samp_5k"
+        self.predictorDir = os.path.join(self.tmpDir,"pred-5k-mfam")
         self.hdfTestFile = 'test.hdf'
         self.svmTestFile = 'test.svm'
         self.svmTrainFile = 'train.svm'

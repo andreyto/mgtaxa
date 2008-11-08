@@ -1,0 +1,5 @@
+#!/bin/bash
+for inp in $@; do
+    $MGT_HOME/bin/runPilercr $inp ${inp}.piler
+done
+

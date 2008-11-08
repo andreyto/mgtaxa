@@ -52,6 +52,10 @@ class FastaReader(object):
     def getNCBI_GI(self):
         return int(self.getNCBI_Id())
 
+    def getSimpleId(self):
+        """Assume that header starts with '>string_no_spaces ' and return that string."""
+        return self.hdr.split(None,1)[0][1:]
+
     def seqLines(self):
         infile = self.infile
         while True:
@@ -82,12 +86,14 @@ class FastaReader(object):
         for s in self.seqChunks(chunkSize):
             yield numpy.fromstring(s,dtype='S1')
 
-    def sequence(self):
+    def sequence(self,format='str'):
         seq = StringIO()
         for line in self.seqLines():
             seq.write(line.rstrip("\n"))
         s = seq.getvalue()
         seq.close()
+        if format == 'array':
+            s = numpy.fromstring(s,dtype='S1')
         return s
 
     def seqLen(self):

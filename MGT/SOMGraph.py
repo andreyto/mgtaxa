@@ -63,7 +63,7 @@ class SOMPlot:
                 s[i_vect:i_vect+n_v] = markerSize
                 i_vect += n_v
 
-        pl.figure(iFig, figsize=figSizeScatter)
+        fig = pl.figure(iFig, figsize=figSizeScatter)
         pl.scatter(x,y,c=c,s=s, alpha=alpha)
 
         #ticks = arange(-0.06, 0.061, 0.02)
@@ -75,9 +75,15 @@ class SOMPlot:
         pl.ylabel(r'Y', fontsize=20)
         pl.title('Scatter plot of mapped vectors')
         pl.grid(True)
-        pl.savefig("scat.png")
+        #pl.savefig("scat.png")
         #pl.colorbar()
         pl.savefig(self.figFileName(iFig))
+
+        def onclick(event):
+            print 'button=%d, x=%d, y=%d, xdata=%f, ydata=%f'%\
+                    (event.button, event.x, event.y, event.xdata, event.ydata)
+        cid = fig.canvas.mpl_connect('button_press_event', onclick)
+
 
     def plotPie(self,iFig=0):
         iFig = self.nextIFig(iFig)

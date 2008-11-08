@@ -1,0 +1,6 @@
+#!/bin/tcsh
+python $MGT_HOME/bin/wdhfeat.py -i ../train.svm -o train.svm -k 2 -d 10
+python $MGT_HOME/bin/wdhfeat.py -i ../test.svm -o test.svm -k 2 -d 10 -b 10
+python $MGT_HOME/bin/onevsall.py -i train.svm -m train -o mod -a ../labelToId.pkl -c 10
+python $MGT_HOME/bin/onevsall.py -i test.svm -m test -o mod -a ../labelToId.pkl
+

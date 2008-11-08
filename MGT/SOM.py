@@ -100,6 +100,9 @@ class SOMModel(Struct):
     def setSamples(self,samp):
         self.samp = samp
 
+    def getSamples(self):
+        return self.samp
+
     def mapSamples(self,pmRadius=None):
         samp = self.samp['feature']
         assert len(samp.shape) == 2 and samp.shape[1] == self.weights.shape[-1]
@@ -136,6 +139,13 @@ class SOMModel(Struct):
         plowmatf /= n_ord
         self.plowmat = plowmat
         self.usmat = self.umat*plowmat
+
+    def _makeMat(self,dtype='f8',extraDim=tuple()):
+        gr_dim = self.weights.shape[:-1]
+        m = n.zeros(gr_dim+extraDim,dtype=dtype)
+        nGrid = n.multiply.accumulate(gr_dim)[-1]
+        mf = m.reshape((nGrid,)+extraDim)
+        return Struct(m=m,mf=mf)
 
     def makeUnit(self):
         sampNode = self.sampNode
@@ -177,3 +187,24 @@ class SOMModel(Struct):
         paretoRad = bin[n.where(cntsum>=paretoRatio)[0][0]]
         return paretoRad
 
+    def makeLabelMatrix(self):
+        labcnt = self.sampLabelCounts()
+        lab = sorted(labcnt.keys())
+        labToIdLab = dict(zip(lab,range(len(lab))))
+        lmat = self._makeMat(dtype='i4',extraDim=(len(labToIdLab),))
+        bn = self.sampNodes
+        samp = self.samp
+        sampLab = self.sampLabels(samp['id'])
+        sampIdLab = n.asarray([ labToIdLab[l] for l in sampLab ],dtype='i4')
+        for iSamp in xrange(len(samp)):
+            samp_coor = bn[iSamp]
+            lmat[samp_coor[0],samp_coor[1],sampIdLab[iSamp]] += 1
+        self.sampLab = sampLab
+        self.sampIdLab = sampIdLab
+        self.labToIdLab = labToIdLab
+        self.idLabToLab = n.asarray(lab,dtype='O')
+
+    def makeClassifierMatrix(self,classLabels=None):
+        pass
+        #if classLabels is None:
+        #    classLabels = self.

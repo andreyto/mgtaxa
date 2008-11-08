@@ -1,0 +1,8 @@
+#!/bin/bash
+# formatdb take a single space separatated string for -i option
+# when you need to combine several FASTA files to a single DB,
+# and it is crazily sensitive to delimiteres, that is why find -printf is used below
+seqFiles=$(find GSIO* -name inp.fasta -printf " %p")
+echo $seqFiles
+formatdb -n inp -t inp -p F -i "$seqFiles"
+

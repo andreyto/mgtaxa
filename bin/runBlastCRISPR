@@ -1,0 +1,7 @@
+#!/bin/bash
+mem=2000
+db="$1"
+inp="$2"
+out="$3"
+runLinux -c " blastall -p blastn -d $db -i $inp -e 1 -W 7 -F F -m 7 -o $out" --memory $mem --system Linux64 --project 600005 --length medium --nowait
+

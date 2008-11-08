@@ -81,9 +81,9 @@ def perfMetrics(test,pred,balanceCounts=True):
     #print cm.m
     #print cm.mb
     mr = m[1:,1:]
-    t = m.sum(axis=1)
-    p = m.sum(axis=0)
-    tp = m.diagonal()
+    t = mr.sum(axis=1)
+    p = mr.sum(axis=0)
+    tp = mr.diagonal()
     tNzW = numpy.where(t > 0)
     senT = t[tNzW]
     sen = (tp[tNzW].astype('f4')/t[tNzW])
