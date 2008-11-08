@@ -1,4 +1,0 @@
-#!/bin/bash
-mem=4000
-runLinux -c "/home/atovtchi/work/distros/CRISPR/PILERCR/src/pilercr -minrepeat 22 -in $1 -out $2 -outtab $2.csv" --memory $mem --system Linux64 --project 600005 --length medium --nowait
-
