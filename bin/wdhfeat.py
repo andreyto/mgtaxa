@@ -2,6 +2,7 @@
 
 from MGT.Shogun.Util import *
 from shogun.Features import *
+from MGT.Svm import *
 
 def getProgOptions():
     from optparse import OptionParser, make_option
@@ -22,6 +23,9 @@ def getProgOptions():
         action="store", type="int",dest="balance",default=-1),
         make_option("-u", "--other-group",
         action="store", type="int",dest="otherGroupLab",default=0),
+        make_option("-f", "--feat-type",
+        action="store", type="choice",choices=("wdh","kmer"),
+        dest="featType",default="wdh"),
         make_option("-r", "--rev-compl",
         action="store", type="choice",choices=("merge","forward","addcol","addrow","reverse"),
         dest="revCompl",default="merge"),
@@ -89,19 +93,32 @@ print "Program options are:\n%s\n" % (opt,)
 
 print "Computing features: " + showSvmDataCounts(data) 
 
-feat_char=StringCharFeatures(shogAlpha)
-feat_char.set_string_features(data['feature'].tolist())
+if opt.featType == "wdh":
 
-feat_whd=WordHistogramFeatures()
-feat_whd.obtain_from_char(feat_char,opt.kmerLen,opt.maxDist,opt.sigma,opt.minDist,rcPolicy)
-print "WHD number of feature elements: %d" % feat_whd.get_num_elements()
-feat_sparse = feat_whd.get_sparse_real_features()
-print "WHD number feature dimensionality: %d" % feat_whd.get_num_features()
+    feat_char=StringCharFeatures(shogAlpha)
+    feat_char.set_string_features(data['feature'].tolist())
 
-lab = Labels(data['label'])
-feat_sparse.write_svmlight_file(opt.outFeat,lab)
+    feat_whd=WordHistogramFeatures()
+    feat_whd.obtain_from_char(feat_char,opt.kmerLen,opt.maxDist,opt.sigma,opt.minDist,rcPolicy)
+    print "WHD number of feature elements: %d" % feat_whd.get_num_elements()
+    feat_sparse = feat_whd.get_sparse_real_features()
+    print "WHD number feature dimensionality: %d" % feat_whd.get_num_features()
 
-svmSaveId(data['id'],opt.outFeat+'.id')
+    lab = Labels(data['label'])
+    feat_sparse.write_svmlight_file(opt.outFeat,lab)
+
+    svmSaveId(data['id'],opt.outFeat+'.id')
+
+elif opt.featType == "kmer":
+    maxSampLen = max( ( len(samp) for samp in data['feature'] ) )
+    kmerCnt = Kmers.KmerSparseFeatures(sampLen=maxSampLen,
+            kmerLen=opt.kmerLen,
+            rcPolicy=Kmers.RC_POLICY.MERGE)
+    svmWriter = SvmSparseFeatureWriterTxt(opt.outFeat)
+    for samp in data:
+        feat = kmerCnt.kmerFrequences(n.fromstring(samp['feature'],dtype='S1'))
+        svmWriter.write(int(samp['label']),feat,samp['id'])
+    svmWriter.close()
 
 print "Wrote " + showSvmDataCounts(data)
 

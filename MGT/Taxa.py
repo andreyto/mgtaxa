@@ -5,9 +5,17 @@ from MGT.TaxaTreeDb import *
 from MGT.TaxaIO import *
 from MGT.TaxaIODb import *
 
-def loadTaxaTree(ncbiDumpFile=options.taxaNodesFile,ncbiNamesDumpFile=options.taxaNamesFile):
+def loadTaxaTree(ncbiDumpFile=options.taxaNodesFile,
+        ncbiNamesDumpFile=options.taxaNamesFile,
+        allNames=False):
     return TaxaTree(NodeStorageNcbiDump(ncbiDumpFile=ncbiDumpFile,
-        ncbiNamesDumpFile=ncbiNamesDumpFile))
+        ncbiNamesDumpFile=ncbiNamesDumpFile,
+        allNames=allNames))
+
+def loadTaxaTreeNew(allNames=False):
+    return loadTaxaTree(ncbiDumpFile=options.taxaNodesFileNew,
+        ncbiNamesDumpFile=options.taxaNamesFileNew,
+        allNames=allNames)
 
 def makeGiTaxBin(ncbiDumpFiles,outFile):
     """Create and save a pickled numpy gi->taxid index from a list of ncbi dump files.
@@ -35,6 +43,49 @@ def makeGiTaxBin(ncbiDumpFiles,outFile):
             dst[src_ind] = src[src_ind]
     dumpObj(dst,outFile)
 
-def loadGiTaxBin(inFile):
+def loadGiTaxBin(inFile=options.taxaPickled):
     return loadObj(inFile)
+
+def loadGiTaxBinNew(inFile=options.taxaPickledNew):
+    return loadObj(inFile)
+
+def ncbiFastaRecordsWithTaxa(fastaReader,taxaTree,giToTaxa,errorCounter):
+    errorCounter.bounds=0
+    errorCounter.zeroG=0
+    errorCounter.trN=0
+    errorCounter.trV=0
+    for rec in fastaReader.records():
+        hdr = rec.header()
+        gi = rec.getNCBI_GI()
+        if len(giToTaxa) <= gi:
+            errorCounter.bounds += 1
+            print "giToTaxa bounds: "+hdr
+        else:
+            taxid = giToTaxa[gi]
+            if taxid == 0:
+                errorCounter.zeroG += 1
+                print "zero giToTaxa: "+hdr
+            else:
+                try:
+                    node = taxaTree.getNode(taxid)
+                except KeyError:
+                    errorCounter.trN += 1
+                    print "no node %s %s" % (taxid,hdr)
+                else:
+                    yield Struct(seq=rec,node=node,gi=gi)
+
+def mapFastaRecordsToTaxaTree(inSeqs,taxaTree,giToTaxa):
+    from MGT.FastaIO import FastaReader
+    taxMis = Struct()
+    for inSeq in inSeqs:
+        inpSeq = FastaReader(inSeq)
+        for rec in ncbiFastaRecordsWithTaxa(fastaReader=inpSeq,
+                taxaTree=taxaTree,
+                giToTaxa=giToTaxa,
+                errorCounter=taxMis):
+            node = rec.node
+            if not hasattr(node,'seq'):
+                node.seq = []
+            node.seq.append(Struct(gi=rec.gi))
+    return taxMis
 

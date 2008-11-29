@@ -61,7 +61,6 @@ taxaTree = loadTaxaTree(ncbiDumpFile=os.path.join(taxaDir,"nodes.dmp"),
 
 taxaTree.getRootNode().setIsUnderUnclass()
 viralNode = taxaTree.getNode(viralRootTaxid)
-topNode = taxaTree.getRootNode() #viralNode #taxaTree.getNode(35237) #dsDNA
 viroidsNode = taxaTree.getNode(12884)
 dsDnaNode = taxaTree.getNode(35237)
 cellNode = taxaTree.getNode(131567) # cellular organisms - bact, arch & euk
@@ -69,6 +68,8 @@ phageTailedNode = taxaTree.getNode(phageTailedTaxid)
 #the order is important here because phageTailedNode is a subnode of viralNode
 #whichSuperNode should find phages first
 famNodes = (phageTailedNode,viralNode,cellNode)
+
+topNode = phageTailedNode
 
 #viralTaxidLev2 = (\
 #        35237, #dsDNA
@@ -120,10 +121,10 @@ for inSeq in opt.inSeq:
                     else:
                         if node.isSubnode(topNode):
                             if not node.isUnderUnclass:
-                                genNode = node.findRankInLineage("family")
+                                genNode = node.findRankInLineage("species")
                                 if genNode is not None:
-                                    #famNode = genNode.findRankInLineage("family")
-                                    famNode = whichSupernode(genNode,famNodes) #viralNodesLev2
+                                    famNode = genNode.findRankInLineage("genus")
+                                    #famNode = whichSupernode(genNode,famNodes) #viralNodesLev2
                                     if famNode is not None:
                                         if not hasattr(famNode,'splitCounts'):
                                             famNode.splitCounts = numpy.zeros(nSplits,'i4')
@@ -184,6 +185,8 @@ for node in topNode.iterDepthTop():
                     labToId[label] = node.id
                 print "Writing label %i for node %s" % (label,node.lineageStr())
                 for iSplit in xrange(nSplits):
+                    print "%s samples in split %s for label %s" % \
+                            (len(node.splitSeq[iSplit]),iSplit,label)
                     for samp in node.splitSeq[iSplit]:
                        svmWriters[iSplit].write(label,samp.seq,samp.id)
                 label += 1
@@ -196,6 +199,8 @@ for node in topNode.iterDepthTop():
 if doWriteOtherGroup:
     print "Writing label %i for node Other" % (labelOther,)
     for iSplit in xrange(nSplits):
+        print "%s samples in split %s for label %s" % \
+                (len(otherGroup.splitSeq[iSplit]),iSplit,labelOther)
         for samp in otherGroup.splitSeq[iSplit]:
            svmWriters[iSplit].write(labelOther,samp.seq,samp.id)
 

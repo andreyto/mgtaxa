@@ -23,6 +23,20 @@ def getProgOptions():
     return options,args
 
 
+def getNCBINode(taxaTree,idSamp):
+    (idPref,idSuf) = idSamp.rsplit('_',1)
+    if idPref.startswith('NCBI'):
+        return taxaTree.getNode(int(idSuf))
+    else:
+        return None
+
+def getRectStencil(arr,center,halfSize):
+    center = n.asarray(center)
+    ind = n.clip((center-halfSize,center+halfSize+1),(0,0),n.asarray(arr.shape)-1)
+    sel = arr[ind[0][0]:ind[1][0],ind[0][1]:ind[1][1]]
+    #print center, halfSize, ind, sel
+    return sel,ind
+
 opt,args = getProgOptions()
 
 mgtDbDir = "/home/atovtchi/work/mgtdata"
@@ -31,6 +45,9 @@ taxaDir=os.path.join(mgtDbDir,"taxonomy.new")
 
 taxaTree = loadTaxaTree(ncbiDumpFile=os.path.join(taxaDir,"nodes.dmp"),
         ncbiNamesDumpFile=os.path.join(taxaDir,"names.dmp"))
+
+micNodes = [ taxaTree.getNode(id) for id in micTaxids ]
+phageNode = taxaTree.getNode(phageTailedTaxid)
 
 if not os.path.isfile(opt.modDump):
     som = GHSOM(opt.inName)
@@ -60,10 +77,47 @@ for id in idsSom:
     idToLab[id] = labMapper.label(id)
 lab = sorted(set(idToLab.values()))
 ### print taxa of samples close to myoviridae
-#samp = mod.getSamples()
-#for iSamp in len(samp):
-#    label = idToLab[samp[iSamp]["id"]]
-#    if label == "NCBI Myoviridae"
+unit = mod.unit
+sampNode = mod.sampNode
+samp = mod.getSamples()
+nbCnt = {}
+for iSamp in xrange(len(samp)):
+    sm = samp[iSamp]
+    id = sm["id"]
+    #label = idToLab[samp[iSamp]["id"]]
+    #if label == "NCBI Myoviridae"
+    node = getNCBINode(taxaTree,id)
+    #if node is not None and node.whichSupernode(micNodes) is not None:
+    #    print "Mic node: ", node.lineageStr()
+    if node is not None and node.isSubnode(phageNode) and not node.name.startswith("Enterobacteria"):
+        cellInd = sampNode[iSamp]
+        cells,cellsInd = getRectStencil(unit,cellInd,5)
+        for cell in cells.flat:
+            for idNb in cell:
+                nodeNb = getNCBINode(taxaTree,idNb)
+                if nodeNb is not None and nodeNb.whichSupernode(micNodes) is not None:
+                    print "Phage: ", node.name #node.lineageStr()
+                    #print "\n"
+                    print "Microbe: ", nodeNb.name #nodeNb.lineageStr()
+                    print "\n\n\n"
+                    pair = (node,nodeNb)
+                    try:
+                        nbCnt[pair] += 1
+                    except KeyError:
+                        nbCnt[pair]  = 1
+aCnt = {}
+for (pair,cnt) in nbCnt.items():
+    try:
+        aCnt[pair[0]].append((cnt,pair[1]))
+    except KeyError:
+        aCnt[pair[0]] = [ (cnt,pair[1]) ]
+for val in aCnt.values():
+    val.sort(reverse=True)
+print "Match counts for each phage\n"
+for (node,matches) in aCnt.items():
+    print "Phage: ", node.name
+    print "    Microbes: %s\n" % ", ".join(["%s:%s" % (nodeM.name,cnt) for (cnt,nodeM) in matches])
+sys.exit(0)
 #print lab
 #col = n.arange(len(lab),dtype=float) + 10
 col = [ labMapper.color(l) for l in lab ]

@@ -126,6 +126,14 @@ class TaxaNode(object):
                 if node.rank == rank:
                     return node
         return None
+    
+    def findLeftRankInLineage(self,ranks,topNode=None):
+        """Return a node corresponding to the left-most element from 'ranks' found in the lineage"""
+        ranksMap = dict([ (n.rank,n) for n in self.lineage(topNode=topNode) ])
+        for rank in ranks:
+            if rank in ranksMap:
+                return ranksMap[rank]
+        return None
 
     def lineageRanks(self,*l,**kw):
         return [ node.rank for node in self.lineage(*l,**kw) ]
@@ -163,6 +171,24 @@ class TaxaNode(object):
             for ret in child.iterDepthTwice():
                 yield ret
         yield (self,2)
+
+    def iterFillUp(self,topNode=None,topFirst=False):
+        """Iterate as though we were pouring water into this node until it fills a given super-tree above it.
+        @param topNode - "fill up" up to this super-node (inclusive), None means up to root node.
+        @param topFirst - if True, the top node of each super-tree will be iterated before its sub-nodes, otherwise - after ("self" is always iterated first)."""
+        #assert self.isSubnode(topNode)
+        for node in self.iterDepthTop():
+            yield node
+        lin = self.lineage(topNode=topNode)
+        for sub,sup in zip(lin[:-1],lin[1:]):
+            if topFirst:
+                yield sup
+            for supChild in sup.children:
+                if supChild is not sub:
+                    for node in supChild.iterDepthTop():
+                        yield node
+            if not topFirst:
+                yield sup
 
     def visitDepthBottom(self,func):
         """Apply function 'func' to each node traversing the subtree depth-first, applying 'func' after visiting the children."""
@@ -350,12 +376,28 @@ class TaxaNode(object):
         A node is not considered a subnode of itself."""
         return self.lnest > other.lnest and self.rnest < other.rnest
 
+    def isSubnodeAny(self,others):
+        return self.whichSupernode(others) is not None
+
     def whichSupernode(self,others):
         """Return node from others that is a supernode of self, or None"""
         for o in others:
             if self.isSubnode(o):
                 return o
         return None
+
+    def lcsNode(self,other):
+        """Return the Lowest Common SuperNode of self and other"""
+        if self.getDepth() < other.getDepth():
+            x = self
+            y = other
+        else:
+            x = other
+            y = self
+        for node in x.lineage():
+            if y.isSubnode(node) or y is node:
+                return node
+        assert ValueError, "Could not find lcsNode. Tree is corrupt or nodes are from differnt trees"
 
     def setIsUnderUnclass(self):
         """Set an attribute 'isUnderUnclass' for the nodes in this branch.
@@ -444,6 +486,9 @@ class TaxaTree(object):
 
     def getNode(self,id):
         return self.nodes[id]
+
+    def getNodes(self,ids):
+        return [ self.nodes[id] for id in ids ]
 
     def removeNodes(self,ids):
         """Remove nodes referenced by 'ids' from auxiliary data structures.
@@ -536,6 +581,38 @@ class TaxaTree(object):
         top.setIndex(startIndex=startIndex)
 
 
+    def makeNameIndex(self):
+        nameInd = {}
+        namesInd = {}
+        for node in self.iterDepthTop():
+            name = node.name.lower()
+            if name in nameInd:
+                nameInd[name].append(node)
+            else:
+                nameInd[name] = [ node ]
+            if hasattr(node,"names"):
+                for name in [ n.lower() for n in node.names ]:
+                    if name in namesInd:
+                        namesInd[name].append(node)
+                    else:
+                        namesInd[name] = [ node ]
+                    
+        self.nameInd = nameInd
+        self.namesInd = namesInd
+        self.emptyList = []
+
+    def searchName(self,name):
+        try:
+            return self.nameInd[name.lower()]
+        except KeyError:
+            return self.emptyList
+
+    def searchNames(self,name):
+        try:
+            return self.namesInd[name.lower()]
+        except KeyError:
+            return self.emptyList
+
     def buildSubtreeMask(self,ids,values=None,other=-1):
         """Return a mask that 'paints' every node with a value from 'values' according to if a node is in a subtree
         of corresponding id from 'ids'. If 'values' is None, values of 'ids' are used.
@@ -597,6 +674,25 @@ class TaxaTree(object):
             self.buildIdPresenceMask()
             mask = self._mask_presence
         return (mask * value).astype(dtype)
+
+
+def selectTopNodes(nodes):
+    """Select nodes that are not descendants of any other nodes in the input list.
+    @param sequence of TaxaNodes
+    @ret maximum subset of nodes such as not x.isSubnode(y) for any x,y.
+    Average complexity is currently quadratic in len(nodes) (stupid implementation)
+    Worst case complexity is always qudratic (e.g. if this method is called on its own result)
+    """
+    isSub = [False]*len(nodes)
+    for i in xrange(1,len(nodes)):
+        x = nodes[i]
+        for j in xrange(0,i):
+            y = nodes[j]
+            if x.isSubnode(y):
+                isSub[i] = True
+            elif y.isSubnode(x):
+                isSub[j] = True
+    return [ nodes[i] for i in xrange(len(nodes)) if not isSub[i] ]
 
 
 """
@@ -790,6 +886,11 @@ class RankFakerVisitor:
                            (rank,node.id,lin_orig,node.lineageRanksStr(),lin_before)
 
 
+#
+# Names for various important taxonomy IDs
+#
+
+unclassRootTaxid = 12908
 viralRootTaxid = 10239
 virTaxid = viralRootTaxid
 myovirTaxid = 10662 # Myoviridae - most of cyanophages are where
@@ -815,11 +916,13 @@ cellTaxid = 131567 # cellular organisms - bact, arch & euk
 micVirTaxids = (virTaxid,bacTaxid,archTaxid)
 skingdomTaxids = (virTaxid,bacTaxid,archTaxid,eukTaxid,viroidsTaxid)
 
+
 #main Linnaean ranks, modified with superkingdom in place of domain rank
 linnMainRanks = ("species","genus","family","order","class","phylum","kingdom","superkingdom")
 viralRanksTemplate = linnMainRanks
 noRank = "no_rank"
 unclassRank = "unclassified"
+
 
 class TaxaLevels:
     """Class that assigns classification levels to nodes of the taxonomic tree.
@@ -903,4 +1006,36 @@ class TaxaLevels:
         tree.visitDepthTop(NodeReducerVisitor((lambda node: node.idlevel != 0),tree),topNodeId)
         tree.reindex()
         
-    
+
+def selectTaxaGis(taxids,taxaTree,giToTaxa,withSubnodes=True):
+    tax = set(taxids)
+    assert 0 not in tax
+    if withSubnodes:
+        for idnode in taxids:
+            for node in taxaTree.iterDepthTop(idnode):
+                tax.add(node.id)
+    taxgi = []
+    for gi in range(len(giToTaxa))[:10000]:
+        taxid = giToTaxa[gi]
+        if True or taxid in tax:
+            taxgi.append((gi,taxid))
+    return n.array(taxgi,dtype=[("gi","i8"),("taxid","i8")])
+
+def downloadTaxaGenbankSeqs(taxids,outFile,taxaTree,giToTaxa,withSubnodes=True):
+    from MGT.Entrez import EzRequest 
+    taxgi = selectTaxaGis(taxids=taxids,
+            taxaTree=taxaTree,
+            giToTaxa=giToTaxa,
+            withSubnodes=withSubnodes)
+    pdb.set_trace()
+    print "Getting Genbank records for %s GIs" % len(taxgi)
+    gis = taxgi["gi"]
+    req = EzRequest(batchSize=50000)
+    outFile=open(outFile,'w')
+    giChunk=40000
+    for iGi in xrange(0,len(gis),giChunk):
+        iGiEnd = min(iGi+giChunk,len(gis))
+        req.fetch(ids=gis[iGi:iGiEnd],outFile=outFile)
+        
+
+

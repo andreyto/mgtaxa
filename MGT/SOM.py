@@ -147,7 +147,7 @@ class SOMModel(Struct):
         mf = m.reshape((nGrid,)+extraDim)
         return Struct(m=m,mf=mf)
 
-    def makeUnit(self):
+    def _makeUnit(self,indType):
         sampNode = self.sampNode
         gr_dim = self.weights.shape[:-1]
         grid = n.zeros(gr_dim,dtype='O')
@@ -158,10 +158,23 @@ class SOMModel(Struct):
         samp = self.samp
         for i in xrange(len(samp)):
             samp_n = sampNode[i]
-            grid[samp_n[0],samp_n[1]].append(samp[i]['id'])
+            if indType == 'id':
+                x = samp[i]['id']
+            elif indType == 'ind':
+                x = i
+            else:
+                raise ValueError("Unknown indType value %s" % indType)
+            grid[samp_n[0],samp_n[1]].append(x)
         for i in xrange(nGrid):
             gridf[i] = n.asarray(gridf[i],dtype='O')
-        self.unit = grid
+        if indType == 'id':
+            self.unit = grid
+        elif indType == 'ind':
+            self.unitI = grid
+
+    def makeUnit(self):
+        self._makeUnit('id')
+        self._makeUnit('ind')
 
 
     def makeData(self):

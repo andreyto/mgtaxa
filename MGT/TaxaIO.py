@@ -27,10 +27,14 @@ class NodeStorageNcbiDump:
     # We will be parsing this string:
     # '1\t|\t1\t|\tno rank\t|\t\t|\t8\t|\t0\t|\t1\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|\n'
     
-    def __init__(self,ncbiDumpFile=None,ncbiNamesDumpFile=None):
-        """Load taxonomy tree nodes from NCBI dump files"""
+    def __init__(self,ncbiDumpFile=None,ncbiNamesDumpFile=None,allNames=False):
+        """Load taxonomy tree nodes from NCBI dump files.
+        @param ncbiDumpFile nodes.dump
+        @param ncbiNamesDumpFile names.dump
+        @param allNames whether to load all names to node attribute 'names'"""
         self.ncbiDumpFile = ncbiDumpFile
         self.ncbiNamesDumpFile = ncbiNamesDumpFile
+        self.allNames = allNames
     
     def _loadNodes(self,ncbiDumpFile):
         inp = openCompressed(ncbiDumpFile,'r')
@@ -60,11 +64,18 @@ class NodeStorageNcbiDump:
     def _loadNames(self,ncbiNamesDumpFile):
         nodes = self.nodes
         inp = openCompressed(ncbiNamesDumpFile,'r')
+        allNames = self.allNames
         for line in inp:
             #rec = [ x.strip() for x in line.split('|') ]
             rec = line.split("\t|\t")
             if rec[3].startswith("scientific name"):
                 nodes[int(rec[0])].name = rec[1]
+            if allNames:
+                node = nodes[int(rec[0])]
+                try:
+                    node.names[rec[1]] = rec[3]
+                except AttributeError:
+                    node.names = { rec[1] : rec[3] }
         inp.close()
 
     def load(self):

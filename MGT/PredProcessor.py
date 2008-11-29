@@ -81,20 +81,25 @@ def perfMetrics(test,pred,balanceCounts=True):
     #print cm.m
     #print cm.mb
     mr = m[1:,1:]
-    t = mr.sum(axis=1)
+    t = m[1:,:].sum(axis=1)
     p = mr.sum(axis=0)
     tp = mr.diagonal()
     tNzW = numpy.where(t > 0)
     senT = t[tNzW]
     sen = (tp[tNzW].astype('f4')/t[tNzW])
-    senLab = tNzW[0]
+    senLab = tNzW[0] + 1 #because mr = m[1:,1:]
     senMean = sen.mean()
     pNzW = numpy.where(p > 0)
     spe = (tp[pNzW].astype('f4')/p[pNzW])
-    speLab = pNzW[0]
-    speMean = spe[speLab > 0].mean()
-    speMin = spe[speLab > 0].min()
-    speMeanTP = spe[spe>0].mean()
+    speLab = pNzW[0] + 1 #because mr = m[1:,1:]
+    if len(spe) > 0:
+        speMean = spe.mean()
+        speMin = spe.min()
+        speMeanTP = spe[spe>0].mean()
+    else:
+        speMean = 0
+        speMin = 0
+        speMeanTP = 0
     acc = float(tp.sum())/t.sum()
     #print "Spe: ", spe
     #print "Sen: ", sen
