@@ -4,8 +4,23 @@ from itertools import izip
 
 class SvmSparseFeatureWriterTxt(Kmers.SvmSparseFeatureWriterTxt):
 
-    def write(self,label,feature):
+    def __init__(self,out,outId=None):
+        Kmers.SvmSparseFeatureWriterTxt.__init__(self,out)
+        if not hasattr(outId,'write'):
+            if outId is None:
+                assert isinstance(out,str)
+                outId = open(out+'.id','w', buffering=1024*1024)
+        self.outId = outId
+
+    def write(self,label,feature,id=None):
         Kmers.SvmSparseFeatureWriterTxt.write(self,label,feature['values'],feature['indices'])
+        if id is None:
+            id = label
+        self.outId.write("%s\n" % id)
+
+    def close(self):
+        Kmers.SvmSparseFeatureWriterTxt.close(self)
+        self.outId.close()
 
 class SvmFastaFeatureWriterTxt:
     
@@ -65,6 +80,7 @@ class SvmStringFeatureWriterTxt:
         
     def close(self):
         self.out.close()
+        self.outId.close()
 
     def write(self,label,feature,id=None):
         self.out.write("%d " % label)
@@ -97,6 +113,7 @@ class SvmDenseFeatureWriterTxt:
         
     def close(self):
         self.out.close()
+        self.outId.close()
 
     def write(self,label,feature,id=None):
         if self.formatStr is None:

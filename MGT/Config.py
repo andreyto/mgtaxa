@@ -1,6 +1,8 @@
 from MGT.Util import Options
 import os
 
+
+
 class MGTOptions:
     def __init__(self):
         self.debug = 1
@@ -12,11 +14,13 @@ class MGTOptions:
         # content from different taxonomy IDs when picking trainig/testing
         # samples etc.
         self.debugFakeSequence = False
+        self.toolName = "MGT"
+        self.toolEmail = "atovtchi@jcvi.org"
         self.tmpDir = "/usr/local/scratch/atovtchi"
         self.dataDir = "/home/atovtchi/work/mgtdata"
         self.srcDir = "/home/atovtchi/work/mgtaxa"
         self.testDataDir = os.path.join(self.srcDir,"test_data")
-        self.taxaPickled = 'taxa.pkl.gz'
+        self.refSeqDataDir = os.path.join(self.dataDir,"refseq")
         # Max length to store for a full header. It is stored in a separate table,
         # so size does not matter that much
         self.fastaHdrSqlLen = 2048
@@ -26,13 +30,8 @@ class MGTOptions:
         #self.selDumpFile = 'mgt_sel.csv'
         self.selFastaFile = 'mgt_sel.fasta.gz'
         self.blastSelAlias = 'mgt'
-        self.taxaDataDir = os.path.join(self.dataDir,'taxonomy')
-        self.taxaCatFile = os.path.join(self.taxaDataDir,'categories.dmp')
-        self.taxaGiFile = os.path.join(self.taxaDataDir,'gi_taxid_nucl.dmp.gz') 
-        self.taxaDumpDir = self.taxaDataDir
-        self.taxaNodesFile = os.path.join(self.taxaDumpDir,'nodes.dmp')
-        self.taxaDivisionFile = os.path.join(self.taxaDumpDir,'division.dmp')
-        self.taxaNamesFile = os.path.join(self.taxaDumpDir,'names.dmp')
+        self._setTaxaFileNames(os.path.join(self.dataDir,'taxonomy'),sfx="")
+        self._setTaxaFileNames(os.path.join(self.dataDir,'taxonomy.new'),sfx="New")
         self.taxaTreeTablePrefix = "txtr"
         self.taxaTreeTableSfxMain = ""
         #self.kmerTxtDir = os.environ['PHYLA_KMERS']
@@ -71,19 +70,20 @@ class MGTOptions:
         sampSel.vir = vir
         sampSel.freeze()
         self.sampSel = sampSel
-        self.maxTestSampLen = 5000
-        self.minTestSampLen = 5000
+        self.maxTestSampLen = 1000
+        self.minTestSampLen = 1000
         self.labelTopNodeId = 1 #35237 #10239 - all vir, 35237 - dsDNA vir
         #self.labelLevel = "superkingdom"
-        self.labelLevel = "family"
-        self.sampLen = 5000
-        self.kmerLen = 6
+        #self.labelLevel = "family"
+        self.labelLevel = "order"
+        self.sampLen = 1000
+        self.kmerLen = 8
         self.maxTestSampPerTaxa = 300
         #self.kmerRepr = "Frequences"
-        #self.kmerRepr = "Bits"
-        self.kmerRepr = "Sequences"
-        self.sampNamePrefix = "samp_5k"
-        self.predictorDir = os.path.join(self.tmpDir,"pred-5k-mfam")
+        self.kmerRepr = "Bits"
+        #self.kmerRepr = "Sequences"
+        self.sampNamePrefix = "samp_1k"
+        self.predictorDir = os.path.join(self.tmpDir,"pred-1k-ord-8-b")
         self.hdfTestFile = 'test.hdf'
         self.svmTestFile = 'test.svm'
         self.svmTrainFile = 'train.svm'
@@ -93,6 +93,18 @@ class MGTOptions:
                 MEM = 1000,
                 ARCH = "lx26-eon64",
                 maxQueued = 50)
+
+    def _setTaxaFileNames(self,topDir,sfx=""):
+        setattr(self,'taxaDataDir'+sfx,topDir)
+        taxaDataDir = getattr(self,'taxaDataDir'+sfx) 
+        setattr(self,'taxaPickled'+sfx,os.path.join(taxaDataDir,'gi_taxid.pkl.gz'))
+        setattr(self,'taxaCatFile'+sfx,os.path.join(taxaDataDir,'categories.dmp'))
+        setattr(self,'taxaGiFile'+sfx,os.path.join(taxaDataDir,'gi_taxid_nucl.dmp.gz'))
+        setattr(self,'taxaDumpDir'+sfx,taxaDataDir)
+        taxaDumpDir = getattr(self,'taxaDumpDir'+sfx) 
+        setattr(self,'taxaNodesFile'+sfx,os.path.join(taxaDumpDir,'nodes.dmp'))
+        setattr(self,'taxaDivisionFile'+sfx,os.path.join(taxaDumpDir,'division.dmp'))
+        setattr(self,'taxaNamesFile'+sfx,os.path.join(taxaDumpDir,'names.dmp'))
 
 options = MGTOptions()
 

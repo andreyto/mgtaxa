@@ -168,7 +168,7 @@ class SamplerConcat(MGTOptions):
             #self.tmp_hdfSamplesConv()
             #return
             self.setTrainTarget()
-            trNodes = self.selectMicFamilies()
+            trNodes = self.selectAllFamilies()
             self.writeTraining(trNodes=trNodes)
             self.writeTesting()
             self.tmp_hdfSamplesConv()
@@ -622,7 +622,7 @@ class SamplerConcat(MGTOptions):
                             fgNodes.append(node)
                         else:
                             bgNodes.append(node)
-        trainTarg = 30000/len(fgNodes)
+        trainTarg = 600000/len(fgNodes)
         for node in fgNodes:
             node.samp_n_train_targ = min(max(trainTarg,node.sampSel.test.train.min),
                 node.samp_n_tot_train)
@@ -635,6 +635,28 @@ class SamplerConcat(MGTOptions):
         bgNodes.extend(eukBgNodes)
         return Struct(fgNodes=fgNodes,bgNodes=bgNodes)
 
+
+    def selectAllFamilies(self):
+        taxaTree = self.taxaTree
+        rootNode = taxaTree.getRootNode()
+        rootNode.setIndex()
+        fgNodes = []
+        bgNodes = []
+        for node in taxaTree.iterDepthTop():
+            if node.level == self.labelLevel:
+                if node.is_class:
+                    if node.samp_n_tot_train >= 80:
+                        fgNodes.append(node)
+                    else:
+                        bgNodes.append(node)
+        trainTarg = 300000/len(fgNodes)
+        for node in fgNodes:
+            node.samp_n_train_targ = min(max(trainTarg,node.sampSel.test.train.min),
+                node.samp_n_tot_train)
+        bgTrainTarg = trainTarg / len(bgNodes)
+        for node in bgNodes:
+            node.samp_n_train_targ = min(bgTrainTarg,node.samp_n_tot_train)
+        return Struct(fgNodes=fgNodes,bgNodes=bgNodes)
 
     def writeTraining(self,trNodes):
         """Write training data set for each eligible node.
@@ -673,6 +695,7 @@ class SamplerConcat(MGTOptions):
 
         else:
             svmWriter = SvmSparseFeatureWriterTxt(os.path.join(self.predictorDir,self.svmTrainFile))
+            svmWriterSplits = (SvmSparseFeatureWriterTxt(os.path.join(self.predictorDir,self. svmTrainFile+'.s.1')),SvmSparseFeatureWriterTxt(os.path.join(self.predictorDir,self. svmTrainFile+'.s.2')))
         #kmerReader.openOutput(predictor.trainFile)
         children = trNodes.fgNodes
         #children = [ n for n in children if sum( (n.isSubnode(e) for e in excludeBranches) ) == 0 ]

@@ -182,6 +182,7 @@ class SvmOneVsAll:
         assert not labSeen[0]
         self.binLab = binLab
         self.labSeen = labSeen
+        print "SvmOneVsAll.classifyBin() did not see models for labels: "+','.join(["%s" % l for l in n.where(labSeen == False)[0]])
 
     def trainBin(self,trainLabel,opt):
         feat = self.feat
@@ -324,9 +325,12 @@ class App:
         maxLab = max([ max(l) for l in lab ])
         modFact = ModFileFact(opt.modelRoot,svmOcasFact)
         if opt.mode == "train":
+            trainLabCnt = numpy.bincount(lab[0])
+            trainLabelsPos = numpy.where(trainLabCnt>0)[0]
             if len(trainLabels) == 1 and trainLabels[0] == -1:
-                trainLabCnt = numpy.bincount(lab[0])
-                trainLabels = numpy.where(trainLabCnt>0)[0]
+                trainLabels = trainLabelsPos
+            else:
+                trainLabels = [ trLab for trLab in trainLabels if trLab in trainLabelsPos ]
             if opt.method == "svm":
                 svmMul = SvmOneVsAll(maxLabel=maxLab)
                 svmMul.setLab(lab[0])

@@ -27,6 +27,9 @@ if defineCalledProcessError:
             OSError.__init__(self,*l,**kw)
             self.returncode = returncode
 
+
+from MGT.Bits.Unique import unique, uniquePick
+
 def dumpObj(obj,fileName):
     out = openCompressed(fileName,'w')
     dump(obj,out,-1)
@@ -648,4 +651,35 @@ def binCount(seq):
         except KeyError:
             cnt[x] = 1
     return cnt
+
+
+class SubSamplerUniRandomEnd:
+    """Uniform random [0,rnd_length] subsampler where rnd_length is in [minLen,maxLen]"""
+
+    def __init__(self,minLen,maxLen):
+        assert minLen > 0 and maxLen >= minLen
+        self.minLen = minLen
+        self.maxLen = maxLen
+
+    def __call__(self,samp):
+        """Return subsequence [0,random).
+        We always take from the beginning rather than from a random start,
+        because when subsampling short taxa with concatenation, this gives 
+        a better chance of not hitting spacer junction."""
+        return samp[0:nrnd.random_integers(self.minLen,min(len(samp),self.maxLen))]
+
+class SubSamplerRandomStart:
+    """random [rnd_start,rnd_length] subsampler where rnd_length is in [minLen,maxLen]"""
+
+    def __init__(self,minLen,maxLen):
+        assert minLen > 0 and maxLen >= minLen
+        self.minLen = minLen
+        self.maxLen = maxLen
+
+    def __call__(self,samp):
+        """Return subsequence [0,random).
+        We always take from the beginning rather than from a random start,
+        because when subsampling short taxa with concatenation, this gives 
+        a better chance of not hitting spacer junction."""
+        return samp[0:nrnd.random_integers(self.minLen,min(len(samp),self.maxLen))]
 
