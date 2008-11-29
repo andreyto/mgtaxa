@@ -92,7 +92,7 @@ class LabelMapper:
             col = col[0]
         return col
     
-    def color4(self,lab,format="fullName"):
+    def color(self,lab,format="fullName"):
         if lab == 'NCBI Microbial':
             col = 'red'
         elif lab == 'NCBI Viral non-phage':
@@ -111,13 +111,15 @@ class LabelMapper:
             col = 'brown'
         elif lab == 'NCBI Cyanobac':
             col = 'pink'
+        elif lab == 'NCBI Myoviridae':
+            col = 'cyan'
         else:
             raise ValueError("Unknown label for color assignment %s" % lab)
         if format == "oneLetterName":        
             col = col[0]
         return col
     
-    def color(self,lab,format="fullName"):
+    def color4(self,lab,format="fullName"):
         if lab in ('NCBI Microbial','GOS Microbial','READ Microbial'):
             col = 'yellow'
         elif lab in ('NCBI Viral non-phage','NCBI Phage','GOS Viral Fraction','GOS Viral Large Fraction','READ Viral Fraction'):
