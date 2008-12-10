@@ -374,6 +374,12 @@ class PhageHostSeqPicker:
                     x[vir] = [ host ]
         return x
 
+    def seqVirHostPicks(self):
+        return groupPairs(self.picks,keyField=1)
+
+    def seqHostVirPicks(self):
+        return groupPairs(self.picks,keyField=0)
+
     def printGroupSeqHosts(self):
         """Print dict of dicts of lists {mic genus : mic species : phages}"""
         groups = self.groups

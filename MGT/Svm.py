@@ -263,6 +263,12 @@ def applyToFeatData(data,func):
 class LoadSeqPreprocShred:
 
     def __init__(self,sampLen,sampNum=0,sampOffset=0):
+        """Constructor.
+        @param sampLen length of each output fragment
+        @param sampNum if <=0 - return all sampLen long fragments, if other number - that many,
+        otherwise it should be f(lab,seq,id) and return the number of shreds for a given sequence.
+        @param sampOffset optional offset between end of each shred and start of next
+        """
         self.sampLen = sampLen
         if isinstance(sampNum,int):
             sampNumConst = sampNum
@@ -328,6 +334,12 @@ def loadSeqs(inpFile,preProc=loadSeqPreprocIdent,inpFileId=None):
         inpFile.close()
     return data
 
+def loadSeqsMany(inpFiles,preProc=loadSeqPreprocIdent,inpFilesId=None):
+    if inpFilesId is None:
+        inpFilesId = [None]*len(inpFiles)
+    return n.concatenate([ loadSeqs(inpFile=inpFile,preProc=preProc,inpFileId=inpFileId) for \
+            (inpFile,inpFileId) in zip(inpFiles,inpFilesId) ])
+
 def sparseToDenseSeqs(data):
     """Convert sparse representation of the 'feature' field into dense matrix one.
     @param data Numpy array with dtype [('label',any),('feature','O'),('id','O')]
@@ -366,6 +378,32 @@ def saveSeqs(data,outFile,outFileId=None):
         outFile.write("%s %s\n" % (rec['label'],rec['feature']))
     if closeOut:
         outFile.close()
+
+
+class LabelRenum:
+    """Renumber arbitrary type labels to consequitive numbers"""
+
+    def __init__(self,labels):
+        labels = set(labels)
+        labrenum = [ (lab,renum) for (lab,renum) in it.izip(sorted(labels),it.count()) ]
+        self.oldToNew = dict(labrenum)
+        self.newToOld = dict( ( (renum,lab) for (lab,renum) in labrenum ) )
+
+    def toNew(self):
+        return self.oldToNew
+
+    def toOld(self):
+        return self.newToOld
+        
+    def setDataLabels(self,data,labelsOld):
+        oldToNew = self.toNew()
+        for (rec,labOld) in it.izip(data,labelsOld):
+            rec['label'] = oldToNew[labOld]
+
+def setLabelsFromIds(data):
+    labRenum = LabelRenum(data["id"])
+    labRenum.setDataLabels(data,data["id"])
+    return labRenum
 
 class SVMLibLinear:
     

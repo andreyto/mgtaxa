@@ -19,6 +19,8 @@ def getProgOptions():
         action="store", type="choice",choices=("svm","knn","knn-svm"),dest="method",default="svm"),
         make_option("-k", "--knn-k",
         action="store", type="int",dest="knnK",default=5),
+        make_option("-d", "--knn-max-dist",
+        action="store", type="float",dest="knnMaxDist",default=None),
         make_option("-l", "--train-label",
         action="store", type="string",dest="trainLabel",default="-1"),
         make_option("-t", "--predict-thresh",
@@ -29,6 +31,8 @@ def getProgOptions():
         action="store", type="string",dest="predFile"),
         make_option("-a", "--lab-to-id",
         action="store", type="string",dest="labToId"),
+        make_option("-u", "--lab-unclass",
+        action="store", type="int",dest="labUnclass",default=0),
         make_option("-g", "--gos-dir",
         action="store", type="string",dest="gosDir",default=None),
         make_option("-n", "--check-null-hyp",
@@ -179,7 +183,7 @@ class SvmOneVsAll:
             labPred = svm.classify(labShog).get_labels()
             binLab[:,label] = labPred
             labSeen[label] = True
-        assert not labSeen[0]
+        #assert not labSeen[0] #why did I need this?
         self.binLab = binLab
         self.labSeen = labSeen
         print "SvmOneVsAll.classifyBin() did not see models for labels: "+','.join(["%s" % l for l in n.where(labSeen == False)[0]])
@@ -238,7 +242,7 @@ class SvmOneVsAll:
         return pred
 
 def svmOneVsAllOneStep(feat,lab,opt=Struct(C=1.,thresh=-200,useSrm=False)):
-    svmMul = SvmOneVsAll(maxLabel=maxLab)
+    svmMul = SvmOneVsAll()
     svmMul.setLab(lab[0])
     svmMul.setFeat(feat[0])
     svmMul.trainMany(opt=opt)
@@ -374,8 +378,12 @@ class App:
             elif opt.method == "knn":
                 dist = SparseEuclidianDistance(feat[0],feat[1])
                 mod = KNN(opt.knnK,dist,Labels(lab[0].astype('f8')))
+                if opt.knnMaxDist is not None:
+                    mod.set_max_dist(opt.knnMaxDist)
                 mod.train()
                 labPred = mod.classify().get_labels()
+                labUnclass = mod.get_unclass_label()
+                labPred[labPred==labUnclass] = opt.labUnclass
                 yield labPred
             elif opt.method == "knn-svm":
                 dist = SparseEuclidianDistance(feat[0],feat[2])
@@ -383,24 +391,36 @@ class App:
                 knn.train()
                 n_test = feat[2].get_num_vectors()
                 ind_neighb = numpy.zeros((n_test,opt.knnK),dtype='i4')
+                dist_neighb = numpy.zeros((n_test,opt.knnK),dtype='f8')
                 print "Computing KNN list..."
-                knn.get_neighbours(ind_neighb)
+                knn.get_neighbours(ind_neighb,dist_neighb)
                 labPred = numpy.zeros(n_test,dtype='i4')
                 print "Training neighbours' SVMs..."
                 for iTest in xrange(n_test):
-                    svmTrFeat = feat[0].subsample(ind_neighb[iTest])
-                    svmTrLab = lab[0][ind_neighb[iTest]]
-                    if (svmTrLab == svmTrLab[0]).all():
-                        labPred[iTest] = svmTrLab[0]
-                        if iTest % 100 == 0:
-                            print "All k neighbours have one label %i for samp %i" % (labPred[iTest],iTest)
+                    samp_ind_neighb = ind_neighb[iTest]
+                    samp_dist_neighb = dist_neighb[iTest]
+                    if opt.knnMaxDist is not None:
+                        samp_in_dist = samp_dist_neighb < opt.knnMaxDist
+                        samp_ind_neighb = samp_ind_neighb[samp_in_dist]
+                        samp_dist_neighb = samp_dist_neighb[samp_in_dist]
+                    if len(samp_ind_neighb) > 0:
+                        svmTrFeat = feat[0].subsample(samp_ind_neighb)
+                        svmTrLab = lab[0][samp_ind_neighb]
+                        if (svmTrLab == svmTrLab[0]).all():
+                            labPred[iTest] = svmTrLab[0]
+                            if iTest % 100 == 0:
+                                print "All %s neighbours have one label %i for samp %i" % (len(samp_ind_neighb),labPred[iTest],iTest)
+                        else:
+                            svmTsFeat = feat[2].subsample(numpy.asarray([iTest],dtype='i4'))
+                            labPred[iTest] = svmOneVsAllOneStep(feat=(svmTrFeat,svmTsFeat),
+                                    lab=(svmTrLab,),
+                                    opt=Struct(C=opt.C,thresh=thresh[0],useSrm=False))
+                            if iTest % 100 == 0:
+                                print "SVM selected label %i from %s for samp %i" % (labPred[iTest],svmTrLab,iTest)
                     else:
-                        svmTsFeat = feat[2].subsample(numpy.asarray([iTest],dtype='i4'))
-                        labPred[iTest] = svmOneVsAllOneStep(feat=(svmTrFeat,svmTsFeat),
-                                lab=(svmTrLab,),
-                                opt=Struct(C=opt.C,thresh=thresh[0],useSrm=False))
+                        labPred[iTest] = opt.labUnclass
                         if iTest % 100 == 0:
-                            print "SVM selected label %i from %s for samp %i" % (labPred[iTest],svmTrLab,iTest)
+                            print "No training samples are within cutoff distance found for samp %i" % (iTest,)
 
                 yield labPred
 

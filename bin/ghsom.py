@@ -1,4 +1,5 @@
 from MGT.GHSOM import GHSOM
+from MGT.SOMCode import SOMCode
 #from MGT.Shogun.Util import *
 from shogun.Features import *
 from MGT.Svm import *
@@ -11,7 +12,7 @@ def getProgOptions():
         make_option("-n", "--name",
         action="store", type="string",dest="name"),
         make_option("-f", "--out-format",
-        action="store", type="choice",choices=("ghsom","csv"),dest="outFormat"),
+        action="store", type="choice",choices=("ghsom","csv","somcode"),dest="outFormat"),
     ]
     parser = OptionParser(usage = "usage: %prog [options]",option_list=option_list)
     (options, args) = parser.parse_args()
@@ -26,8 +27,11 @@ lab = feat.load_svmlight_file(opt.inFeat).get_labels().astype('i4')
 id = svmLoadId(opt.inFeat+'.id')
 
 if opt.outFormat == "ghsom":
-    ghsom = GHSOM(name=opt.name)
-    ghsom.writeInputFromShogunSparse(feat=feat,lab=id)
+    som = GHSOM(name=opt.name)
+    som.writeInputFromShogunSparse(feat=feat,lab=id)
+if opt.outFormat == "somcode":
+    som = SOMCode(name=opt.name)
+    som.writeInputFromShogunSparse(feat=feat,lab=id)
 elif opt.outFormat == "csv":
     mat = feat.get_full_feature_matrix().transpose()
     writer = SvmDenseFeatureWriterCsv(opt.name,writeHeader=True,nFeat=mat.shape[1])

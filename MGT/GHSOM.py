@@ -14,6 +14,7 @@ class GHSOM:
         self.ivFile = name+'.ghsom.iv'
         self.tvFile = name+'.ghsom.tv'
         self.mapIdStr = "_1_1_0_0"
+        self.setModelDir(".")
 
     def setModelDir(self,dirName):
         makedir(dirName)
@@ -141,7 +142,7 @@ class GHSOM:
         inp.close()
         return grid
 
-    def loadModel(self,components=("unit",)):
+    def loadModel(self,components=("unit","weights")):
         mod = SOMModel()
         if "unit" in components:
             unit = self.loadUnit()

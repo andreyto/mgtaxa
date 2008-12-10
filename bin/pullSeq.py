@@ -26,5 +26,5 @@ opt,args = getProgOptions()
 
 seqIds = loadObj(opt.inSeqIds)
 
-
+pullNCBISeq(inSeqs=opt.inSeq,seqIds=seqIds,outSeq=opt.outSeq)
 

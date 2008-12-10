@@ -10,6 +10,7 @@ import random
 from random import sample as sampleWOR #Random sampling w/o replacement
 import os, sys, atexit, re, gzip
 import itertools
+it = itertools
 from types import StringTypes
 
 import pdb

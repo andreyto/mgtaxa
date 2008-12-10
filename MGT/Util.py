@@ -652,6 +652,22 @@ def binCount(seq):
             cnt[x] = 1
     return cnt
 
+def permuteObjArray(arr):
+    #numpy permutation or shuffle do not work on arrays with 'O' datatypes
+    return arr[nrnd.permutation(n.arange(len(arr),dtype=int))]
+
+def groupPairs(data,keyField=0):
+    x = {}
+    assert keyField in (0,1)
+    valField = 1 - keyField
+    for rec in data:
+        key = rec[keyField]
+        val = rec[valField]
+        try:
+            x[key].append(val)
+        except KeyError:
+            x[key] = [ val ]
+    return x
 
 class SubSamplerUniRandomEnd:
     """Uniform random [0,rnd_length] subsampler where rnd_length is in [minLen,maxLen]"""
@@ -666,20 +682,34 @@ class SubSamplerUniRandomEnd:
         We always take from the beginning rather than from a random start,
         because when subsampling short taxa with concatenation, this gives 
         a better chance of not hitting spacer junction."""
-        return samp[0:nrnd.random_integers(self.minLen,min(len(samp),self.maxLen))]
+        sampLen = len(samp)
+        return samp[0:nrnd.random_integers(min(sampLen,self.minLen),min(sampLen,self.maxLen))]
 
 class SubSamplerRandomStart:
-    """random [rnd_start,rnd_length] subsampler where rnd_length is in [minLen,maxLen]"""
+    """random [rnd_start,rnd_start+rnd_length] subsampler where rnd_length is in [minLen,maxLen]"""
 
-    def __init__(self,minLen,maxLen):
+    def __init__(self,minLen,maxLen=None):
+        if maxLen is None:
+            maxLen = minLen
         assert minLen > 0 and maxLen >= minLen
         self.minLen = minLen
         self.maxLen = maxLen
 
     def __call__(self,samp):
-        """Return subsequence [0,random).
+        """Return subsequence [random,random).
         We always take from the beginning rather than from a random start,
         because when subsampling short taxa with concatenation, this gives 
         a better chance of not hitting spacer junction."""
-        return samp[0:nrnd.random_integers(self.minLen,min(len(samp),self.maxLen))]
+        sampLen = len(samp)
+        fragLen = nrnd.random_integers(min(sampLen,self.minLen),min(sampLen,self.maxLen))
+        fragStart = nrnd.random_integers(0,sampLen-fragLen)
+        return samp[fragStart:fragStart+fragLen]
 
+
+def getRectStencil(arr,center,halfSize):
+    """Return a stencil from Numpy 2D array"""
+    center = n.asarray(center)
+    ind = n.clip((center-halfSize,center+halfSize+1),(0,0),n.asarray(arr.shape)-1)
+    sel = arr[ind[0][0]:ind[1][0],ind[0][1]:ind[1][1]]
+    #print center, halfSize, ind, sel
+    return sel,ind

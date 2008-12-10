@@ -30,21 +30,10 @@ def getNCBINode(taxaTree,idSamp):
     else:
         return None
 
-def getRectStencil(arr,center,halfSize):
-    center = n.asarray(center)
-    ind = n.clip((center-halfSize,center+halfSize+1),(0,0),n.asarray(arr.shape)-1)
-    sel = arr[ind[0][0]:ind[1][0],ind[0][1]:ind[1][1]]
-    #print center, halfSize, ind, sel
-    return sel,ind
 
 opt,args = getProgOptions()
 
-mgtDbDir = "/home/atovtchi/work/mgtdata"
-
-taxaDir=os.path.join(mgtDbDir,"taxonomy.new")
-
-taxaTree = loadTaxaTree(ncbiDumpFile=os.path.join(taxaDir,"nodes.dmp"),
-        ncbiNamesDumpFile=os.path.join(taxaDir,"names.dmp"))
+taxaTree = loadTaxaTreeNew()
 
 micNodes = [ taxaTree.getNode(id) for id in micTaxids ]
 phageNode = taxaTree.getNode(phageTailedTaxid)
