@@ -15,17 +15,22 @@ class HdfSampInd(pt.IsDescription):
     """HDF data type to describe one sequence sample.
     A sequence sample starts at some position in one sequence, possibly spans several
     full consequtive sequences and can end in an arbitrary position of the last sequence.
-    The constant sample size is defined outside of this type. The indSeq and begin
-    fields are sufficient to pull the sample out from sequence database.
+    Although, the sample length size is typically constant, we define it inside this type
+    to allow for variable size samples in a more general case. E.g. this will cover WGS contigs
+    for which we want to predict taxonomy without shredding them into contant size chunks.
+    The indSeq, begin and sampLen fields are sufficient to pull the sample out from sequence database.
     The nSeq field is an optimization: it adds one byte to the size of the data structure.
     If the sample spans less than 256 sequences (including sequences where it starts and where it ends),
     nSeq holds that number. Otherwise, nSeq is set to zero. Knowing the number of sequences allows
-    for much more simple Python code that pulls the sequence data."""
+    for more simple and faster Python code that pulls the sequence data.
+    The reason for having this datatype at all instead of just creating another SeqInd is because
+    we need to insert spacers when we """
 
     indSeq        = pt.Int64Col(pos=1) # index of record in seq.ind
     # if begin + sample size > sequence size, sample continues in the next sequence(s)
     begin     = pt.Int64Col(pos=2) # offset of this sample's first element relative to the start of sequence
     nSeq      = pt.UInt8Col(pos=3) # number of sequences
+    sampLen   = pt.UInt32Col(pos=4) # length of sample
 
 # I could not find in Numpy any methods to obtain numeric limits for integer datatypes (found only for floats).
 # This converts -1 to the type of nSeq, which should give the max possible value for any unsigned integer type.

@@ -21,10 +21,7 @@ def getProgOptions():
 
 opt,args = getProgOptions()
 
-
-#taxaTree = loadTaxaTreeNew()
-
 seqIds = loadObj(opt.inSeqIds)
 
-pullNCBISeq(inSeqs=opt.inSeq,seqIds=seqIds,outSeq=opt.outSeq)
+pullNCBISeqIds(inSeqs=opt.inSeq,seqIds=seqIds,outSeq=opt.outSeq)
 

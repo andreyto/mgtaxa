@@ -6,7 +6,7 @@ from numpy import random as nrnd
 import pdb
 
 #from shogun.Kernel import * #GaussianKernel, WeightedDegreeStringKernel, WeightedCommWordStringKernel
-from shogun.Features import Labels
+from shogun.Features import Labels, SparseRealFeatures
 from shogun.Classifier import PlattProb
 #from shogun.PreProc import SortWordString, SortUlongString
 
@@ -92,4 +92,28 @@ def makePlattProb(svm,splitIndex=None,nSplits=None):
     labCr = crossValidate(svm=svm,splitIndex=splitIndex,nSplits=nSplits)
     labTr = svm.get_labels()
     return PlattProb(labTr,labCr)
+
+def convSparseToShog(data,delFeature=False):
+    resFeat = SparseRealFeatures()
+    resFeat.create_sparse_feature_matrix(len(data))
+    for iRec in xrange(len(data)):
+        feat = data[iRec]["feature"]
+        resFeat.set_sparse_feature_vector(iRec,feat["ind"].astype('i4')-1,feat["val"].astype('f8'))
+        if delFeature:
+            data[iRec]["feature"] = None
+    return resFeat
+
+def selShogById(idLabs,data,featShog):
+    """Subsample both data and corresponding Shogun feature object with IdLabels object.
+    @param idLabs IdLabels instance
+    @param data sample data record array
+    @param featShog Shogun feature object with 1-to-1 correspondence to data, e.g. from convSparseToShog(data)
+    @ret Struct(ind,data,featShog) where ind = idLabs.selDataInd(data), data is new data with "label" field updated
+    from idLabs, featShog is new Shogun features"""
+    assert len(data) == featShog.get_num_vectors()
+    ind = idLabs.selDataInd(data)
+    newData = data[ind]
+    idLabs.setDataLab(newData)
+    newFeatShog = featShog.subsample(ind.astype('i4'))
+    return Struct(ind=ind,data=newData,featShog=newFeatShog)
 

@@ -74,7 +74,8 @@ def ncbiFastaRecordsWithTaxa(fastaReader,taxaTree,giToTaxa,errorCounter):
                 else:
                     yield Struct(seq=rec,node=node,gi=gi)
 
-def mapFastaRecordsToTaxaTree(inSeqs,taxaTree,giToTaxa):
+def mapFastaRecordsToTaxaTree(inSeqs,taxaTree,giToTaxa,
+        storeHeader=False,storeSeq=False,storeSeqLen=False):
     from MGT.FastaIO import FastaReader
     taxMis = Struct()
     for inSeq in inSeqs:
@@ -86,6 +87,18 @@ def mapFastaRecordsToTaxaTree(inSeqs,taxaTree,giToTaxa):
             node = rec.node
             if not hasattr(node,'seq'):
                 node.seq = []
-            node.seq.append(Struct(gi=rec.gi))
+            seqRec = Struct(gi=rec.gi)
+            if storeHeader:
+                seqRec.header = rec.seq.header().strip()
+            seqLen = None
+            if storeSeq:
+                seqRec.seq = rec.seq.sequence()
+                seqLen = len(seqRec.seq)
+            if storeSeqLen:
+                if seqLen is None:
+                    seqLen = rec.seq.seqLen()
+                seqRec.seqLen = seqLen
+            node.seq.append(seqRec)
+        inpSeq.close()
     return taxMis
 

@@ -31,20 +31,20 @@ def confusionMatrix(maxLabel,tests):
 
 class PerfMetrics(Struct):
 
-    def setLabToId(self,labToId):
-        self.labToId = labToId
+    def setLabToName(self,labToName):
+        self.labToName = labToName
     
-    def toIdSpe(self):
-        return zip(self.speLab,self.labToId[self.speLab],self.spe)
+    def toNameSpe(self):
+        return [ (self.labToName[spe["label"]],spe) for spe in self.spe ]
 
-    def toIdSpeStr(self):
-        return "[lab:id:spe...]: ", "  ".join( [ "%i:%i:%.2f" % p for p in  self.toIdSpe() ] )
+    def toNameSpeStr(self):
+        return "[name:lab:spe...]: ", "  ".join( [ "%s:%s:%.2f" % (p[0],p[1]["label"],p[1]["val"]) for p in  self.toNameSpe() ] )
 
-    def toIdSen(self):
-        return zip(self.senLab,self.labToId[self.senLab],self.sen)
+    def toNameSen(self):
+        return [ (self.labToName[sen["label"]],sen) for sen in self.sen ]
 
-    def toIdSenStr(self):
-        return "[lab:id:sen...]: ", "  ".join( [ "%i:%i:%.2f" % p for p in  self.toIdSen() ] )
+    def toNameSenStr(self):
+        return "[name:lab:sen...]: ", "  ".join( [ "%s:%s:%.2f" % (p[0],p[1]["label"],p[1]["val"]) for p in  self.toNameSen() ] )
 
     def confMatrCsv(self,out,m=None):
         if m is None:
@@ -54,17 +54,17 @@ class PerfMetrics(Struct):
             closeOut = True
         else:
             closeOut = False
-        labToId = self.labToId
+        labToId = self.labToName
         lab = numpy.arange(len(m),dtype='i4')
-        id = labToId[lab]
+        name = [ labToName[l] for l in lab ]
         out.write('0,0,')
         for l in lab: out.write("%i," % l)
         out.write('\n')
         out.write('0,0,')
-        for i in id: out.write("%i," % i)
+        for i in name: out.write("%i," % i)
         out.write('\n')
         for l in lab:
-            out.write("%i,%i," % (l,id[l]))
+            out.write("%i,%i," % (l,name[l]))
             for x in m[l]: out.write("%i," % x)
             out.write('\n')
         if closeOut:
@@ -88,14 +88,16 @@ def perfMetrics(test,pred,balanceCounts=True):
     senT = t[tNzW]
     sen = (tp[tNzW].astype('f4')/t[tNzW])
     senLab = tNzW[0] + 1 #because mr = m[1:,1:]
-    senMean = sen.mean()
+    sen = n.rec.fromarrays([senLab,sen],names="label,val")
+    senMean = sen["val"].mean()
     pNzW = numpy.where(p > 0)
     spe = (tp[pNzW].astype('f4')/p[pNzW])
     speLab = pNzW[0] + 1 #because mr = m[1:,1:]
+    spe = n.rec.fromarrays([speLab,spe],names="label,val")
     if len(spe) > 0:
-        speMean = spe.mean()
-        speMin = spe.min()
-        speMeanTP = spe[spe>0].mean()
+        speMean = spe["val"].mean()
+        speMin = spe["val"].min()
+        speMeanTP = spe["val"][spe["val"]>0].mean()
     else:
         speMean = 0
         speMin = 0
@@ -109,7 +111,7 @@ def perfMetrics(test,pred,balanceCounts=True):
             " Sen: %.2f"%(senMean*100)+" Spe: %.f"%(speMean*100)+" SpeMin: %.f"%(speMin*100)+\
             " SpeTP: %.f"%(speMeanTP*100)+" Acc: %.f"%(acc*100)
     pm = PerfMetrics(cm=cm,sen=sen,spe=spe,senMean=senMean,speMean=speMean,
-            senLab=senLab,speLab=speLab,speMin=speMin,speMeanTP=speMeanTP,acc=acc)
+            speMin=speMin,speMeanTP=speMeanTP,acc=acc)
     return pm
 
 def loadPred(fileName,nTests):

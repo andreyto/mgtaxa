@@ -11,6 +11,10 @@ n = numpy
 import numpy.random as nrnd
 from tempfile import mkstemp
 from textwrap import dedent
+from collections import defaultdict as defdict
+
+from MGT.Options import Struct
+from MGT.Config import options, Options
 
 from subprocess import Popen, call, PIPE
 
@@ -70,6 +74,11 @@ def run(*popenargs, **kwargs):
     if dryRun:
         print popenargs
     else:
+        # convert something like run("ls -l") into run("ls -l",shell=True)
+        if isinstance(popenargs[0],str) and len(popenargs[0].split()) > 1:
+            kw.setdefault("shell",True)
+        if options.debug > 0:
+            print popenargs
         returncode = call(*popenargs,**kw)
         if returncode != 0:
             raise CalledProcessError(returncode=returncode)
@@ -92,6 +101,8 @@ def backsticks(*popenargs,**kwargs):
         print popenargs
         return dryRet
     else:
+        if options.debug > 0:
+            print popenargs
         kw['stdout'] = PIPE
         p = Popen(*popenargs, **kw)
         retout = p.communicate()[0]
@@ -183,6 +194,16 @@ def stripSfx(s,sep='.'):
     @return input string s without the suffix or original input if suffix is not found"""
     return s.rsplit(sep,1)[0]
 
+
+def strFilter(s,allowed):
+    allowed = set(allowed)
+    return ''.join(( x for x in s if x in allowed ))
+
+_osNameFilter_allowedDef = set(string.ascii_letters + string.digits)
+
+def osNameFilter(s,allowed=_osNameFilter_allowedDef):
+    return strFilter(s,allowed=allowed)
+
 class SymbolRunsCompressor:
 
     def __init__(self,sym,minLen):
@@ -218,158 +239,12 @@ def strAttributes(o,exclude=tuple(),delim=' | '):
     return delim.join([ name + ' : ' + str(val) for (name,val) in o.__dict__.items()
         if not name in exclude])
 
-class Struct(object):
-    """Class to create 'struct's on the fly.
-    Example: o = Struct()
-             o.i = 2
-             o.x = 'ababab'
-             a = Struct({'i':2,'x':'ababab'})
-             b = Struct(i=2,x='ababab')
-             In all three cases, the result will be the same.
-             __str__ method is redefined so that printing the object of this type
-             will show all attributes which are not represented as 'instance at 0xXXXXXX'.
-             """
-
-    strStyle = "p" # p - print "pretty", s - print as one string
-
-    def __init__(self,*lw,**kw):
-        for dict in lw:
-            for key in dict.keys():
-                setattr(self,key,dict[key])
-        for key in kw.keys():
-            setattr(self,key,kw[key])
-
-    def __str__(self):
-        if self.strStyle == "p":
-            return self.strPretty()
-        else:
-            return self.strDense()
-
-    def __getitem__(self,key):
-        try:
-            return getattr(self,key)
-        except AttributeError:
-            raise KeyError(key)
-
-    def setdefault(self,*l):
-        try:
-            return getattr(self,l[0])
-        except AttributeError:
-            if len(l) >= 2:
-                setattr(self,l[0],l[1])
-                return getattr(self,l[0])
-            else:
-                raise KeyError(l[0])
-
-    def update(self,other):
-        if isinstance(other,Struct):
-            o = other.__dict__
-        else:
-            o = other
-        self.__dict__.update(o)
-        
-    def asDict(self):
-        return self.__dict__
-
-    def keys(self):
-        return self.__dict__.keys()
-    
-    def has_key(self,key):
-        return self.__dict__.has_key(key)
-
-    def get(self,*l):
-        try:
-            return getattr(self,*l)
-        except AttributeError:
-            raise KeyError(l[0])
-            
-    def strDense(self):
-        keys = self.keys()
-        keys.sort()
-        pairs = []
-        for key in keys:
-            obj = self.__dict__[key]
-            s_obj = str(obj)
-            if self.isPrintable(s_obj):
-                pairs.append((key,s_obj))
-        return 'Struct('+`pairs`+')'
-
-    def __repr__(self):
-        return self.__str__()
-
-    def isPrintable(self,reprObj):
-        return not re.match("^\<.+ instance at 0x[0-9a-z]+\>$",reprObj)
-
-    def strPretty(self):
-        keys = self.keys()
-        keys.sort()
-        s = '\n'
-        for key in keys:
-            obj = self.__dict__[key]
-            s_obj = str(obj)
-            if self.isPrintable(s_obj):
-                # add to TAB to all rows of attribute's representation
-                lines = s_obj.split('\n')
-                s_obj = '\n\t'.join(lines)
-                s = s + key + '\t=\t' + s_obj + '\n'
-        return s
-
-    def scalars(self):
-        """Return dictionary mapping names of "scalar" attributes to values.
-        "Scalar" attributes are non-sequence primitive types, such as Int, Float, String, None."""
-        r = {}
-        for key in self.keys():
-            val = self.__dict__(key)
-            if type(val) in (NoneType,BooleanType,IntType,LongType,FloatType,StringType):
-                r[key] = val
-        return r
-
-    def copy(self):
-        return copy(self)
-
-
-
-
-class Options(Struct):
-    
-    def copy(self):
-        """Deep copy semantics"""
-        return deepcopy(self)
-
-    def keys(self):
-        """Will ignore all attributes that start with _"""
-        return [ k for k in Struct.keys(self) if not k.startswith("_") ]
-
-    def freeze(self):
-        """Make this object read-only"""
-        Struct.__setattr__(self,"_is_frozen",True)
-        for name in self.keys():
-            val = getattr(self,name)
-            if isinstance(val,Options):
-                val.freeze()
-
-    def unfreeze(self):
-        """Make this object mutable again after previous call to freeze()"""
-        try:
-            Struct.__delattr__(self,"_is_frozen")
-        except AttributeError:
-            pass
-        for name in self.keys():
-            val = getattr(self,name)
-            if isinstance(val,Options):
-                val.unfreeze()
-
-    def __setattr__(self,name,value):
-        if getattr(self,"_is_frozen",False):
-            raise AttributeError(name)
-        else:
-            Struct.__setattr__(self,name,value)
-
-    def __delattr__(self,name):
-        if getattr(self,"_is_frozen",False):
-            raise AttributeError(name)
-        else:
-            Struct.__delattr__(self,name,value)
+def delAttr(o,attr,silent=True):
+    try:
+        delattr(o,attr)
+    except AttributeError:
+        if not silent:
+            raise
 
 
 class FastaReaderSink(object):
@@ -499,59 +374,6 @@ def splitFastaFile(inpFile,outBase,maxChunkSize):
     return iChunk
 
 
-_BatchJobTemplate = \
-"""#!/bin/tcsh
-#$$ -hard -P $PROJECT_CODE
-#$$ -l memory=${MEM}M -l arch="$ARCH"
-#$$ -cwd
-## Submit as 'qsub -b n -S /bin/tcsh script_name'. Apparently admins changed the default value of -b to 'y'
-## and by default qstat now thinks of script_name as a binary file and does not parse it for
-## embedded options (09/14/07).  Shell NEEDS to be correctly specified both at the top and (?) 
-## in qstat options for the user environment to be correctly sourced.
-## echo "Initial environment begin"
-## printenv | sort
-## echo "Initial environment end"
-## pstree
-source $$HOME/.cshrc
-## printenv | sort
-hostname
-uname -a
-pwd
-date
-top -b -n 1 | head -n 15
-####
-"""
-
-class BatchSubmitter(object):
-    def __init__(self,**kw):
-        opts = {}
-        opts.update(kw)
-        opts.setdefault('MEM',2000)
-        opts.setdefault('ARCH',"*amd64")
-        self.header = varsub(_BatchJobTemplate,**opts)
-        
-    def submit(self,cmd,scriptName,runDir=None,sleepTime=1,dryRun=False):
-        curdir = os.getcwd()
-        try:
-            if runDir:
-                os.chdir(runDir)
-            script = self.header + cmd + '\n'
-            strToFile(script,scriptName,dryRun=dryRun)
-            run(["qsub", "-b","n","-S","/bin/tcsh",scriptName],dryRun=dryRun)
-            if not dryRun:
-                # go easy on qsub subsystem
-                sleep(sleepTime)
-        finally:
-            os.chdir(curdir)
-        
-    def nQueued(self):
-        jobList = backsticks(["qstat","-u",os.environ['USER']]).strip().splitlines()
-        return len(jobList)
-
-    def submitIf(self,maxQueued,**kw):
-        while self.nQueued() >= maxQueued:
-            sleep(60)
-        self.submit(**kw)
 
 class HistogramRdnGenerator:
     """When initialized with a histogram (as returned by numpy.histogram(...,norm=False), 
@@ -652,11 +474,18 @@ def binCount(seq):
             cnt[x] = 1
     return cnt
 
+
+def selFieldsArray(arr,fields):
+    return n.rec.fromarrays([arr[f] for f in fields],names=','.join(fields))
+
 def permuteObjArray(arr):
     #numpy permutation or shuffle do not work on arrays with 'O' datatypes
     return arr[nrnd.permutation(n.arange(len(arr),dtype=int))]
 
 def groupPairs(data,keyField=0):
+    """Create a dict(key->list of vals) out of a sequence of pairs (key,val).
+    @param data sequence of pairs
+    @param keyField index of field to use as key (the remaining field is used as val"""
     x = {}
     assert keyField in (0,1)
     valField = 1 - keyField
@@ -668,6 +497,26 @@ def groupPairs(data,keyField=0):
         except KeyError:
             x[key] = [ val ]
     return x
+
+
+def groupRecArray(arr,keyField):
+    """Create a dict(key->record array) out of record array.
+    Similar to creating a non-unique database index or sorting by a given field, 
+    with the exception that the data is copied inside the index.
+    @param arr Numpy record array
+    @param keyField name of field to create the key from
+    @return dict that for each unique value of keyField contains a numpy record 
+    array with all records that have this key value."""
+    m = defdict(list)
+    for rec in arr:
+        m[rec[keyField]].append(rec)
+    for key in m:
+        m[key] = n.asarray(m[key],dtype=arr.dtype)
+    return m
+
+
+def isUniqueArray(arr):
+    return len(n.unique1d(arr)) == len(n.ravel(arr))
 
 class SubSamplerUniRandomEnd:
     """Uniform random [0,rnd_length] subsampler where rnd_length is in [minLen,maxLen]"""

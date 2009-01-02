@@ -1,6 +1,6 @@
-from MGT.Util import Options
+from MGT.Options import *
 import os
-
+pjoin = os.path.join
 
 
 class MGTOptions:
@@ -19,6 +19,8 @@ class MGTOptions:
         self.tmpDir = "/usr/local/scratch/atovtchi"
         self.dataDir = "/home/atovtchi/work/mgtdata"
         self.srcDir = "/home/atovtchi/work/mgtaxa"
+        self.instDir = self.srcDir
+        self.binDir = pjoin(self.instDir,"bin")
         self.testDataDir = os.path.join(self.srcDir,"test_data")
         self.refSeqDataDir = os.path.join(self.dataDir,"refseq")
         # Max length to store for a full header. It is stored in a separate table,
@@ -90,7 +92,7 @@ class MGTOptions:
         self.predictorTable = "pred"
         self.batchRun = Options(
                 PROJECT_CODE = 600005,
-                MEM = 1000,
+                MEM = 2000,
                 ARCH = "lx26-eon64",
                 maxQueued = 50)
 
@@ -105,6 +107,9 @@ class MGTOptions:
         setattr(self,'taxaNodesFile'+sfx,os.path.join(taxaDumpDir,'nodes.dmp'))
         setattr(self,'taxaDivisionFile'+sfx,os.path.join(taxaDumpDir,'division.dmp'))
         setattr(self,'taxaNamesFile'+sfx,os.path.join(taxaDumpDir,'names.dmp'))
+
+    def getPyCmd(self,cmd):
+        return "python %s.py" % pjoin(self.binDir,cmd)
 
 options = MGTOptions()
 

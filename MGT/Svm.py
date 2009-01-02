@@ -1,3 +1,4 @@
+from MGT.Common import *
 from MGT.Taxa import *
 from MGT import Kmers
 from itertools import izip
@@ -53,7 +54,7 @@ def svmSaveId(ids,out):
     if ownOut:
         out.close()
 
-def svmLoadId(inp,dtype='O'):
+def svmLoadId(inp,dtype=idDtype):
     if not hasattr(inp,'read'):
         inp = openCompressed(inp,'r')
         ownInp = True
@@ -260,14 +261,164 @@ def applyToFeatData(data,func):
     for rec in data:
         rec['feature'] = func(rec['feature'])
 
+def isUniqueId(data):
+    return len(n.unique1d(data["id"])) == len(data["id"])
+
+class IdMap:
+    """Map of old IDs to new IDs created as a result of e.g. convFeat call"""
+
+    def __init__(self,data):
+        self.data = data
+
+class IdLabels:
+    """Maps unique sample IDs into classification labels (many-to-one relationship) and their splits"""
+
+    def __init__(self,records=None,fileName=None,initMaps=True):
+        """Ctor.
+        @param records Numpy record array with fields id,label,split.
+        @param fileName file created by save() call
+        @pre Either records or fileName must be None. id field is unique, e.g. obtained with UUID module"""
+        assert records is None or fileName is None
+        self.data = Struct()
+        if records is not None:
+            self.data.records = n.unique1d(records)
+            if initMaps:
+                self.initMaps()
+                self.check()
+        elif fileName is not None:
+            self.load(fileName,initMaps=initMaps)
+
+    def initMaps(self):
+        records = self.getRecords()
+        self.idToRec = dict( (rec["id"],rec) for rec in records )
+        self.labToRec = groupRecArray(records,keyField="label")
+        self.splitToRec = groupRecArray(records,keyField="split")
+        self.initLabToNameMap()
+
+    def initLabToNameMap(self):
+        if not hasattr(self.data,"labNames"):
+            self.labToName = dict( ( (lab,lab) for lab in self.labToRec ) )
+
+    def check(self):
+        records = self.getRecords()
+        idRecs = groupRecArray(records,keyField="id")
+        nonUniqueIds = dict( ( (key,val) for (key,val) in idRecs.iteritems() if len(val) > 1 ) )
+        assert len(nonUniqueIds) == 0
+        
+    def getRecords(self):
+        return self.data.records
+
+    def getIdToRec(self):
+        return self.idToRec
+
+    def getIdToLab(self):
+        return dict( ( (rec["id"],rec["label"]) for rec in self.getRecords() ) )
+
+    def getLabToRec(self):
+        return self.labToRec
+
+    def getSplitToRec(self):
+        return self.splitToRec
+
+    def getSplits(self):
+        splits = {}
+        splitToRec = self.getSplitToRec()
+        for key,rec in splitToRec.iteritems():
+            splits[key] = IdLabels(records=rec)
+        return splits
+
+    def getLabToName(self):
+        return self.labToName
+
+    def getLabNames(self):
+        return self.data.labNames
+
+    def setLabNames(self,labNames):
+        self.data.labNames = labNames
+        self.initLabToNameMap()
+
+    def save(self,fileName):
+        dumpObj(self.data,fileName)
+
+    def load(self,fileName,initMaps=True):
+        self.data = loadObj(fileName)
+        if initMaps:
+            self.initMaps()
+
+    def union(self,other):
+        """Return a union of self and other(s).
+        @param other either IdLabels object or a sequence of such objects.
+        @pre if there are identical ID values, the corresponding records are fully identical too."""
+        srec = self.getRecords()
+        if isinstance(other,IdLabels):
+            orec = other.getRecords()
+            nrec = n.concatenate([srec,orec])
+        else:
+            #other must be a sequence of IdLabels objects
+            orec = [ x.getRecords() for x in other ]
+            orec.append(srec)
+            nrec = n.concatenate(orec)
+        return self.__class__(records=nrec)
+
+    def selDataInd(self,data):
+        """Return array of row indices for data rows that are present in self"""
+        idToRec = self.getIdToRec()
+        return n.asarray([ ind for (ind,id) in it.izip(it.count(),data["id"]) if id in idToRec ],dtype='i4')
+
+    def selData(self,data,setLab=True):
+        d = data[self.selDataInd(data)]
+        if setLab:
+            self.setDataLab(d)
+        return d
+
+    def setDataLab(self,data):
+        idToRec = self.getIdToRec()
+        for rec in data:
+            rec["label"] = idToRec[rec["id"]]["label"]
+
+
+def unionIdLabels(idLabs):
+    if len(idLabs) == 1:
+        return idLabs[0]
+    elif len(idLabs) > 1:
+        first,rest = idLabs[0],idLabs[1:]
+        return first.union(rest)
+    else:
+        raise ValueError("Empty sequence is not allowed as argument to unionIdLabels")
+
+
+def loadIdLabelsMany(fileNames):
+    return unionIdLabels([ IdLabels(fileName=fileName) for fileName in fileNames ])
+        
+
+def saveIdLabelRecords(records,fileName):
+    """Save records that can be used to build an IdLabels object as such an object.
+    This avoids spending time on building IdLabels internal maps."""
+    idLabs = IdLabels(records=records,initMaps=False)
+    idLabs.save(fileName)
+
+
+class LoadSeqPreprocIdFilter:
+
+    def __init__(self,idToLab):
+        self.idToLab = idToLab
+
+    def __call__(self,lab,seq,id):
+        if id in self.idToLab:
+            return ([self.idToLab[id]], [seq], [id])
+        else:
+            return None
+    
+
 class LoadSeqPreprocShred:
 
-    def __init__(self,sampLen,sampNum=0,sampOffset=0):
+    def __init__(self,sampLen,sampNum=0,sampOffset=0,makeUniqueId=False):
         """Constructor.
         @param sampLen length of each output fragment
         @param sampNum if <=0 - return all sampLen long fragments, if other number - that many,
         otherwise it should be f(lab,seq,id) and return the number of shreds for a given sequence.
         @param sampOffset optional offset between end of each shred and start of next
+        @param makeUniqueId if True, generate new UUIDs for shreds - getIdMap() can be used to get the mapping and coords
         """
         self.sampLen = sampLen
         if isinstance(sampNum,int):
@@ -276,6 +427,8 @@ class LoadSeqPreprocShred:
         self.sampNum = sampNum
         self.sampOffset = sampOffset
         self.sampStride = sampLen + sampOffset
+        self.sampCoord = []
+        self.makeUniqueId = makeUniqueId
         assert sampLen > 0
         assert self.sampStride > 0
 
@@ -290,22 +443,62 @@ class LoadSeqPreprocShred:
         if  sampNumVal > 0 and sampNumVal < len(sampStarts):
             sampStarts = sampStarts[:sampNumVal]
         sampSeq = [ seq[start:start+sampLen] for start in sampStarts ]
-        return [lab]*len(sampSeq),sampSeq,[id]*len(sampSeq)
+        if self.makeUniqueId:
+            ids = genId(n=len(sampSeq))
+        else:
+            ids = zeroId(n=len(sampSeq),val=id)
+        oldIds = zeroId(n=len(sampSeq),val=id)
+        self.sampCoord.append(n.rec.fromarrays([oldIds,ids,sampStarts],names="oldId,id,sampStart"))
+        return [lab]*len(sampSeq),sampSeq,ids
+
+    def getIdMap(self):
+        return IdMap(data=n.concatenate(self.sampCoord))
 
 def loadSeqPreprocIdent(lab,seq,id):
     return ([lab], [seq], [id])
 
-def loadSeqPreprocParseSparse(lab,seq,id):
+def loadSeqPreprocDropFeat(lab,seq,id):
+    return ([lab], [None], [id])
+
+def loadSeqPreprocParseSparseOrig(lab,seq,id):
     feat = n.fromiter(( (int(ind),float(val)) 
         for ind,val in (entry.split(':') 
             for entry in seq.split()) ),dtype=[("ind","i4"),("val","f8")])
     return ([lab], [feat], [id])
 
-def loadSeqs(inpFile,preProc=loadSeqPreprocIdent,inpFileId=None):
+_parseSparseTransTable = string.maketrans(':',' ')
+#This one is about 70% faster than versions 1 & 2 below and 5x faster than the Orig
+def loadSeqPreprocParseSparse(lab,seq,id):
+    feat = n.fromstring(seq.translate(_parseSparseTransTable),sep=' ',dtype='f8')
+    feat = n.rec.fromarrays([feat[::2],feat[1::2]],dtype=[("ind","i4"),("val","f8")])
+    return ([lab], [feat], [id])
+
+def loadSeqPreprocParseSparse1(lab,seq,id):
+    feat = n.fromstring(seq.translate(_parseSparseTransTable),sep=' ',dtype='f8')\
+            .view([("ind","f8"),("val","f8")]).astype([("ind","i4"),("val","f8")])
+    return ([lab], [feat], [id])
+
+def loadSeqPreprocParseSparse2(lab,seq,id):
+    feat = n.rec.fromrecords([ entry.split(':') for entry in seq.split() ],dtype=[("ind","i4"),("val","f8")])
+    return ([lab], [feat], [id])
+
+def featIdFileNameDef(featFile):
+    return featFile+'.id'
+
+def loadSeqs(inpFile,preProc=loadSeqPreprocIdent,inpFileId=None,genMissingId=False):
     if inpFileId is None:
         assert isinstance(inpFile,str)
-        inpFileId = inpFile+'.id'
-    idsInp = svmLoadId(inpFileId)
+        inpFileId = featIdFileNameDef(inpFile)
+        if not os.path.exists(inpFileId):
+            inpFileId = None
+    if inpFileId is not None:
+        idsInp = svmLoadId(inpFileId)
+        _genId = lambda i: idsInp[i]
+    else:
+        if genMissingId:
+            _genId = lambda i: genId()
+        else:
+            raise ValueError("Feature ID file not found")
     if isinstance(inpFile,str):
         inpFile=openCompressed(inpFile,'r')
         closeInp=True
@@ -320,7 +513,7 @@ def loadSeqs(inpFile,preProc=loadSeqPreprocIdent,inpFileId=None):
         lab = float(lab)
         if seq[-1] == '\n':
             seq = seq[:-1]
-        rec = preProc(lab,seq,idsInp[iLine])
+        rec = preProc(lab,seq,_genId(iLine))
         if rec is not None:
             labs.extend(rec[0])
             seqs.extend(rec[1])
@@ -328,10 +521,43 @@ def loadSeqs(inpFile,preProc=loadSeqPreprocIdent,inpFileId=None):
         iLine += 1
     label = numpy.asarray(labs,dtype='f8')
     feature = numpy.asarray(seqs,dtype='O')
-    id = numpy.asarray(ids,dtype='O')
+    id = numpy.asarray(ids,dtype=idDtype)
     data = numpy.rec.fromarrays((label,feature,id),names='label,feature,id')
     if closeInp:
         inpFile.close()
+    return data
+
+def convFeat(data,preProc):
+    labs = []
+    seqs = []
+    ids  = []
+    for oldRec in data:
+        rec = preProc(lab=oldRec["label"],seq=oldRec["feature"],id=oldRec["id"])
+        if rec is not None:
+            labs.extend(rec[0])
+            seqs.extend(rec[1])
+            ids.extend(rec[2])
+    label = numpy.asarray(labs,dtype='f8')
+    feature = numpy.asarray(seqs,dtype='O')
+    id = numpy.asarray(ids,dtype=idDtype)
+    return numpy.rec.fromarrays((label,feature,id),names='label,feature,id')
+
+def convFeatInPlace(data,preProc):
+    """Convert feature array in place.
+    @param data feature array, will have its content destroyed
+    @param preProc pre-processor object, that returns zero or one feature records on each call
+    @ret resulting data array"""
+    iPutRec = 0
+    for oldRec in data:
+        rec = preProc(lab=oldRec["label"],seq=oldRec["feature"],id=oldRec["id"])
+        if rec is not None:
+            assert len(rec[0]) == 1 and len(rec[1]) == 1 and len(rec[2]) == 1
+            putRec = data[iPutRec]
+            putRec["label"] = rec[0][0]
+            putRec["feature"] = rec[1][0]
+            putRec["id"] = rec[2][0]
+            iPutRec += 1
+    data.resize(iPutRec)
     return data
 
 def loadSeqsMany(inpFiles,preProc=loadSeqPreprocIdent,inpFilesId=None):
@@ -361,13 +587,24 @@ def sparseToDenseSeqs(data):
 def loadSparseSeqs(inpFile,inpFileId=None):
     return loadSeqs(inpFile=inpFile,preProc=loadSeqPreprocParseSparse,inpFileId=inpFileId)
 
+def loadSparseSeqsMany(inpFiles,idLab=None):
+    if idLab is None:
+        return loadSeqsMany(inpFiles=inpFiles,preProc=loadSeqPreprocParseSparse)
+    else:
+        data = loadSeqsMany(inpFiles=inpFiles,preProc=LoadSeqPreprocIdFilter(idToLab=idLab.getIdToLab()))
+        return convSeqsToSparseInPlace(data)
+
+def convSeqsToSparseInPlace(data):
+    return convFeatInPlace(data,preProc=loadSeqPreprocParseSparse)
+
+
 def loadSparseSeqsAsDense(inpFile,inpFileId=None):
     return sparseToDenseSeqs(loadSparseSeqs(inpFile,inpFileId))
 
 def saveSeqs(data,outFile,outFileId=None):
     if outFileId is None:
         assert isinstance(outFile,str)
-        outFileId = outFile+'.id'
+        outFileId = featIdFileNameDef(outFile)
     svmSaveId(data['id'],outFileId)
     if isinstance(outFile,str):
         outFile=openCompressed(outFile,'w')

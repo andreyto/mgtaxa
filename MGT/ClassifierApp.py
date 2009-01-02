@@ -1,49 +1,12 @@
-"""Read a file with sequence features and create a file with sparse real features based on word distance histogram."""
+"""Application-level interface to supervised classifiers."""
 
-from MGT.Shogun.Util import *
+from MGT.Shogun import *
+from MGT.Svm import *
 from shogun.Features import *
 from shogun.Classifier import *
 from shogun.Distance import *
 from MGT.PredProcessor import *
-
-def getProgOptions():
-    from optparse import OptionParser, make_option
-    option_list = [
-        make_option("-i", "--in-feat",
-        action="append", type="string",dest="inFeat"),
-        make_option("-c", "--svm-penalty",
-        action="store", type="float",dest="C",default=1.),
-        make_option("-m", "--mode",
-        action="store", type="choice",choices=("train","test","predict"),dest="mode",default="train"),
-        make_option("-e", "--method",
-        action="store", type="choice",choices=("svm","knn","knn-svm"),dest="method",default="svm"),
-        make_option("-k", "--knn-k",
-        action="store", type="int",dest="knnK",default=5),
-        make_option("-d", "--knn-max-dist",
-        action="store", type="float",dest="knnMaxDist",default=None),
-        make_option("-l", "--train-label",
-        action="store", type="string",dest="trainLabel",default="-1"),
-        make_option("-t", "--predict-thresh",
-        action="store", type="string",dest="predThresh",default="-2000"),
-        make_option("-o", "--model-name",
-        action="store", type="string",dest="modelRoot",default="mod"),
-        make_option("-p", "--pred-file",
-        action="store", type="string",dest="predFile"),
-        make_option("-a", "--lab-to-id",
-        action="store", type="string",dest="labToId"),
-        make_option("-u", "--lab-unclass",
-        action="store", type="int",dest="labUnclass",default=0),
-        make_option("-g", "--gos-dir",
-        action="store", type="string",dest="gosDir",default=None),
-        make_option("-n", "--check-null-hyp",
-        action="store_true", dest="checkNull",default=False),
-        make_option("-s", "--svm-srm",
-        action="store_true", dest="useSrm",default=False),
-    ]
-    parser = OptionParser(usage = "usage: %prog [options]",option_list=option_list)
-    (options, args) = parser.parse_args()
-
-    return options,args
+from MGT.App import *
 
 
 def softBinDec(y):
@@ -141,12 +104,6 @@ class ModMemFact(ModFact):
 
 
 
-def analyzePerf(labTest,labPred,labToId,name):
-    pm = perfMetrics(labTest,labPred,balanceCounts=False)
-    pm.setLabToId(labToId)
-    print pm.toIdSpeStr()
-    print pm.toIdSenStr()
-    pm.confMatrCsv(name+'cm.csv')
 
 
 class SvmOneVsAll:
@@ -279,28 +236,95 @@ def analyzePredGos(pred,dataDir):
     counts[0] = 0
     print "Assignment ratios excl reject: ", counts*100./counts.sum()
 
-class App:
 
-    def __init__(self,opt):
-        self.opt = opt
+
+
+class ClassifierApp(App):
+    
+    def parseCmdLine(self):
+        from optparse import OptionParser, make_option
+        optChoicesMode = ("train","test","predict")
+        option_list = [
+            make_option("-i", "--in-feat",
+            action="append", type="string",dest="inFeat"),
+            make_option("-c", "--svm-penalty",
+            action="store", type="float",dest="C",default=1.),
+            make_option("-m", "--mode",
+            action="store", type="choice",choices=optChoicesMode,
+            dest="mode",default="train",help=("What to do, choice of %s, default is %%default" % (optChoicesMode,))),
+            make_option("-e", "--method",
+            action="store", type="choice",choices=("svm","knn","knn-svm"),dest="method",default="svm"),
+            make_option("-k", "--knn-k",
+            action="store", type="int",dest="knnK",default=5,help="Number of nearest neighbours in KNN algorithm"),
+            make_option("-d", "--knn-max-dist",
+            action="store", type="float",dest="knnMaxDist",default=None),
+            make_option("-l", "--train-label",
+            action="store", type="string",dest="trainLabel",default="-1"),
+            make_option("-t", "--predict-thresh",
+            action="store", type="string",dest="predThresh",default="-2000"),
+            make_option("-o", "--model-name",
+            action="store", type="string",dest="modelRoot",default="mod"),
+            make_option("-p", "--pred-file",
+            action="store", type="string",dest="predFile",default=None),
+            make_option("-r", "--perf-file",
+            action="store", type="string",dest="perfFile"),
+            make_option("-a", "--labels",
+            action="append", type="string",dest="labels"),
+            make_option("-u", "--lab-unclass",
+            action="store", type="int",dest="labUnclass",default=0),
+            make_option("-g", "--gos-dir",
+            action="store", type="string",dest="gosDir",default=None),
+            make_option("-n", "--check-null-hyp",
+            action="store_true", dest="checkNull",default=False),
+            make_option("-s", "--svm-srm",
+            action="store_true", dest="useSrm",default=False),
+            make_option(None, "--export-conf-matr",
+            action="store_true", dest="exportConfMatr",default=False),
+            make_option(None, "--save-conf-matr",
+            action="store_true", dest="saveConfMatr",default=False),
+            make_option(None, "--opt-file",
+            action="store", type="string",dest="optFile",default=None,
+            help="Load all program otions from this pickled file"),
+            make_option(None, "--batch",
+            action="store_true", dest="batch",default=False,help="Submit itself to batch queue"),
+        ]
+        parser = OptionParser(usage = "Construct several types of classifiers or use previously"+\
+                " trained classifier for testing and prediction\n"+\
+                "%prog [options]",option_list=option_list)
+        (options, args) = parser.parse_args()
+
+        return options,args
+
+    def loadFeatures(self):
+        opt = self.opt
+        idLab = loadIdLabelsMany(fileNames=opt.labels)
+        self.idLab = idLab
+        assert len(opt.inFeat) > 0
+        dataFeat = loadSparseSeqsMany(opt.inFeat,idLab=idLab)
+        idLabSplits = idLab.getSplits()
         feat = []
         lab = []
-        inFeat = [ l for l in opt.inFeat ]
-        if len(inFeat) < 3:
-            inLast = inFeat[-1]
-            for i in range(len(inFeat),3):
-                inFeat.append(inLast)
-        print inFeat
-        self.inFeat = inFeat
-        for i in xrange(len(inFeat)):
-            # just append the previous loaded object if the file name is the same
-            if not (i > 0 and inFeat[i] == inFeat[i-1]):
-                f = SparseRealFeatures()
-                l = f.load_svmlight_file(inFeat[i]).get_labels().astype('i4')
-            feat.append(f)
-            lab.append(l)
+        data = []
+        for split in sorted(idLabSplits):
+            idl = idLabSplits[split]
+            splitData = idl.selData(dataFeat)
+            splitFeat = convSparseToShog(data=splitData,delFeature=True)
+            data.append(splitData)
+            feat.append(splitFeat)
+            lab.append(splitData["label"].astype('i4'))
+        # repeat the last split if less than 3
+        if len(feat) < 3:
+            iLast = len(feat) - 1
+            for i in range(len(feat),3):
+                data.append(data[iLast])
+                feat.append(feat[iLast])
+                lab.append(lab[iLast])
+        print opt.inFeat
+        self.inFeat = opt.inFeat
         self.feat = feat
         self.lab = lab
+        self.data = data
+
 
     def processOptions(self):
         feat = self.feat
@@ -343,11 +367,6 @@ class App:
                 svmMul.trainMany(trainLabels=trainLabels,opt=opt)
 
         elif opt.mode in ("test","predict"):
-            if hasattr(opt,"labToId") and opt.labToId is not None:
-                labToId = loadObj(opt.labToId)
-            else:
-                labToId = n.arange(20000)
-            self.labToId = labToId
             if opt.method == "svm":
                 if len(trainLabels) == 1 and trainLabels[0] == -1:
                     labLoad = None
@@ -371,10 +390,12 @@ class App:
                 svmMul.setLab(None)
                 svmMul.setFeat(feat[2])
                 svmMul.classifyBin()
-                for t in thresh:
-                    labPred = svmMul.classify(opt=Struct(thresh=t,useSrm=opt.useSrm))
+                labPred = n.zeros((len(thresh),len(lab[2])),dtype='i4')
+                for iThresh in xrange(len(thresh)):
+                    t = thresh[iThresh]
+                    labPred[iThresh] = svmMul.classify(opt=Struct(thresh=t,useSrm=opt.useSrm))
                     print "Threshold %.3f" % t
-                    yield labPred
+                return Struct(labPred=labPred,param=thresh)
             elif opt.method == "knn":
                 dist = SparseEuclidianDistance(feat[0],feat[1])
                 mod = KNN(opt.knnK,dist,Labels(lab[0].astype('f8')))
@@ -384,8 +405,10 @@ class App:
                 labPred = mod.classify().get_labels()
                 labUnclass = mod.get_unclass_label()
                 labPred[labPred==labUnclass] = opt.labUnclass
-                yield labPred
+                labPred.shape = (1,len(labPred))
+                return Struct(labPred=labPred,param=None)
             elif opt.method == "knn-svm":
+                assert len(thresh) == 1,"multiple SVM decision thresholds not implemented for knn-svm"
                 dist = SparseEuclidianDistance(feat[0],feat[2])
                 knn = KNN(opt.knnK,dist,Labels(lab[0].astype('f8')))
                 knn.train()
@@ -422,24 +445,44 @@ class App:
                         if iTest % 100 == 0:
                             print "No training samples are within cutoff distance found for samp %i" % (iTest,)
 
-                yield labPred
+                labPred.shape = (1,len(labPred))
+                return Struct(labPred=labPred,param=None)
 
-    def run(self):
+    def run(self,**kw):
         opt = self.opt
-        for labPred in self.processOptions():
+        if opt.batch:
+            return self.runBatch(**kw)
+        assert not (opt.mode == "test" and opt.perfFile is None)
+        assert not (opt.mode == "predict" and opt.predFile is None)
+        self.loadFeatures()
+        pred = self.processOptions()
+        if pred is not None:
+            idPred = selFieldsArray(self.data[2],["id","label"])
+            assert len(idPred) == len(pred.labPred[0])
+            if opt.predFile is not None:
+                dumpObj(Struct(pred=pred,idPred=idPred),opt.predFile)
             if opt.mode == "test":
-                analyzePerf(self.lab[2],labPred,self.labToId,"mod")
+                perf = []
+                for iPred in range(len(pred.labPred)):
+                    labP = pred.labPred[iPred]
+                    pm = perfMetrics(self.lab[2],labP,balanceCounts=False)
+                    pm.setLabToName(self.idLab.getLabToName())
+                    print pm.toNameSpeStr()
+                    print pm.toNameSenStr()
+                    if opt.exportConfMatr:
+                        pm.confMatrCsv(opt.perfFile+'.%00i.cm.csv' % iPred)
+                    if not opt.saveConfMatr:
+                        delattr(pm,"cm")
+                    perf.append(pm)
+                dumpObj(Struct(perf=perf,param=pred.param),opt.perfFile)
             elif opt.mode == "predict":
-                print self.labToId
-                print numpy.bincount(labPred.astype('i4'))
-                dumpObj(labPred,opt.predFile)
+                print self.labels.labNames()
+                print numpy.bincount(pred.labPred[0].astype('i4'))
                 if opt.gosDir is not None:
                     analyzePredGos(labPred,opt.gosDir)
 
 
-opt,args = getProgOptions()
-
-app = App(opt)
-
-app.run()
+if __name__ == "__main__":
+    app = ClassifierApp()
+    app.run()
 

@@ -131,10 +131,10 @@ BOOST_PY_ST_LIB := libboost_python.a
 BOOST_PY_SH_LIB := boost_python
 endif
 else
-BOOST_INC_DIR := $(INST)/include/boost-1_34
+BOOST_INC_DIR := $(INST)/include/boost-1_37
 BOOST_LIB_DIR := $(INSTMACH)/lib
-BOOST_PY_ST_LIB := libboost_python-gcc41-1_34.a
-BOOST_PY_SH_LIB := boost_python-gcc41
+BOOST_PY_ST_LIB := libboost_python-gcc41-mt-1_37.a
+BOOST_PY_SH_LIB := boost_python-gcc41-mt
 endif
 
 ifdef ($BOOST_STATIC)

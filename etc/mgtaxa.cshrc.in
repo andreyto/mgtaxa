@@ -4,7 +4,7 @@ setenv MGT_EXEC_BIN __MGT_EXEC_BIN__
 setenv PYTHONPATH __MGT_PY_PATH__:${PYTHONPATH}
 setenv ${PATH}:${MGT_BIN}:${MGT_EXEC_BIN}
 
-setenv LD_LIBRARY_PATH $INSTMACH/lib
+#setenv LD_LIBRARY_PATH $INSTMACH/lib
 setenv CA_TOP ${HOME}/work/CA/wgs-assembler
 setenv CA_BINDIR ${CA_TOP}/Linux-amd64/bin
 setenv SCM_SRC ${CA_TOP}/src/AS_SCM
