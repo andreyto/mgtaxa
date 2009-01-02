@@ -6,7 +6,7 @@ import matplotlib as plib
 
 class SOMPlot:
 
-    def __init__(self,mod,labColorMap,markerSize=64,alpha=0.75,figSizeScatter=12,figSizePie=8,figSizeMat=12,name="som_plot"):
+    def __init__(self,mod,labColorMap,markerSize=64,alpha=0.75,figSizeScatter=12,figSizePie=8,figSizeMat=12,name="som_plot",onClick=lambda event: None):
         self.mod=mod
         self.labColorMap=labColorMap
         self.markerSize=markerSize
@@ -17,15 +17,16 @@ class SOMPlot:
         self.figSizePie=(figSizePie,figSizePie)
         self.iFig = 0
         self.name = name
+        self.onClick = onClick
 
     def plot(self):
         self.iFig = 0
         self.plotScatter()
         self.plotPie()
-        self.plotMat(self.mod.umat)
-        self.plotMat(self.mod.pmat)
-        self.plotMat(self.mod.usmat)
-        pl.show()
+        #self.plotMat(self.mod.umat)
+        #self.plotMat(self.mod.pmat)
+        #self.plotMat(self.mod.usmat)
+        #pl.show()
 
     def nextIFig(self,iFig=0):
         iFigNext = max(self.iFig+1,iFig)
@@ -64,7 +65,7 @@ class SOMPlot:
                 i_vect += n_v
 
         fig = pl.figure(iFig, figsize=figSizeScatter)
-        pl.scatter(x,y,c=c,s=s, alpha=alpha)
+        pl.scatter(x,y,c=c,s=s, alpha=alpha,picker=5)
 
         #ticks = arange(-0.06, 0.061, 0.02)
         xt = n.arange(0,unit.shape[0]+1,10,dtype=float)
@@ -79,10 +80,8 @@ class SOMPlot:
         #pl.colorbar()
         pl.savefig(self.figFileName(iFig))
 
-        def onclick(event):
-            print 'button=%d, x=%d, y=%d, xdata=%f, ydata=%f'%\
-                    (event.button, event.x, event.y, event.xdata, event.ydata)
-        cid = fig.canvas.mpl_connect('button_press_event', onclick)
+        cid = fig.canvas.mpl_connect('button_press_event', self.onClick)
+        pl.show()
 
 
     def plotPie(self,iFig=0):

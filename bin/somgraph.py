@@ -126,8 +126,18 @@ color = dict(zip(lab,col))
 #for (id,lab) in idToLab.items():
 #    colorMap[id] = color[lab]
 mod.setLabels(idToLab)
+def onClick(event):
+    print 'button=%d, x=%d, y=%d, xdata=%f, ydata=%f'%\
+            (event.button, event.x, event.y, event.xdata, event.ydata)
+    ids = mod.unit[round(event.xdata),round(event.ydata)]
+    print ids
+    for id in ids:
+        if id.startswith('NCBIVM_'):
+            taxid = int(id.split('NCBIVM_')[1])
+            node = taxaTree.getNode(taxid)
+            print node.lineageStr()
 pl.gray()
-plot = SOMPlot(mod=mod,labColorMap=color,markerSize=40,figSizeScatter=12,figSizePie=5,figSizeMat=12)
+plot = SOMPlot(mod=mod,labColorMap=color,markerSize=40,figSizeScatter=12,figSizePie=5,figSizeMat=12,onClick=onClick)
 plot.plot()
 pl.show()
 
