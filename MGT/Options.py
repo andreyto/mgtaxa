@@ -36,6 +36,24 @@ class Struct(object):
         except AttributeError:
             raise KeyError(key)
 
+    def __setitem__(self,key,value):
+        setattr(self,key,value)
+    
+    def __len__(self):
+        return len(self.__dict__)
+
+    def __delitem__(self,key):
+        try:
+            delattr(self,key)
+        except AttributeError:
+            raise KeyError(key)
+
+    def __iter__(self):
+        return self.__dict__.iterkeys()
+
+    def iterkeys(self):
+        return self.__dict__.iterkeys()
+
     def setdefault(self,*l):
         try:
             return getattr(self,l[0])

@@ -96,5 +96,5 @@ def runBatch(cmd,scriptName=None,cwd=None,sleepTime=0,depend=[],dryRun=False,**k
     if not isinstance(cmd,str):
         cmd = ' '.join(cmd)
     bs = BatchSubmitter(**kw)
-    return bs.submit(cmd=cmd,scriptName=scriptName,cwd=cwd,sleepTime=sleepTime,depend=depends,dryRun=dryRun)
+    return bs.submit(cmd=cmd,scriptName=scriptName,cwd=cwd,sleepTime=sleepTime,depend=depend,dryRun=dryRun)
 

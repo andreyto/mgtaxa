@@ -1,16 +1,19 @@
 from MGT.App import *
+from MGT.ClassifierApp import ClassifierApp
+from MGT.Svm import *
+from MGT.PredProcessor import Predictions
 
-class CrossValidator(App):
+class CrossValidatorApp(App):
     """Class that performs cross validation"""
 
-    def run(self,**kw):
+    batchDepModes = ("scatter",)
+
+    def doWork(self,**kw):
         opt = self.opt
-        if opt.batch:
-            return self.runBatch(**kw)
         self.clOpt = opt.clOpt
         self.cwd = opt.get("cwd",os.getcwd())
         self.loadIdLabels()
-        self.crossVal()
+        return self.crossVal()
 
     def loadIdLabels(self):
         self.idLab = loadIdLabelsMany(fileNames=self.clOpt.labels)
@@ -25,7 +28,7 @@ class CrossValidator(App):
         return [ (d,int(rex.search(d).group(1))) for d in glob(pjoin(self.cwd,"split-*")) ]
 
     def getSplitOptFileName(self,split):
-        return pjoin(self.getSplitDirName(),"opt.pkl")
+        return pjoin(self.getSplitDirName(split),"opt.pkl")
 
     def getOptFileName(self):
         """Return stable file name for options dump.
@@ -37,62 +40,72 @@ class CrossValidator(App):
         idLab = self.idLab
         spDir = self.getSplitDirName(testSplit)
         makedir(spDir)
-        spIdLab = idLab.getRecords().copy()
+        idLabRec = idLab.getRecords()
+        spIdLab = idLabRec.copy()
         spIdLab["split"] = 1
-        spIdLab["split"][idLab["split"]==testSplit] = 2
+        spIdLab["split"][idLabRec["split"]==testSplit] = 2
         spIdLabFile = pjoin(spDir,"idlab.pkl")
-        saveIdLabelRecords(records=spIdLab,fileName=psIdLabFile)
+        saveIdLabelRecords(records=spIdLab,fileName=spIdLabFile)
         spClOpt = copy(self.clOpt)
         spClOpt.labels = [spIdLabFile]
         spClOpt.predFile = pjoin(spDir,"pred.pkl")
         spClOpt.perfFile = pjoin(spDir,"perf.pkl")
         spClOpt.mode = "train"
+        spClOpt.runMode = self.opt.runMode
         spOptFile = self.getSplitOptFileName(testSplit)
         #that just saves a copy for us - App will create its own when it 
         #submits a batch job (unique and slightly modified)
         dumpObj(spClOpt,spOptFile)
-        spApp = ClassifierApp(**spClOpt)
-        jobs = spApp.runBatch(cwd=spDir)
+        spApp = ClassifierApp(opt=spClOpt)
+        jobs = spApp.run(cwd=spDir)
         spClOpt.mode = "test"
-        spApp = ClassifierApp(**spClOpt)
-        jobs = spApp.runBatch(cwd=spDir,depend=jobs)
+        spApp = ClassifierApp(opt=spClOpt)
+        jobs = spApp.run(cwd=spDir,depend=jobs)
         return jobs
 
-    def gatherTest(self):
-        """Collect results from training/testing all splits"""
+    def gatherSplits(self):
+        """Collect results from training/testing all splits and compute total performance metrics"""
         opt = self.opt
-        pred = Struct(pred=Struct(labPred=[],param=None),idPred=[]) 
+        clOpt = self.clOpt
+        labPred = []
+        param = None
+        idPred = []
         for (spDir,split) in self.listSplitDirNames():
             spClOpt = loadObj(self.getSplitOptFileName(split))
             spPred = loadObj(spClOpt.predFile)
-            pred.pred.labPred.append(spPred.pred.labPred)
+            labPred.append(spPred.labPred)
             #param (e.g. decision thresholds) is assumed to be identical for all splits
-            pred.pred.param = spPred.pred.param
-            pred.idPred.append(spPred.idPred)
-        pred.pred.labPred = n.column_stack(pred.pred.labPred)
-        pred.idPred = n.column_stack(pred.idPred)
+            param = spPred.param
+            idPred.append(spPred.idPred)
+        labPred = n.column_stack(labPred)
+        idPred = n.concatenate(idPred)
+        pred = Predictions(labPred=labPred,param=param,idPred=idPred)
         opt.setdefault("predFile",pjoin(self.cwd,"pred.pkl"))
         opt.setdefault("perfFile",pjoin(self.cwd,"perf.pkl"))
-        dumpObj(pred,opt.predFile)
         dumpObj(opt,self.getOptFileName())
-
-
-
+        if opt.predFile is not None:
+            dumpObj(pred,opt.predFile)
+        perf = pred.calcPerfMetrics(idLab=self.idLab,
+                confMatrFileStem=opt.perfFile if clOpt.exportConfMatr else None,
+                keepConfMatr=clOpt.saveConfMatr)
+        dumpObj(perf,opt.perfFile)
 
 
     def crossVal(self):
-        jobs = []
-        for split in sorted(self.idLab.getSplitToRec()):
-            jobs.extend(self.trainTest(testSplit=split))
-        gtOpt = copy(self.opt)
-        gtOpt.mode = "gatherTest"
-        gtApp = self.getFactory()(**gtOpt)
-        jobs = gtApp.runBatch(cwd=self.cwd,depend=jobs)
-        return jobs
+        if self.opt.mode == "scatter":
+            jobs = []
+            for split in sorted(self.idLab.getSplitToRec()):
+                jobs.extend(self.trainTest(testSplit=split))
+            gtOpt = copy(self.opt)
+            gtOpt.mode = "gather"
+            gtApp = self.factory(opt=gtOpt)
+            jobs = gtApp.run(cwd=self.cwd,depend=jobs)
+            return jobs
+        elif self.opt.mode == "gather":
+            self.gatherSplits()
 
 
 
 if __name__ == "__main__":
-    app = CrossValidatorApp()
-    app.run()
+    runAppAsScript(CrossValidatorApp)
 

@@ -13,6 +13,7 @@ import os, sys, atexit, re, gzip
 pjoin = os.path.join
 import itertools
 it = itertools
+import operator
 from types import StringTypes
 from collections import defaultdict as defdict
 

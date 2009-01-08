@@ -241,8 +241,9 @@ def analyzePredGos(pred,dataDir):
 
 class ClassifierApp(App):
     
-    def parseCmdLine(self):
-        from optparse import OptionParser, make_option
+    @classmethod
+    def makeOptionParserArgs(klass):
+        from optparse import make_option
         optChoicesMode = ("train","test","predict")
         option_list = [
             make_option("-i", "--in-feat",
@@ -261,7 +262,7 @@ class ClassifierApp(App):
             make_option("-l", "--train-label",
             action="store", type="string",dest="trainLabel",default="-1"),
             make_option("-t", "--predict-thresh",
-            action="store", type="string",dest="predThresh",default="-2000"),
+            action="store", type="string",dest="thresh",default="-2000"),
             make_option("-o", "--model-name",
             action="store", type="string",dest="modelRoot",default="mod"),
             make_option("-p", "--pred-file",
@@ -282,22 +283,28 @@ class ClassifierApp(App):
             action="store_true", dest="exportConfMatr",default=False),
             make_option(None, "--save-conf-matr",
             action="store_true", dest="saveConfMatr",default=False),
-            make_option(None, "--opt-file",
-            action="store", type="string",dest="optFile",default=None,
-            help="Load all program otions from this pickled file"),
-            make_option(None, "--batch",
-            action="store_true", dest="batch",default=False,help="Submit itself to batch queue"),
         ]
-        parser = OptionParser(usage = "Construct several types of classifiers or use previously"+\
+        return Struct(usage = "Construct several types of classifiers or use previously"+\
                 " trained classifier for testing and prediction\n"+\
                 "%prog [options]",option_list=option_list)
-        (options, args) = parser.parse_args()
 
-        return options,args
+    @classmethod
+    def parseCmdLinePost(klass,options,args,parser):
+        thresh = [ float(t) for t in options.thresh.split(',') ]
+        if len(thresh) == 3:
+            thresh = numpy.arange(thresh[0],thresh[1],thresh[2])
+        elif len(thresh) == 1:
+            thresh = numpy.array(thresh,dtype='f4')
+        else:
+            parser.error("--predict-thresh value must be 'start,end,step' or 'value', received %s" % options.thresh)
+        options.thresh = thresh
 
     def loadFeatures(self):
         opt = self.opt
-        idLab = loadIdLabelsMany(fileNames=opt.labels)
+        labels = opt.labels
+        if labels is None:
+            labels = [ lf+".idlab" for lf in opt.inFeat ]
+        idLab = loadIdLabelsMany(fileNames=labels)
         self.idLab = idLab
         assert len(opt.inFeat) > 0
         dataFeat = loadSparseSeqsMany(opt.inFeat,idLab=idLab)
@@ -333,14 +340,7 @@ class ClassifierApp(App):
         
         trainLabels = [ int(l) for l in opt.trainLabel.split(',') ]
 
-        thresh = [ float(t) for t in opt.predThresh.split(',') ]
-        if len(thresh) == 3:
-            thresh = numpy.arange(thresh[0],thresh[1],thresh[2])
-        elif len(thresh) == 1:
-            thresh = numpy.array(thresh,dtype='f4')
-        else:
-            raise AssertionError("threshold must be 'start,end,step' or 'value'")
-
+        thresh = opt.thresh
 
         if opt.checkNull:
             if opt.mode == "train":
@@ -395,7 +395,7 @@ class ClassifierApp(App):
                     t = thresh[iThresh]
                     labPred[iThresh] = svmMul.classify(opt=Struct(thresh=t,useSrm=opt.useSrm))
                     print "Threshold %.3f" % t
-                return Struct(labPred=labPred,param=thresh)
+                return Struct(labPred=labPred,param=n.rec.fromarrays([thresh],names="thresh"))
             elif opt.method == "knn":
                 dist = SparseEuclidianDistance(feat[0],feat[1])
                 mod = KNN(opt.knnK,dist,Labels(lab[0].astype('f8')))
@@ -448,10 +448,9 @@ class ClassifierApp(App):
                 labPred.shape = (1,len(labPred))
                 return Struct(labPred=labPred,param=None)
 
-    def run(self,**kw):
+    def doWork(self,**kw):
         opt = self.opt
-        if opt.batch:
-            return self.runBatch(**kw)
+        print "Classifier options: \n%s\n" % opt
         assert not (opt.mode == "test" and opt.perfFile is None)
         assert not (opt.mode == "predict" and opt.predFile is None)
         self.loadFeatures()
@@ -459,30 +458,22 @@ class ClassifierApp(App):
         if pred is not None:
             idPred = selFieldsArray(self.data[2],["id","label"])
             assert len(idPred) == len(pred.labPred[0])
+            pred = Predictions(labPred=pred.labPred,param=pred.param,idPred=idPred)
             if opt.predFile is not None:
-                dumpObj(Struct(pred=pred,idPred=idPred),opt.predFile)
+                dumpObj(pred,opt.predFile)
             if opt.mode == "test":
-                perf = []
-                for iPred in range(len(pred.labPred)):
-                    labP = pred.labPred[iPred]
-                    pm = perfMetrics(self.lab[2],labP,balanceCounts=False)
-                    pm.setLabToName(self.idLab.getLabToName())
-                    print pm.toNameSpeStr()
-                    print pm.toNameSenStr()
-                    if opt.exportConfMatr:
-                        pm.confMatrCsv(opt.perfFile+'.%00i.cm.csv' % iPred)
-                    if not opt.saveConfMatr:
-                        delattr(pm,"cm")
-                    perf.append(pm)
-                dumpObj(Struct(perf=perf,param=pred.param),opt.perfFile)
+                perf = pred.calcPerfMetrics(idLab=self.idLab,
+                        confMatrFileStem=opt.perfFile if opt.exportConfMatr else None,
+                        keepConfMatr=opt.saveConfMatr)
+                dumpObj(perf,opt.perfFile)
             elif opt.mode == "predict":
                 print self.labels.labNames()
-                print numpy.bincount(pred.labPred[0].astype('i4'))
+                print n.bincount(pred.labPred[0].astype('i4'))
                 if opt.gosDir is not None:
                     analyzePredGos(labPred,opt.gosDir)
 
 
+
 if __name__ == "__main__":
-    app = ClassifierApp()
-    app.run()
+    runAppAsScript(ClassifierApp)
 

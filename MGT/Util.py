@@ -12,6 +12,8 @@ import numpy.random as nrnd
 from tempfile import mkstemp
 from textwrap import dedent
 from collections import defaultdict as defdict
+import operator
+import itertools as it
 
 from MGT.Options import Struct
 from MGT.Config import options, Options
@@ -475,8 +477,51 @@ def binCount(seq):
     return cnt
 
 
+def recFromArrays(arrays,names):
+    """Does the same as numpy.rec.fromarrays() but does not fail when arrays are themselves recarrays.
+    Also, if any of the arrays is a numpy.rec.record scalar, it will be broadcast to the length
+    of other arrays (same as in array assignment sematics). Always creates a fresh copy of the data.
+    @param arrays sequence of numpy arrays (possibly record arrays themselves), of the same shape
+    @param names sequence or a comma delimited string with new field names, one per input array
+    @return new record array with concatenated records"""
+    if isinstance(names,str):
+        names = names.split(",")
+    assert len(names) == len(arrays) and len(arrays)>0, "'arrays' and 'names' must have non-zero and equal length"
+    arrMax = arrays[n.argmax([sum(arr.shape) for arr in arrays])]
+    for arr in arrays:
+        assert arr.shape == arrMax.shape or len(arr.shape) == 0,\
+            "Input arrays must have the same shape or be numpy scalars"
+    dt = [(name,arr.dtype) for (name,arr) in it.izip(names,arrays)]
+    out = n.empty(arrMax.shape,dtype=dt)
+    for (name,arr) in it.izip(names,arrays):
+        out[name] = arr
+    return out
+
 def selFieldsArray(arr,fields):
-    return n.rec.fromarrays([arr[f] for f in fields],names=','.join(fields))
+    return recFromArrays([arr[f] for f in fields],names=','.join(fields))
+
+def joinRecArrays(arrays):
+    """Same as SQL table join with row number used as a join index.
+    @param arrays one or more recarrays, with all fields names unique across all arrays
+    @return record array with fields being a union of fields in input arrays
+    """
+    #If non-unique names are present, the numpy error message will be cryptic,
+    #so we do error checking here.
+    #dtype.descr might have title before name in dtype.descr, so we need to use
+    #accessor attribute to get to names reliably
+    if not isUniqueArray(reduce(operator.add,[arr.dtype.names for arr in arrays])):
+        raise ValueError,"All names in input record arrays must be unique"
+    dt = reduce(operator.add,[arr.dtype.descr for arr in arrays])
+    grNames = [ "f%i" % i for i in range(len(arrays)) ]
+    #field name idexing is only allowed with a single field argument
+    #we use this trick to access a group of ajacent fields as a whole:
+    #create the new array with compound fields - each compound field has
+    #all fields from one input array, and then return a view with a flattened
+    #field list.
+    #@todo write a separate method that returns a compound view for selected groups
+    #of fields - can be usefull in any application that needs to access (e.g. fast assign)
+    #a group of fields at once.
+    return recFromArrays(arrays,names=grNames).view(dt)
 
 def permuteObjArray(arr):
     #numpy permutation or shuffle do not work on arrays with 'O' datatypes
@@ -556,7 +601,8 @@ class SubSamplerRandomStart:
 
 
 def getRectStencil(arr,center,halfSize):
-    """Return a stencil from Numpy 2D array"""
+    """Return a stencil from Numpy 2D array.
+    @todo looks like numpy.ix_ can do that and more"""
     center = n.asarray(center)
     ind = n.clip((center-halfSize,center+halfSize+1),(0,0),n.asarray(arr.shape)-1)
     sel = arr[ind[0][0]:ind[1][0],ind[0][1]:ind[1][1]]
