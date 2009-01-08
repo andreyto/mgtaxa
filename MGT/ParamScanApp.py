@@ -115,6 +115,6 @@ class ParamScanApp(App):
 
 
 
-if __name__ == "__main__":
-    runAppAsScript(ParamScanApp)
+#if __name__ == "__main__":
+#    runAppAsScript(ParamScanApp)
 

@@ -5,7 +5,13 @@ __all__ = ["App","runAppAsScript"]
 class App:
     """Interface to application object. 
     The application can be started from shell scripts or called in-process from Python code.
-    In both modes, it provides a method to schedule a batch queue execution."""
+    In both modes, it provides a method to schedule a batch queue execution, possibly
+    represented as a DAG of dependent jobs.
+    If you need to run it as a script from shell, call runAppAsScript from module level,
+    passing the proper derived class (see code example at the bottom of this source file).
+    The uniform way of providing scripting interface is to place each App derived class in
+    its own source file with the same name as the class, and include the mentioned
+    code snippet at the bottom."""
 
     ## Derived classes should set this to a list of opt.mode values that can result in submision of new batch jobs.
     batchDepModes = tuple()
@@ -13,16 +19,16 @@ class App:
     def __init__(self,args=[],opt=Struct()):
         """Constructor.
         @param args optional command line arguments to parse -
-        if executing as a module, should pass None or sys.argv[1:], else - [], which should result in default values
-        for all options.
-        @param **opt keyword dict - values defined here will override those parsed from args.
+        if executing as a module, should pass None or sys.argv[1:], else - [], which should result in 
+        default values generated for all options not defined by opt.
+        @param opt Struct instance - values defined here will override those parsed from args.
         Two basic use patterns: 
-        if running as a module:
+        if running as a shell script and parsing actual command line arguments:
             app = App(args=None)
             app.run()
         if calling from Python code:
             construct opt as a Struct() instance, specify only attributes with non-default values, then
-            app = App(**opt)
+            app = App(opt=opt)
             app.run()
         """
         optArgs, args = self.parseCmdLine(args=args)
@@ -182,18 +188,17 @@ class App:
 
     def getCmd(self):
         """Return command line that starts this application from shell, w/o options.
-        python -m runpy mechanism is used if we can get the module name of self (Python 2.5 is required),
-        and python sys.argv[0] otherwise.
-        This is dependent on our requirement that the App derived class is located inside the module
-        with the same name as class name, and the proper start-up code is present at the module level."""
+        "python -c '...'" form is used if we can get the module name of self,
+        and "python sys.argv[0]" otherwise."""
         import inspect
         modname = inspect.getmodule(self).__name__
         if modname == "__main__":
             #executed as script, module name is not available but we can execute the same way again
             return "python " + sys.argv[0]
         else:
-            #__name__ has a full import path and we can use runpy mechanism
-            return "python -m runpy " + modname
+            #modname must have a full import path and we can use python -c '...'
+            klassname = self.__class__.__name__
+            return "python -c 'import %s; %s.%s(args=None).run()'" % (modname,modname,klassname)
 
     def getCmdOptFile(self,cwd=os.getcwd(),**kw):
         """Generate unique file name for a new options pickle file and build full command line with it.
@@ -205,12 +210,14 @@ class App:
         return Struct(optFile=optFile,cmd=self.getCmd() + " --opt-file %s" % optFile)
 
 def runAppAsScript(klass):
+    """Call this function from module level if running a module with App derived class as a script"""
     app = klass(args=None)
     return app.run()
 
-## This is an example of the code that must be in every module with a class derived from App.
-## App class must be correspondingly replaced with derived class.
-
-if __name__ == "__main__":
-    runAppAsScript(App)
-
+## This is an example of the code that provides a direct scripting interface to an App derived class.
+## It must be present in module with a class derived from App.
+## App class name below must be replaced with a derived class name.
+#
+#if __name__ == "__main__":
+#    runAppAsScript(App)
+#

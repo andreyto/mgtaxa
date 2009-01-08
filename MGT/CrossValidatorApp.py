@@ -106,6 +106,6 @@ class CrossValidatorApp(App):
 
 
 
-if __name__ == "__main__":
-    runAppAsScript(CrossValidatorApp)
+#if __name__ == "__main__":
+#    runAppAsScript(CrossValidatorApp)
 

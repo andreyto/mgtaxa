@@ -475,5 +475,6 @@ class ClassifierApp(App):
 
 
 if __name__ == "__main__":
+    #Allow to call this as script
     runAppAsScript(ClassifierApp)
 
