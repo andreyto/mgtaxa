@@ -18,21 +18,7 @@ import itertools as it
 from MGT.Options import Struct
 from MGT.Config import options, Options
 
-from subprocess import Popen, call, PIPE
-
-defineCalledProcessError = False
-try:
-    from subprocess import CalledProcessError
-except ImportError:
-    defineCalledProcessError = True
-
-if defineCalledProcessError:
-
-    class CalledProcessError(OSError):
-        def __init__(self,returncode,*l,**kw):
-            OSError.__init__(self,*l,**kw)
-            self.returncode = returncode
-
+from MGT.Run import *
 
 from MGT.Bits.Unique import unique, uniquePick
 
@@ -65,52 +51,6 @@ class objectDiskCacher:
         else:
             o = loadObj(self.fileName)
         return o
-
-def run(*popenargs, **kwargs):
-    kw = {}
-    kw.update(kwargs)
-    dryRun = False
-    if 'dryRun' in kw:
-        dryRun = kw['dryRun']
-        del kw['dryRun']
-    if dryRun:
-        print popenargs
-    else:
-        # convert something like run("ls -l") into run("ls -l",shell=True)
-        if isinstance(popenargs[0],str) and len(popenargs[0].split()) > 1:
-            kw.setdefault("shell",True)
-        if options.debug > 0:
-            print popenargs
-        returncode = call(*popenargs,**kw)
-        if returncode != 0:
-            raise CalledProcessError(returncode=returncode)
-
-def backsticks(*popenargs,**kwargs):
-    """Similar to shell backsticks, e.g. a = `ls -1` <=> a = backsticks(['ls','-1']).
-    If 'dryRun=True' is given as keyword argument, then 'dryRet' keyword must provide a value
-    to return from this function."""
-    kw = {}
-    kw.update(kwargs)
-    dryRun = False
-    if 'dryRun' in kw:
-        dryRun = kw['dryRun']
-        del kw['dryRun']
-    dryRet = None
-    if 'dryRet' in kw:
-        dryRet = kw['dryRet']
-        del kw['dryRet']
-    if dryRun:
-        print popenargs
-        return dryRet
-    else:
-        if options.debug > 0:
-            print popenargs
-        kw['stdout'] = PIPE
-        p = Popen(*popenargs, **kw)
-        retout = p.communicate()[0]
-        if p.returncode != 0:
-            raise CalledProcessError(returncode=returncode)
-        return retout
 
 
 def varsub(template,*l,**kw):
@@ -467,20 +407,23 @@ def logicalAnd(*arrays):
         res = n.logical_and(res,a)
     return res
 
-def binCount(seq):
-    cnt = {}
+def binCount(seq,format="dict"):
+    cnt = defdict(int)
+    #numpy recarray records will be compared by address (not what we need),
+    #so we convert everything numpy to python builtins
     for x in seq:
-        try:
-            cnt[x] += 1
-        except KeyError:
-            cnt[x] = 1
-    return cnt
-
+        cnt[x.item() if isinstance(seq[0],n.generic) else x] += 1
+    if format == "dict":
+        return cnt
+    elif format == "list":
+        return sorted(cnt.items())
+    else:
+        raise ValueError("unknown format value: %s" % format)
 
 def recFromArrays(arrays,names):
     """Does the same as numpy.rec.fromarrays() but does not fail when arrays are themselves recarrays.
     Also, if any of the arrays is a numpy.rec.record scalar, it will be broadcast to the length
-    of other arrays (same as in array assignment sematics). Always creates a fresh copy of the data.
+    of other arrays (same as in array assignment semantics). Always creates a fresh copy of the data.
     @param arrays sequence of numpy arrays (possibly record arrays themselves), of the same shape
     @param names sequence or a comma delimited string with new field names, one per input array
     @return new record array with concatenated records"""
@@ -497,7 +440,45 @@ def recFromArrays(arrays,names):
         out[name] = arr
     return out
 
+def flattenDtype(dtype,withPrefix=False):
+    """Given a nested record dtype, return a flat dtype record dtype.
+    @param dtype recarray dtype
+    @param withPrefix if True, add each compound field name as prefix to the contained field name.
+    Example: if dtype is 
+    [('param', [('C', '<f8'), ('thresh', '<f4')]), ('val', [('senMean', '<f4'), ('speMean', '<f4')])]
+    and withPrefix is False, the return value is
+    [('C', '<f8'), ('thresh', '<f4'), ('senMean', '<f4'), ('speMean', '<f4')]
+    if withPrefix is True, the return value is
+    [('param_C', '<f8'), ('param_thresh', '<f4'), ('val_senMean', '<f4'), ('val_speMean', '<f4')]
+    if withPrefix is False and field names are not unique, the result is undefined."""
+    flatDescr = []
+    def _flattenDescr(pref,descr,flatDescr):
+        assert isinstance(descr,list),"'union' dtypes are not supported"
+        for el in descr:
+            if len(el) == 2: #(name,dtype)
+                name = el[0]
+                dt = el[1]
+            elif len(el) == 3: #(title,name,dtype)
+                name = el[1]
+                dt = el[2]
+            if isinstance(dt,list):
+                _flattenDescr(pref+name+'_',dt,flatDescr)
+            else:
+                assert isinstance(dt,str)
+                if withPrefix:
+                    pr = pref
+                else:
+                    pr = ''
+                flatDescr.append((pr+name,dt))
+    _flattenDescr('',dtype.descr,flatDescr)
+    return n.dtype(flatDescr)
+
+
+
 def selFieldsArray(arr,fields):
+    """Select a list of fields from a record array as a new record array.
+    @todo current method creates a full copy; for ajacent fields, that
+    can be done as a view by splitting all fields into two sub-dtypes."""
     return recFromArrays([arr[f] for f in fields],names=','.join(fields))
 
 def joinRecArrays(arrays):
@@ -530,17 +511,14 @@ def permuteObjArray(arr):
 def groupPairs(data,keyField=0):
     """Create a dict(key->list of vals) out of a sequence of pairs (key,val).
     @param data sequence of pairs
-    @param keyField index of field to use as key (the remaining field is used as val"""
-    x = {}
+    @param keyField index of field to use as key (the remaining field is used as val)"""
+    x = defdict(list)
     assert keyField in (0,1)
     valField = 1 - keyField
     for rec in data:
         key = rec[keyField]
         val = rec[valField]
-        try:
-            x[key].append(val)
-        except KeyError:
-            x[key] = [ val ]
+        x[key].append(val)
     return x
 
 
@@ -554,14 +532,32 @@ def groupRecArray(arr,keyField):
     array with all records that have this key value."""
     m = defdict(list)
     for rec in arr:
-        m[rec[keyField]].append(rec)
+        #recarray records are compared by address in dict, for some reason, hence .item()
+        m[rec[keyField].item()].append(rec)
     for key in m:
         m[key] = n.asarray(m[key],dtype=arr.dtype)
     return m
 
+def countRecArray(arr,keyFields,format="dict"):
+    return binCount(selFieldsArray(arr,fields=keyFields),format=format)
 
 def isUniqueArray(arr):
     return len(n.unique1d(arr)) == len(n.ravel(arr))
+
+
+def saveRecArrayAsCsv(arr,out,withHeader=True,sep=','):
+    outDt = flattenDtype(arr.dtype,withPrefix=True)
+    outArr = arr.view(outDt)
+    closeOut = False
+    if isinstance(out,str):
+        out = open(out,'w')
+        closeOut = True
+    if withHeader:
+        out.write(sep.join(outDt.names)+'\n')
+    for rec in outArr:
+        out.write(sep.join([ "%s" % (x,) for x in rec ])+'\n')
+    if closeOut:
+        out.close()
 
 class SubSamplerUniRandomEnd:
     """Uniform random [0,rnd_length] subsampler where rnd_length is in [minLen,maxLen]"""
@@ -608,3 +604,51 @@ def getRectStencil(arr,center,halfSize):
     sel = arr[ind[0][0]:ind[1][0],ind[0][1]:ind[1][1]]
     #print center, halfSize, ind, sel
     return sel,ind
+
+def enumNames(obj):
+    """Return a tuple with all attribute names of an obj not starting with '_'
+    @param obj instance or class"""
+    return tuple([ name for name in dir(obj) if not name.startswith('_') ])
+
+def enumNamesToValues(names,obj):
+    """Convert a list of attribute names to attribute values for a given object.
+    This is designed to process mnemonic enum constants into values,
+    assuming enums are implemented as class or instance attributes.
+    Example: if enums are defined as:
+    class ENUM_FILE_MODE:
+        WRITE = 0x01
+        READ = 0x02
+        BINARY = 0x10
+        TEXT = 0x20
+    and out program accepts an option such as "--run-mode WRITE,BINARY",
+    the call to enumNamesToValues(opt.runMode,ENUM_FILE_MODE)
+    will return (0x01,0x10) while also checking that each name is a valid
+    integer attribute and does not start with undescore. ValueError or 
+    AttributeError will be raised if these conditions are not met.
+    In a typical case when the values are bitmasks that can be ORed,
+    use listOr(enumNamesToValues(names,obj))
+    @param sequence with names or a comma separated string of names
+    @param obj object from which to extract the attribute values - can be instance or class
+    @return tuple of values"""
+    oneName = False
+    if isinstance(names,str):
+        names = names.split(',')
+    names = [ name.strip() for name in names ]
+    vals = []
+    for name in names:
+        if name.startswith('_'):
+            raise ValueError("Name cannot start with underscore: %s" % (name,))
+        val = getattr(obj,name)
+        if not isinstance(val,int):
+            raise ValueError("Enum value must have integer type: %s = %s" % (name,val))
+        vals.append(val)
+    return tuple(vals)
+
+def listOr(l):
+    return reduce(operator.or_,l)
+
+def binIntToStr(x,digits=8):
+    """Return a string representation of x as a binary encoded number.
+    Taken from some discussion list."""
+    return ''.join(x & (1 << i) and '1' or '0' for i in range(digits-1,-1,-1))
+

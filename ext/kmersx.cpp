@@ -3,6 +3,7 @@
 #define PY_ARRAY_UNIQUE_SYMBOL PyArrayHandle
 
 #include <boost/python.hpp>
+#include <boost/iterator/iterator_facade.hpp>
 
 #include "mgtaxa/py_num_util.hpp"
 
@@ -31,6 +32,100 @@ getCData1D(bpn::array a,NPY_TYPES npyType, npy_intp& size, npy_intp& stride) {
     //ADT_LOG << ADT_OUTVAR(size) << ADT_OUTVAR(stride) << '\n';
     return reinterpret_cast<char*>(num_util::data(a));
 }
+
+/** STL compliant random access iterator for 1D Numpy arrays exposed as boost:python::array.
+ * This iterates using stride and data pointer and thus more efficient than
+ * the generic ND implementation with PyArrayIterObject.
+ * It will correctly handle arrays which have stride not in multiples of data 
+ * element size, such as column views of record arrays.*/
+
+template<typename TVal>
+class npy_iterator_1d
+  : public boost::iterator_facade<
+    npy_iterator_1d<TVal>
+    , TVal
+    , boost::random_access_traversal_tag
+    >
+{
+    public:
+    typedef npy_iterator_1d<TVal> Self;
+
+    npy_iterator_1d()
+    : m_data(0), m_stride(0) {}
+
+    /** Constructor.
+     * @param data pointer to the start of the current array element
+     * @param stride distance between the starts of consequitive elements in bytes, as returned by PyArray_STRIDE(a,0)
+     */
+    explicit npy_iterator_1d(char* data,npy_intp stride)
+    : m_data(data), m_stride(stride) {}
+
+    private:
+    friend class boost::iterator_core_access;
+
+    void increment() { m_data += m_stride; }
+    
+    void decrement() { m_data -= m_stride; }
+    
+    void advance(typename Self::difference_type n) { m_data += n*m_stride; }
+
+    typename Self::difference_type distance_to(const Self& other) const 
+    { 
+        return (other->m_data-this->m_data)/this->m_stride;
+    }
+
+    bool equal( const Self& other) const
+    {
+       return this->m_data == other.m_data;
+    }
+
+    TVal& dereference() const { return (*reinterpret_cast<TVal*>(m_data)); }
+
+    char* m_data;
+    npy_intp m_stride;
+};
+
+
+/** Wrapper around boost::python::array Numpy 1D array object that can generate STL compliant 1D iterators.*/
+
+template<typename TVal>
+class npy_array_1d_wrapper {
+    
+    public:
+    typedef npy_iterator_1d<TVal> iterator_type;
+    
+    npy_array_1d_wrapper(bpn::array a):
+        m_a(a) 
+    {
+        num_util::check_rank(m_a,1);
+        //num_util::check_type(a,npyType);
+        /**@todo add type compatibility check - will require creating a set of template trait specializations*/
+        if( sizeof(TVal) != PyArray_ITEMSIZE(m_a.ptr()) ){
+            PyErr_SetString(PyExc_ValueError, "C type size does not match NumPy array item size");
+            bp::throw_error_already_set();
+        }
+    }
+
+    iterator_type begin() {
+        return iterator_type(reinterpret_cast<char*>(num_util::data(m_a)),PyArray_STRIDE(m_a.ptr(),0));
+    }
+    
+    iterator_type end() {
+        return begin()+num_util::size(m_a);
+    }
+
+    bpn::array get_array() {
+        return m_a;
+    }
+
+    npy_intp size() const {
+        return num_util::size(m_a);
+    }
+
+    protected:
+    bpn::array m_a;
+};
+
 
 class KmerCounterPy : public KmerCounter {
 
@@ -99,7 +194,7 @@ protected:
         npy_intp outSize = numKmers();
         //ADT_LOG << ADT_OUTVAR(numKmers()) << '\n';
         if( outSize >  sizeCounts ){
-            PyErr_SetString(PyExc_ValueError, "Output size execeeds array bounds");
+            PyErr_SetString(PyExc_ValueError, "Output size exceeds array bounds");
             bp::throw_error_already_set();
         }
         startKmer(m_doSort);
@@ -297,6 +392,46 @@ class SvmSparseFeatureWriterTxt : boost::noncopyable {
     int m_nOut;
 };
 
+
+class KmerCounterLadderPy : public KmerCounterLadder {
+
+public:
+	
+    KmerCounterLadderPy(int kmerLen,RC_POLICY revCompPolicy=RC_MERGE) :
+	KmerCounterLadder(kmerLen,0,revCompPolicy)
+	{
+        //ADT_LOG << ADT_OUTVAR(kmerLen) << '\n';
+    }
+	
+	void processPy(bpn::array seq) {
+        npy_intp nSeq = 0, stride = 0;
+        const char *pSeq = getCData1D<char>(seq,NPY_CHAR,nSeq,stride);
+        //ADT_LOG <<ADT_OUTVAR(nSeq) << ADT_OUTVAR(pSeq) << ADT_OUTVAR(stride) << '\n';
+        for(npy_intp i = 0; i < nSeq; i++) {
+            doCNuc(pSeq[i*stride]);
+        }
+	}
+
+    void countsPy(bpn::array valObs,bpn::array valExp,bpn::array ind,bpn::array sizes) {
+        typedef npy_array_1d_wrapper<npy_float32> npyw_val;
+        typedef npy_array_1d_wrapper<npy_int64> npyw_ind;
+        npyw_val valObsW(valObs), valExpW(valExp);
+        npyw_ind indW(ind), sizesW(sizes);
+        ADT_ALWAYS(sizesW.size()>=numSubFeatures());
+        int n_feat = numKmers(sizesW.begin());
+        ADT_ALWAYS(valObsW.size()>=n_feat && valExpW.size()>=n_feat && indW.size()>=n_feat);
+        counts(valObsW.begin(),valExpW.begin(),indW.begin(),sizesW.begin());
+    }
+
+    bpn::array maxNumKmersPy(ULong seqLen) const {
+        typedef npy_array_1d_wrapper<npy_int64> npyw_ind;
+        bpn::array sizes = num_util::makeNum(m_kmerLen,NPY_INT64);
+        maxNumKmers(seqLen,npyw_ind(sizes).begin());
+        return sizes;
+    }
+
+};
+
 } // namespace MGT
 
 using namespace boost::python;
@@ -310,6 +445,7 @@ BOOST_PYTHON_MODULE(kmersx)
             init<int,optional<MGT::RC_POLICY,MGT::KmerId,bool> >())
         .def("process", &MGT::KmerCounterWriterPy::process)
         .def("counts", &MGT::KmerCounterWriterPy::counts)
+        .def("maxNumKmers", &MGT::KmerCounterWriterPy::maxNumKmers)
         .def("numKmers", &MGT::KmerCounterWriterPy::numKmers)
         .def("sumDegenKmerCounts", &MGT::KmerCounterWriterPy::sumDegenKmerCounts)
         .def("frequences", &MGT::KmerCounterWriterPy::frequences)
@@ -333,5 +469,10 @@ BOOST_PYTHON_MODULE(kmersx)
         .value("DIRECT", MGT::RC_DIRECT)
         ;
 
+    class_<MGT::KmerCounterLadderPy,boost::noncopyable>("KmerCounterLadder", 
+            init<int,optional<MGT::RC_POLICY> >())
+        .def("process", &MGT::KmerCounterLadderPy::processPy)
+        .def("counts", &MGT::KmerCounterLadderPy::countsPy)
+        .def("maxNumKmers", &MGT::KmerCounterLadderPy::maxNumKmersPy);
 }
 

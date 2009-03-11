@@ -1,8 +1,16 @@
-import pdb
+"""Some support for debugger. Tries to use IPython shell support if available"""
+__all__ = ["pdb","set_trace"]
 try:
-    # this will drop into ipdb shell just like pdb.set_trace()
-    # drops into pdb shell
-    from IPython.Debugger import Tracer; debug_here = Tracer()
-except ImportError:
-    debug_here = pdb.set_trace()
+    from IPython.Debugger import Pdb
+    def set_trace():
+        from IPython.Debugger import Pdb
+        Pdb().set_trace()
+    del Pdb
+except:
+    import pdb
+    def set_trace():
+        import pdb
+        pdb.set_trace()
+    del pdb
+import pdb #legacy pdb.set_trace() use
 

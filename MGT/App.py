@@ -175,7 +175,12 @@ class App:
     def defaultOptions(klass):
         return klass.parseCmdLine(args=[])
 
-
+    @classmethod
+    def fillWithDefaultOptions(klass,options):
+        """Fill with default values options that are not already set"""
+        optArgs,args = klass.defaultOptions()
+        optArgs.updateOtherMissing(options)
+    
     def getAppName(self):
         """Return mnemonic name for this application to use for example as a prefix of batch script name"""
         s = self.__class__.__name__
@@ -208,6 +213,9 @@ class App:
         out,optFile = makeTmpFile(suffix=".opt.pkl",prefix=self.getAppName()+'.',dir=cwd)
         out.close()
         return Struct(optFile=optFile,cmd=self.getCmd() + " --opt-file %s" % optFile)
+
+    def getOpt(self):
+        return self.opt
 
 def runAppAsScript(klass):
     """Call this function from module level if running a module with App derived class as a script"""

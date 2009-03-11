@@ -92,10 +92,10 @@ class MGTOptions:
         self.predictorTable = "pred"
         self.batchRun = Options(
                 PROJECT_CODE = 600005,
-                MEM = 2000,
+                MEM = 4000,
                 ARCH = "lx26-eon64",
                 maxQueued = 50,
-                LENGTH = "fast")
+                LENGTH = "fast") #"fast"
         self.app = Options(
                 runMode = "default"#override App.opt.runMode value if not "default" here. Other choices are "inproc"
                 )

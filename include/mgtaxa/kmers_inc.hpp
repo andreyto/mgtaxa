@@ -196,6 +196,14 @@ inline PKmerStateData KmerStates::getData(PKmerState pState) {
     return pState->m_pData; 
 }
 
+/** Return pointer to KmerStateData object linked to the state with a given index.
+ * @param ind - index of the state
+ * */ 
+
+inline PKmerStateData KmerStates::getData(Ind ind) {
+    return getData(getState(ind)); 
+}
+
 /** Link given KmerState object to the given KmerStateData object.
  * This sets only uni-directed link from KmerState to KmerStateData.
  * @param pState - pointer to state
@@ -206,13 +214,40 @@ inline void KmerStates::setData(PKmerState pState,PKmerStateData pStateData) {
     pState->m_pData = pStateData;
 }
 
-/** Return reference to Kmer object for a given KmerState obejct.
+/** Return reference to Kmer object for a given KmerState object.
  * @param pState - pointer to state
  * This is done in constant time based on position of pState in internal array.
  */ 
 
-inline const Kmer& KmerStates::kmerState(PKmerState pState) const {
+inline const Kmer& KmerStates::kmerState(const PKmerState pState) const {
     return m_kmers[pState-firstState()];
+}
+
+/** Return index of a given KmerState object that can be used to access this object later with getState().
+ * @param pState - pointer to state
+ * This is done in constant time based on position of pState in internal array.
+ */ 
+
+inline Ind KmerStates::indState(const PKmerState pState) const {
+    return pState-firstState();
+}
+
+/** Return pointer to a  KmerState object given its index obtained earlier with indState().
+ * @param ind Index of the state
+ * This is done in constant time by indexing the internal array.
+ */ 
+
+inline const PKmerState KmerStates::getState(Ind ind) const {
+    return const_cast<const PKmerState>(&m_states[ind]);
+}
+
+/** Return reference to a  Kmer object given its index obtained earlier with indState().
+ * @param ind Index of the state
+ * This is done in constant time by indexing the internal array.
+ */ 
+
+inline const Kmer& KmerStates::getKmer(Ind ind) const {
+    return m_kmers[ind];
 }
 
 /** Return unique ID of the state's k-mer.
@@ -234,6 +269,12 @@ inline KmerId KmerStates::getFirstIdState() const {
 
 inline KmerId KmerStates::getLastIdState() const {
     return m_lastIdState;
+}
+
+/** Get the total number of different IDs ("number of features") - depends on the RC_POLICY.*/
+
+inline int KmerStates::getNumIds() const {
+    return getLastIdState()-getFirstIdState();
 }
 
 /** Return pointer to KmerState for a given Kmer object.
@@ -273,9 +314,10 @@ inline void KmerStates::nextKmer(const Kmer& currKmer, INuc c, Kmer& nextKmer) c
  * @param kmer - Kmer object
  * This is done based on value of kmer, and complexity is linear 
  * in kmer length.
+ * This is made public for the use of implementation-aware code such as KmerCounterLadder.
  */ 
 
-inline int KmerStates::kmerToIndex(const Kmer& kmer) const {
+inline Ind KmerStates::kmerToIndex(const Kmer& kmer) const {
     int i = 0;
     for(; i < m_kmerLen; i++) {
         if( kmer[i] != 0 ) {
@@ -303,7 +345,7 @@ inline int KmerStates::kmerToIndex(const Kmer& kmer) const {
  * @pre kmer initialized with 0s
  */
 
-inline void KmerStates::indexToKmer(int ind, Kmer& kmer) const {
+inline void KmerStates::indexToKmer(Ind ind, Kmer& kmer) const {
     int iBlock = 0;
     for(; iBlock < m_blockStart.size(); iBlock++) {
         if( m_blockStart[iBlock] > ind ) {
@@ -340,8 +382,6 @@ inline void KmerCounter::doCNuc(CNuc cnuc) {
 
 /** This method is called for each element of an input sequence (through
  * KmerCounter::doCNuc() wrapper method).
- * @todo make sure that reverse-complement pointers work correctly
- * for degenerate k-mer states and palyndromic states.
 */
 
 inline void KmerCounter::doINuc(INuc inuc) {
@@ -356,6 +396,16 @@ inline void KmerCounter::doINuc(INuc inuc) {
         pDat->setState(pSt);
     }
     pDat->count++;
+}
+
+/** Return the maximum number of unique k-mers that can be found in a sequence of a given length.
+ * @param seqLen sequence length
+ */
+
+inline int KmerCounter::maxNumKmers(ULong seqLen) const {
+    ULong numSeq = seqLen - m_kmerLen + 1; // an overestimate when policy is RC_MERGE
+    ULong numIds = getNumIds();
+    return int(numSeq<numIds ? numSeq : numIds);
 }
 
 inline int KmerCounter::numKmers() const {
@@ -409,6 +459,14 @@ inline std::string KmerCounter::getKmerStr() const {
     return kmerToStr(m_pStates->kmerState(m_data[m_iDataExtr].getState()), m_kmerLen, *m_pAbcConv);
 }
 
+inline Ind KmerCounter::indState() const {
+    return m_pStates->indState(getState());
+}
+
+inline const PKmerState KmerCounter::getState() const {
+    return m_data[m_iDataExtr].getState();
+}
+
 inline void KmerCounter::finishKmer() {
     //clean up the remaining dirty KmerStateData
     for( ; m_iDataExtr < m_iDataEnd; nextKmer() )
@@ -430,6 +488,116 @@ inline KmerId KmerCounter::getFirstIdState() const {
 
 inline KmerId KmerCounter::getLastIdState() const {
     return m_pStates->getLastIdState();
+}
+
+/** Get the total number of different IDs ("number of features") - depends on the RC_POLICY.*/
+
+inline int KmerCounter::getNumIds() const {
+    return m_pStates->getNumIds();
+}
+
+/** This method is called to process the input sequence.
+ * Series of calls to this method are interleaved with
+ * calls to result extraction methods such as counts().
+ * @param cnuc one nucleotide character value (such as 'A')*/
+
+inline void KmerCounterLadder::doCNuc(CNuc cnuc) {
+    INuc inuc = (*m_pAbcConv)(cnuc);
+    for(int k=m_kmerLen; k>=1; k--) {
+        m_counters[k]->doINuc(inuc);
+    }
+}
+
+/** Extract the counts accumulated so far and reset the internal state for the next round of accumulation.
+ * @param ind output iterator for observed k-mer ID values
+ * @param valObs output iterator for observed k-mer counts
+ * @param valExp output iterator for expected counts for each observed k-mer
+ * @param sizes output iterator for number of unique observed k-mers for each k.
+ * First all unique observed k-mers for k=kmerLen will be appended to ind,valObs and valExp, 
+ * and the number of written items for this k will be appended to sizes, and then it will
+ * be repeated for k=kmerLen-1 and so forth, up to k=1 inclusive. Expected counts for k=1
+ * will be assigned assuming equal probability. This choice is arbitrary and does not affect
+ * the expected counts for higher order k-mers.*/
+
+template<class IterInd,class IterVal>
+void KmerCounterLadder::counts(IterVal valObs,IterVal valExp,IterInd ind,IterInd sizes) {
+    //We assign expected values for 1-mers as 1/4*length. The user is free to
+    //override these post-factum as nothing that is computed here depends on them.
+    //
+    //Expected count of k-mer: N_expect(k) = N_observed(k-1)*p(1)
+    KmerCounter& one = *m_counters[1];
+    KmerStates& oneStates = one.getStates();
+    ULong sumOne = one.sumKmerCounts();
+    // k==1 should be treated differently - we achieve it by
+    // inserting condition within the inner loop to avoid
+    // duplicating the code
+    for(int k=m_kmerLen; k>0; k--) {
+        KmerCounter& top = *m_counters[k];
+        // bot should not be used if k==1
+        KmerCounter& bot = *m_counters[k>1?k-1:k];
+        KmerStates& topStates = top.getStates();
+        KmerStates& botStates = bot.getStates();
+        // should not be used if k==1
+        indvec& topBotDep = m_topBotDep[k];
+        indvec& topOneDep = m_topOneDep[k];
+        int n = top.numKmers();
+        top.startKmer();
+        for(int i = 0; i < n; i++,top.nextKmer()) {
+            double countExpTop = 0;
+            if(k>1) {
+                Ind indStateTop = top.indState();
+                Ind indStateBot = topBotDep[indStateTop];
+                Ind indStateOne = topOneDep[indStateTop];
+                PKmerStateData pStateDataBot = botStates.getData(indStateBot);
+                PKmerStateData pStateDataOne = oneStates.getData(indStateOne);
+                //if we have seen a k-mer (top), we should have seen all prefixes (bottom),
+                //and so bottom state object has its data payload linked
+                ADT_ALWAYS(pStateDataBot);
+                ADT_ALWAYS(pStateDataOne);
+                countExpTop = pStateDataBot->count * (double(pStateDataOne->count)/sumOne);
+            }
+            else {
+                countExpTop = double(sumOne)/n;
+            }
+            *ind = top.getKmerId(); ++ind;
+            *valObs = top.getKmerCount(); ++valObs;
+            *valExp = countExpTop; ++valExp;
+        }
+        top.finishKmer();
+        *sizes = n; ++sizes;
+    }
+}
+
+/** Store into the output iterator the number of unique k-mers found for each k and return their sum.
+ * @param output iterator - will hold a number of unique k-mer for k,k-1,...,1
+ */
+
+template<class IterInd>
+int KmerCounterLadder::numKmers(IterInd sizes) const {
+    int n_sum = 0;
+    for(int k=m_kmerLen; k>0; k--) {
+        int n = m_counters[k]->numKmers();
+        n_sum += n;
+        *sizes = n; ++sizes;
+    }
+    return n_sum;
+}
+
+/** Store into the output iterator the maximum number of unique k-mers that can be found for each k for a given sequence length.
+ * @param seqLen sequence length
+ * @param output iterator - will hold a number of unique k-mer for k,k-1,...,1
+ * @return sum of values stored into sizes
+ */
+
+template<class IterInd>
+int KmerCounterLadder::maxNumKmers(ULong seqLen, IterInd sizes) const {
+    int n_sum = 0;
+    for(int k=m_kmerLen; k>0; k--) {
+        int n = m_counters[k]->maxNumKmers(seqLen);
+        n_sum += n;
+        *sizes = n; ++sizes;
+    }
+    return n_sum;
 }
 
 } // namespace MGT

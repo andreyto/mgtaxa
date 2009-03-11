@@ -56,58 +56,58 @@ RevComplementor g_revComp;
 typedef std::map<std::string,int> KmerStrMap;
 
 class KmerCounterNaive {
-public:
+    public:
 
 
-KmerCounterNaive() {}
+    KmerCounterNaive() {}
 
-void fillFromSeq(const std::string& seq, int kmerLen) {
-	m_counts.clear();
-	for(int i = 0; i < seq.size() - kmerLen + 1; i++) {
-		std::string kmer = seq.substr(i,kmerLen);
-		//ADT_LOG << ADT_OUTVAR(kmer);
-		if( kmer.find_first_not_of("ACGT") == std::string::npos ) {
-			m_counts[kmer]++;
-			g_revComp(kmer);
-			//ADT_LOG << ADT_OUTVAR(kmer) << "\n";
-			m_counts[kmer]++;
-		}
-	}
-}
+    void fillFromSeq(const std::string& seq, int kmerLen) {
+        m_counts.clear();
+        for(int i = 0; i < seq.size() - kmerLen + 1; i++) {
+            std::string kmer = seq.substr(i,kmerLen);
+            //ADT_LOG << ADT_OUTVAR(kmer);
+            if( kmer.find_first_not_of("ACGT") == std::string::npos ) {
+                m_counts[kmer]++;
+                g_revComp(kmer);
+                //ADT_LOG << ADT_OUTVAR(kmer) << "\n";
+                m_counts[kmer]++;
+            }
+        }
+    }
 
-void fillFromCounter(const std::string& seq, MGT::KmerCounter& counter) {
-	m_counts.clear();	
-	for(int i = 0; i < seq.size(); i++) {
-		counter.doCNuc(seq[i]);
-	}
-	int n = counter.numKmers();
-	counter.startKmer();
-	for(int i = 0; i < n; i++,counter.nextKmer()) {
-		std::string kmerStr = counter.getKmerStr();
-		int cnt = counter.getKmerCount();
-    	m_counts[kmerStr] = cnt;
-    	std::string kmerStrRC = kmerStr;
-    	g_revComp(kmerStrRC);
-    	if(! (m_counts.find(kmerStrRC) == m_counts.end() || kmerStrRC == kmerStr) ) {
-    		throw "Rev-compl k-mer seen in KmerCounter output";
-    	}
-    	m_counts[kmerStrRC] += cnt; //increment so that palyndromic k-mers (like AT) get double counts
-	}
-	counter.finishKmer();	
-}
+    void fillFromCounter(const std::string& seq, MGT::KmerCounter& counter) {
+        m_counts.clear();	
+        for(int i = 0; i < seq.size(); i++) {
+            counter.doCNuc(seq[i]);
+        }
+        int n = counter.numKmers();
+        counter.startKmer();
+        for(int i = 0; i < n; i++,counter.nextKmer()) {
+            std::string kmerStr = counter.getKmerStr();
+            int cnt = counter.getKmerCount();
+            m_counts[kmerStr] = cnt;
+            std::string kmerStrRC = kmerStr;
+            g_revComp(kmerStrRC);
+            if(! (m_counts.find(kmerStrRC) == m_counts.end() || kmerStrRC == kmerStr) ) {
+                throw "Rev-compl k-mer seen in KmerCounter output";
+            }
+            m_counts[kmerStrRC] += cnt; //increment so that palyndromic k-mers (like AT) get double counts
+        }
+        counter.finishKmer();	
+    }
 
-const KmerStrMap& getCounts() const {
-	return m_counts;
-}
+    const KmerStrMap& getCounts() const {
+        return m_counts;
+    }
 
-std::ostream& print(std::ostream& out) const {
-	for( KmerStrMap::const_iterator p = m_counts.begin(); p != m_counts.end(); p++)	 {
-		out << '(' << p->first << ':' << std::setw(3) << p->second << ") ";
-	}
-	return out;
-}
+    std::ostream& print(std::ostream& out) const {
+        for( KmerStrMap::const_iterator p = m_counts.begin(); p != m_counts.end(); p++)	 {
+            out << '(' << p->first << ':' << std::setw(3) << p->second << ") ";
+        }
+        return out;
+    }
 
-KmerStrMap m_counts;
+    KmerStrMap m_counts;
 
 };
 
@@ -173,6 +173,26 @@ bool test_KmerCounterNaive() {
 	return ret;
 }
 
+bool test_KmerCounterLadder() {
+	int kmerLen = 2;
+	std::string testSeq = g_testingSeq.substr(0,g_testingSeq.size());
+	for(int i = 0; i < testSeq.size() - 2; i += 37) { testSeq[i] = 'N'; testSeq[i+1] = 'N'; }
+	//ADT_LOG << "testSeq : \n" << testSeq << "\n";
+	std::string testSeqRC = testSeq;
+	g_revComp(testSeqRC);
+	//ADT_LOG << "testSeqRC : \n" << testSeqRC << "\n";	
+	MGT::KmerCounterLadder counter(kmerLen);
+    typedef std::vector<float> valvect;
+    typedef std::vector<int> indvect;
+    indvect sizes(kmerLen);
+    int maxNumFeat = counter.maxNumKmers(testSeq.size()*2,sizes.begin());
+    valvect valObs(maxNumFeat), valExp(maxNumFeat);
+    indvect ind(maxNumFeat);
+    counter.process(testSeq.begin(),testSeq.end());
+    counter.counts(valObs.begin(),valExp.begin(),ind.begin(),sizes.begin());
+	return true;
+}
+
 } // namespace
 
 int add( int i, int j ) { return i+j; }
@@ -185,7 +205,8 @@ int add( int i, int j ) { return i+j; }
 int test_main( int, char *[] )             // note the name!
 {
 	///BOOST_CHECK(test_KmerCounterCtor());
-	BOOST_CHECK(test_KmerCounterNaive());
+	///BOOST_CHECK(test_KmerCounterNaive());
+	BOOST_CHECK(test_KmerCounterLadder());
     // six ways to detect and report the same error:
     //BOOST_CHECK( add( 2,2 ) == 4 );        // #1 continues on error
 /*    BOOST_REQUIRE( add( 2,2 ) == 5 );      // #2 throws on error

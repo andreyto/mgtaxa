@@ -11,8 +11,13 @@
 #include <cmath>
 #include <string>
 
+#include <boost/shared_ptr.hpp>
+
 namespace MGT {
-	
+
+/** Array index type */
+typedef int Ind;
+
 int ipow(int base, int power) throw (std::domain_error);
 
 /** @enum I_DEGEN Integer code for degenerate nucleotide.
@@ -73,7 +78,16 @@ class Kmer {
 	}
 	INuc m_data[g_maxKmerLen];
 	inline INuc& operator[](int i) { return m_data[i]; }
-	inline const INuc& operator[](int i) const { return m_data[i]; }	
+	inline const INuc& operator[](int i) const { return m_data[i]; }
+    inline void set(int i,INuc v) { m_data[i] = v; }
+    inline INuc get(int i) const { return m_data[i]; }
+    inline Kmer subKmer(int first,int last) const { 
+        Kmer x;
+        for(int j=0; first < last; first++,j++) {
+            x.set(j,get(first));
+        }
+        return x;
+    }
 	std::ostream& print(std::ostream& out, int kmerLen = g_maxKmerLen) const;
 };
 
@@ -252,21 +266,27 @@ class KmerStates {
 		int numStates() const;
 		KmerId idState(PKmerState pState) const;
 		PKmerStateData getData(PKmerState pState);
+		PKmerStateData getData(Ind ind);
 		void setData(PKmerState pState,PKmerStateData pStateData);
 		const Kmer& kmerState(PKmerState pState) const;
+        Ind indState(const PKmerState pState) const;
+        const PKmerState getState(Ind ind) const;
+        const Kmer& getKmer(Ind ind) const;
         KmerId getFirstIdState() const;
         KmerId getLastIdState() const;
+        int getNumIds() const;
 		std::ostream& print(std::ostream& out) const;
 	private:
 	/** Private copy constructor makes instances non-copyable.*/
     KmerStates( const KmerStates& );
     /** Private assignment operator makes instances non-copyable.*/
     const KmerStates& operator=( const KmerStates& );
+    public:
+	Ind kmerToIndex(const Kmer& kmer) const;
 	protected:
 		PKmerState kmerToState(const Kmer& kmer) const; 
 		void nextKmer(const Kmer& currKmer, INuc c, Kmer& nextKmer) const;
-		int kmerToIndex(const Kmer& kmer) const;
-		void indexToKmer(int ind,Kmer& kmer) const;
+		void indexToKmer(int Ind,Kmer& kmer) const;
 		void initAllKmers();
 		void initRevCompl();		
 
@@ -305,6 +325,8 @@ class KmerCounter {
 	
 	void doCNuc(CNuc cnuc);
 	void doINuc(INuc inuc);
+
+	int maxNumKmers(ULong seqLen) const;
 
 	/** @name Interface to extract the results.
  	* The following set of methods defines the result extraction protocol.
@@ -348,12 +370,27 @@ class KmerCounter {
 	int getKmerId() const;
 	/** Accessor to get k-mer string (such as 'ACCCT') for the currently extracted k-mer.*/ 
 	std::string getKmerStr() const;
+	/** Accessor to get index of the state for the currently extracted k-mer.
+     * Should be used only by implementation-aware code such as KmerCounterLadder*/ 
+    Ind indState() const;
+	/** Accessor to get pointer to the state for the currently extracted k-mer.
+     * Should be used only by implementation-aware code such as KmerCounterLadder*/ 
+    const PKmerState getState() const;
 	/** Finalize result extraction cycle - new series of doCNuc() calls can be done afterwards.*/
 	void finishKmer();
 	/*@}*/ 
 	
     KmerId getFirstIdState() const;
     KmerId getLastIdState() const;
+    int getNumIds() const;
+
+    public:
+    
+    /** Get reference to internal KmerStates array.
+     * Declared public only to be used by implementation-aware code such as KmerCounterLadder.*/
+    inline KmerStates& getStates() {
+        return *m_pStates;
+    }
 
 	private:
 	/** Private copy constructor makes instances non-copyable.*/
@@ -397,6 +434,80 @@ class KmerCounter {
 	
 	/** Index of m_data element that is currently being extracted.*/
 	int m_iDataExtr; 
+};
+
+
+/** Class that computes k-mer frequences for k = 1...n at the same time.
+ * It normalizes observed frequencies for a given k with expected frequencies
+ * calculated based on observed frequencies for (k-1) and 1.
+ * The implementation:
+ * 1. Compute counts for k = 1...n. Currently we just do it independently for
+ * each k through calls to doCNuc(). Future implementation may compute n-mers and then find (n-1)-mer counts
+ * by incrementing by one the count for (n-1) prefix of each n-mer plus special handling of the right boundary 
+ * n-mer (and repeating recursively for (n-2) and so on). That will be more efficient for long sequences.
+ * 2. Compute expected counts for each n-mer found in (1).
+ * 3. Store normalized frequences into the output array.*/
+
+class KmerCounterLadder {
+    public:
+
+	KmerCounterLadder(int kmerLen, 
+            const AbcConvCharToInt *pAbcConv = 0,
+            RC_POLICY revCompPolicy=RC_DIRECT);
+
+	void doCNuc(CNuc cnuc);
+
+    /** Accumulate counts for a CNuc sequence represented by an interator range*/
+    template<class IterCNuc>
+    inline
+    void process(IterCNuc first,IterCNuc last) {
+        for( ; first != last; ++first ) {
+            doCNuc(*first);
+        }
+    }
+
+    template<class IterInd,class IterVal>
+    void counts(IterVal valObs,IterVal valExp,IterInd ind,IterInd sizes);
+    
+    template<class IterInd>
+    int numKmers(IterInd sizes) const;
+
+    template<class IterInd>
+    int maxNumKmers(ULong seqLen,IterInd sizes) const;
+    
+    int numSubFeatures() const {
+        return m_kmerLen;
+    }
+
+    protected:
+
+    void makeTopDownKmerInd();
+
+    protected:
+
+    typedef boost::shared_ptr<KmerCounter> PKmerCounter;
+    typedef std::vector<PKmerCounter> PKmerCounterArray;
+
+    typedef std::vector<Ind> indvec;
+
+    /** KmerCounter pointer array [0,m_kmerLen], with elements
+     * [1,m_kmerLen] initialized */
+    PKmerCounterArray m_counters;
+    /** m_topBotDep[k_mer_index]->(k-1)_mer_index
+     * array [0,m_kmerLen], with elements
+     * [1,m_kmerLen] initialized*/
+    std::vector<indvec> m_topBotDep;
+    /** m_topOneDep[k_mer_index]->(1)_mer_index
+     * array [0,m_kmerLen], with elements
+     * [1,m_kmerLen] initialized*/
+    std::vector<indvec> m_topOneDep;
+
+	const AbcConvCharToInt *m_pAbcConv;
+	
+	int m_kmerLen;
+
+    /** How reverse complements are treated - one of RC_XXX.*/
+    RC_POLICY m_revCompPolicy;
 };
 
 } // namespace MGT

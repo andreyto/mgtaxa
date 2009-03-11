@@ -1,0 +1,23 @@
+#!/bin/bash
+
+dbdir=$(pwd)
+dldir=$dbdir/dl
+
+mkdir -p $dbdir
+mkdir -p $dldir
+
+topUrl=ftp://ftp.ncbi.nlm.nih.gov/refseq/release
+
+for name in microbial; do
+	cd $dldir && \
+	wget -v "${topUrl}/${name}/${name}[0-9]*.genomic.*.gz" && \
+    for suff in genomic.fna genomic.gbff; do
+        gunzip -c ${name}*.${suff}.gz > ${dbdir}/${name}.${suff}
+        touch $dbdir/*
+    done
+    gbFile=${dbdir}/${name}.genomic.gbff
+	python $MGT_HOME/bin/extractGbHeader.py < $gbFile > $gbFile.hdr
+    faFile=${dbdir}/${name}.genomic.fna
+    grep '>' $faFile > $faFile.hdr
+done
+

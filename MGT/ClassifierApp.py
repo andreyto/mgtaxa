@@ -4,210 +4,13 @@ from MGT.Shogun import *
 from MGT.Svm import *
 from shogun.Features import *
 from shogun.Classifier import *
+from shogun.Kernel import SparseGaussianKernel
 from shogun.Distance import *
 from MGT.PredProcessor import *
+from MGT.SvmMulti import *
 from MGT.App import *
 
-
-def softBinDec(y):
-    return numpy.sign(y)*(1-numpy.exp(-numpy.abs(y)))
-
-def srm(wf,c,l,y):
-    a = 1-l*y
-    return numpy.exp(-(wf + c*numpy.select([a>0],[a],default=0).sum())/(c*len(y)))
-
-def srmBinDec(wf,c,l,y):
-    rm = srm(wf,c,l,y)
-    sy = softBinDec(y)
-    return 
-
-class ModelLinIO:
-    
-    def getData(self,svm):
-        d = Struct()
-        d.bias = svm.get_bias()
-        d.bias_enabled = svm.get_bias_enabled()
-        d.w = svm.get_w()
-        return d
-
-    def save(self,out,svm):
-        d = self.getData(svm)
-        dumpObj(d,out)
-
-    def load(self,inp,svm):
-        d = loadObj(inp)
-        svm.set_bias(d.bias)
-        svm.set_bias_enabled(d.bias_enabled)
-        svm.set_w(d.w)
-
-def svmOcasFact():
-    return SVMOcas(SVM_OCAS)
-
-
-class ModFact:
-
-    def loadModels(self,labels=None):
-        if labels == None:
-            labels = self.getLabels()
-        for label in labels:
-            yield (label,self.loadMod(label))
-
-    def getMaxLabel(self):
-        labels = self.getLabels()
-        return labels[-1]
-
-    def fromOther(self,other,labels=None):
-        for label,mod in other.loadModels(labels=labels):
-            self.saveMod(label,mod)
-
-class ModFileFact(ModFact):
-
-    maxLabel = 100000
-    def __init__(self,modelRoot,svmFact):
-        assert '-' not in modelRoot,"model name cannot contain dash symbol"
-        self.modelRoot=modelRoot
-        self.numLabDig = int(numpy.ceil(numpy.log10(self.maxLabel))+1)
-        self.svmFact = svmFact
-
-    def name(self,label):
-        labFormat = "%0"+str(self.numLabDig)+"i"
-        return os.path.join(self.modelRoot,labFormat % label)
-
-    def saveMod(self,label,svm):
-        fileName = self.name(label)
-        makeFilePath(fileName)
-        ModelLinIO().save(fileName,svm)
-
-    def loadMod(self,label):
-        svm = self.svmFact()
-        ModelLinIO().load(self.name(label),svm)
-        return svm
-
-    def getLabels(self):
-        return sorted([ int(modFile) for modFile in os.listdir(self.modelRoot) ])
-
-
-
-class ModMemFact(ModFact):
-
-    def __init__(self):
-        self.svms = {}
-
-    def saveMod(self,label,svm):
-        self.svms[label] = svm
-
-    def loadMod(self,label):
-        return self.svms[label]
-
-    def getLabels(self):
-        return sorted(self.svms.keys())
-
-
-
-
-
-class SvmOneVsAll:
-
-    def __init__(self,maxLabel=None):
-        self.maxLabel = maxLabel
-        #keep bin svms in memory by default
-        self.modFact = ModMemFact() 
-
-    def setFeat(self,feat):
-        self.feat = feat
-
-    def setLab(self,lab):
-        self.lab = lab
-        if self.maxLabel is None and self.lab is not None:
-            self.maxLabel = max(self.lab)
-
-    def setBinSvm(self,modFact):
-        self.modFact = modFact
-
-    def classifyBin(self):
-        modIter = self.modFact.loadModels()
-        feat = self.feat
-        nSamp = feat.get_num_vectors()
-        binLab = numpy.zeros((nSamp,self.maxLabel+1),dtype='f8')
-        labSeen = numpy.zeros(binLab.shape[1],dtype=bool)
-        labShog = Labels(numpy.zeros(nSamp,dtype='f8'))
-        for (label,svm) in modIter:
-            svm.set_features(feat)
-            w = svm.get_w()
-            n_w = len(w)
-            if feat.get_num_features() < n_w:
-                feat.set_num_features(n_w)
-            labPred = svm.classify(labShog).get_labels()
-            binLab[:,label] = labPred
-            labSeen[label] = True
-        #assert not labSeen[0] #why did I need this?
-        self.binLab = binLab
-        self.labSeen = labSeen
-        print "SvmOneVsAll.classifyBin() did not see models for labels: "+','.join(["%s" % l for l in n.where(labSeen == False)[0]])
-
-    def trainBin(self,trainLabel,opt):
-        feat = self.feat
-        lab = self.lab
-        labBin = numpy.select([lab == trainLabel], [1.], default=-1.)
-        epsilon=1e-2
-        num_threads=1
-        svm=SVMOcas(opt.C, feat, Labels(labBin)) #SVMOcas LibLinear (broken, inverts the sign for some datasets)
-        #svm.set_C(opt.C*float((labBin==-1).sum())/(labBin==1).sum(),opt.C)
-        svm.set_epsilon(epsilon)
-        svm.parallel.set_num_threads(num_threads)
-        svm.set_bias_enabled(True)
-        print "Training label %i ..." % trainLabel
-        svm.train()
-        return svm
-
-    def trainMany(self,trainLabels=None,opt=Struct(C=1.)):
-        if trainLabels is None:
-            trainLabels = numpy.unique(self.lab)
-        modFact = self.modFact
-        for trainLabel in trainLabels:
-            svm = self.trainBin(trainLabel,opt)
-            modFact.saveMod(trainLabel,svm)
-
-    def computeSrm(self):
-        labels = self.lab
-        modIter = self.modFact.loadModels()
-        self.srm = numpy.zeros(len(self.labSeen),dtype='f8')
-        for (label,svm) in modIter:
-            w = svm.get_w()
-            wf = numpy.inner(w,w)/2.
-            c = svm.get_C1()
-            assert self.labSeen[label]
-            y = self.binLab[:,label]
-            l = numpy.select([labels == label],[1.],default=-1.)
-            self.srm[label] = srm(wf,c,l,y)
-
-    def getSrm(self):
-        return self.srm
-
-    def setSrm(self,srm):
-        self.srm = srm
-
-    def classify(self,opt):
-        binLab = self.binLab.copy()
-        if opt.useSrm:
-            for label in numpy.where(self.labSeen)[0]:
-                binLab[:,label] = softBinDec(binLab[:,label]) * self.srm[label]
-        binLab[:,-self.labSeen] = -1e10
-        labMaxBin = binLab.argmax(1)
-        rowInd = numpy.arange(len(binLab))
-        pred = numpy.select([binLab[rowInd,labMaxBin] >= opt.thresh], [labMaxBin], default=0)
-        return pred
-
-def svmOneVsAllOneStep(feat,lab,opt=Struct(C=1.,thresh=-200,useSrm=False)):
-    svmMul = SvmOneVsAll()
-    svmMul.setLab(lab[0])
-    svmMul.setFeat(feat[0])
-    svmMul.trainMany(opt=opt)
-    svmMul.setLab(None)
-    svmMul.setFeat(feat[1])
-    svmMul.classifyBin()
-    labPred = svmMul.classify(opt=opt)
-    return labPred
+__all__ = ["ClassifierApp"] 
 
 
 def analyzePredGos(pred,dataDir):
@@ -259,6 +62,10 @@ class ClassifierApp(App):
             action="store", type="int",dest="knnK",default=5,help="Number of nearest neighbours in KNN algorithm"),
             make_option("-d", "--knn-max-dist",
             action="store", type="float",dest="knnMaxDist",default=None),
+            make_option(None, "--kernel",
+            action="store", type="choice",choices=("lin","rbf"),dest="kernel",default="lin"),
+            make_option(None, "--rbf-width",
+            action="store", type="float",dest="rbfWidth",default=1.),
             make_option("-l", "--train-label",
             action="store", type="string",dest="trainLabel",default="-1"),
             make_option("-t", "--predict-thresh",
@@ -302,10 +109,12 @@ class ClassifierApp(App):
     def loadFeatures(self):
         opt = self.opt
         labels = opt.labels
+        assert not isinstance(labels,str),"Need a sequence of label files"
         if labels is None:
             labels = [ lf+".idlab" for lf in opt.inFeat ]
         idLab = loadIdLabelsMany(fileNames=labels)
         self.idLab = idLab
+        assert not isinstance(opt.inFeat,str),"Need a sequence of feature files"
         assert len(opt.inFeat) > 0
         dataFeat = loadSparseSeqsMany(opt.inFeat,idLab=idLab)
         idLabSplits = idLab.getSplits()
@@ -351,7 +160,17 @@ class ClassifierApp(App):
                 raise "Null hypothesis checking is undefined for this mode: ",opt.mode
 
         maxLab = max([ max(l) for l in lab ])
-        modFact = ModFileFact(opt.modelRoot,svmOcasFact)
+        if "svm" in opt.method:
+            if opt.kernel == "lin":
+                svmFact = SvmShogLin.factory(C=opt.C)
+            elif opt.kernel == "rbf":
+                kernel=SparseGaussianKernel(100,opt.rbfWidth)
+                #kernel must know its lhs for classification, and
+                #it must be the same as it was for training
+                kernel.init(feat[0],feat[0])
+                svmFact = SvmShogKern.factory(C=opt.C,kernel=kernel)
+            if opt.method == "svm":
+                modStore = SvmModFileStore(opt.modelRoot,svmFact=svmFact)
         if opt.mode == "train":
             trainLabCnt = numpy.bincount(lab[0])
             trainLabelsPos = numpy.where(trainLabCnt>0)[0]
@@ -363,21 +182,21 @@ class ClassifierApp(App):
                 svmMul = SvmOneVsAll(maxLabel=maxLab)
                 svmMul.setLab(lab[0])
                 svmMul.setFeat(feat[0])
-                svmMul.setBinSvm(modFact)
-                svmMul.trainMany(trainLabels=trainLabels,opt=opt)
+                svmMul.setSvmStore(modStore)
+                svmMul.trainMany(trainLabels=trainLabels)
 
         elif opt.mode in ("test","predict"):
             if opt.method == "svm":
                 if len(trainLabels) == 1 and trainLabels[0] == -1:
                     labLoad = None
-                    maxLabel = modFact.getMaxLabel()
+                    maxLabel = modStore.getMaxLabel()
                 else:
                     labLoad = trainLabels
                     maxLabel = max(trainLabels)
-                svms = ModMemFact()
-                svms.fromOther(modFact,labels=labLoad)
+                svms = SvmModMemStore(svmFact)
+                svms.fromOther(modStore,labels=labLoad)
                 svmMul = SvmOneVsAll(maxLabel=maxLabel)
-                svmMul.setBinSvm(svms)
+                svmMul.setSvmStore(svms)
                 if opt.useSrm:
                     svmMul.setFeat(feat[1])
                     svmMul.classifyBin()
@@ -393,7 +212,7 @@ class ClassifierApp(App):
                 labPred = n.zeros((len(thresh),len(lab[2])),dtype='i4')
                 for iThresh in xrange(len(thresh)):
                     t = thresh[iThresh]
-                    labPred[iThresh] = svmMul.classify(opt=Struct(thresh=t,useSrm=opt.useSrm))
+                    labPred[iThresh] = svmMul.classify(thresh=t,useSrm=opt.useSrm)
                     print "Threshold %.3f" % t
                 return Struct(labPred=labPred,param=n.rec.fromarrays([thresh],names="thresh"))
             elif opt.method == "knn":

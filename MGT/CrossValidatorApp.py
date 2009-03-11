@@ -32,7 +32,7 @@ class CrossValidatorApp(App):
 
     def getOptFileName(self):
         """Return stable file name for options dump.
-        This file can be updated as compputation progresses.
+        This file can be updated as computation progresses.
         It can hold file names for final result files etc."""
         return pjoin(self.cwd,"opt.pkl")
 
@@ -53,10 +53,11 @@ class CrossValidatorApp(App):
         spClOpt.mode = "train"
         spClOpt.runMode = self.opt.runMode
         spOptFile = self.getSplitOptFileName(testSplit)
+        spApp = ClassifierApp(opt=spClOpt)
+        spClOpt = spApp.getOpt() #get the missing options filled with defaults
         #that just saves a copy for us - App will create its own when it 
         #submits a batch job (unique and slightly modified)
         dumpObj(spClOpt,spOptFile)
-        spApp = ClassifierApp(opt=spClOpt)
         jobs = spApp.run(cwd=spDir)
         spClOpt.mode = "test"
         spApp = ClassifierApp(opt=spClOpt)
@@ -68,6 +69,7 @@ class CrossValidatorApp(App):
         opt = self.opt
         clOpt = self.clOpt
         labPred = []
+        spPerfs = []
         param = None
         idPred = []
         for (spDir,split) in self.listSplitDirNames():
@@ -77,11 +79,16 @@ class CrossValidatorApp(App):
             #param (e.g. decision thresholds) is assumed to be identical for all splits
             param = spPred.param
             idPred.append(spPred.idPred)
+            spPerf = loadObj(spClOpt.perfFile)
+            spPerf.joinParam(n.asarray([(split,)],dtype=[("split","i4")]))
+            spPerfs.append(spPerf)
+        spPerfs = spPerfs[0].concatenate(spPerfs)
         labPred = n.column_stack(labPred)
         idPred = n.concatenate(idPred)
         pred = Predictions(labPred=labPred,param=param,idPred=idPred)
         opt.setdefault("predFile",pjoin(self.cwd,"pred.pkl"))
         opt.setdefault("perfFile",pjoin(self.cwd,"perf.pkl"))
+        opt.setdefault("perfFileCl",pjoin(self.cwd,"perf.cl.pkl"))
         dumpObj(opt,self.getOptFileName())
         if opt.predFile is not None:
             dumpObj(pred,opt.predFile)
@@ -89,6 +96,7 @@ class CrossValidatorApp(App):
                 confMatrFileStem=opt.perfFile if clOpt.exportConfMatr else None,
                 keepConfMatr=clOpt.saveConfMatr)
         dumpObj(perf,opt.perfFile)
+        dumpObj(spPerfs,opt.perfFileCl)
 
 
     def crossVal(self):

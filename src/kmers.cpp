@@ -236,6 +236,7 @@ AbcConvCharToInt g_defAbcConvCharToInt(g_defNucAbc,g_defNucAbcRevCompl);
  * precalculated and stored in memory, so be reasonable with this parameter.
  * @param pAbcConv is a to AbcConvCharToInt alphabet convertor
  * (stored inside this KmerCounter object but not managed).
+ * @param revCompPolicy what to do about reverse complement k-mers
  * @param firstIdState Start k-mer IDs from this value (default 1 as in SVMLight)
 */
 
@@ -264,6 +265,69 @@ KmerCounter::~KmerCounter() {
 	delete m_pStates;	
 }
 
+
+/** A constructor.
+ * @param kmerLen is a max length of a k-mer. K-mers from 1 to k will be counted.
+ * In the current implementation, all kmers are
+ * precalculated and stored in memory, so be reasonable with this parameter.
+ * @param pAbcConv is an alphabet convertor
+ * (stored inside this KmerCounter object but not managed).
+ * @param revCompPolicy what to do about reverse complement k-mers (currently only
+ * RC_DIRECT is supported).
+*/
+KmerCounterLadder::KmerCounterLadder(int kmerLen, 
+                         const AbcConvCharToInt  *pAbcConv,
+                         RC_POLICY revCompPolicy) {
+	if( pAbcConv == 0 ) {
+		pAbcConv = & g_defAbcConvCharToInt;
+	}
+    ADT_ALWAYS(revCompPolicy == RC_DIRECT);
+	m_pAbcConv = pAbcConv;
+	m_kmerLen = kmerLen;
+    m_revCompPolicy = revCompPolicy;
+    m_counters.resize(kmerLen+1); //will index by k as in k-mer
+    KmerId firstIdState = 1;
+    // it leads to a little more simple code down the road if we output
+    // the higher order k-mers first in the combined feature vector,
+    // because we have to clean the accumulated state machine objects in that order.
+    // So we set the ID ranges in that order.
+    for(int i=kmerLen; i>=1; i--) {
+        m_counters[i].reset(new KmerCounter(i,pAbcConv,m_revCompPolicy,firstIdState));
+        firstIdState=m_counters[i]->getLastIdState();
+    }
+    makeTopDownKmerInd();
+}
+
+/** Create internal indices that connect each top level k-mer with (k-1)-mer prefix and 1-mer suffix.
+ * Must be called from the constructor.*/
+
+void KmerCounterLadder::makeTopDownKmerInd() {
+    m_topBotDep.resize(m_kmerLen+1);
+    m_topOneDep.resize(m_kmerLen+1);
+    for(int k=m_kmerLen; k>1; k--) {
+        KmerCounter& top = *m_counters[k];
+        KmerCounter& bot = *m_counters[k-1];
+        KmerCounter& one = *m_counters[1];
+        KmerStates& topStates = top.getStates();
+        KmerStates& botStates = bot.getStates();
+        KmerStates& oneStates = one.getStates();
+        indvec& topBotDep = m_topBotDep[k];
+        indvec& topOneDep = m_topOneDep[k];
+        topBotDep.resize(topStates.numStates());
+        topOneDep.resize(topStates.numStates());
+        for(Ind topInd=0; topInd < topStates.numStates(); topInd++) {
+            const Kmer& topKmer = topStates.getKmer(topInd);
+		    if(! topStates.isDegenState(topStates.getState(topInd)) ) {
+                Kmer botKmer = topKmer.subKmer(0,k-1);
+                Kmer oneKmer = topKmer.subKmer(k-1,k);
+                Ind botInd = botStates.kmerToIndex(botKmer);
+                Ind oneInd = oneStates.kmerToIndex(oneKmer);
+                topBotDep[topInd] = botInd;
+                topOneDep[topInd] = oneInd;
+            }
+        }
+    }
+}
 
 } // namespace MGT
 

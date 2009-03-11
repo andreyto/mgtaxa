@@ -37,7 +37,7 @@ namespace num_util{
    *@param t elements' numpy type. Default is double.
    *@return a numeric array of size n with elements initialized to zero.
    */
-  boost::python::numeric::array makeNum(intp n, PyArray_TYPES t);
+  boost::python::numeric::array makeNum(int n, PyArray_TYPES t=PyArray_DOUBLE);
 
   /** 
    *Creates a n-dimensional numpy array with dimensions dimens and numpy 
@@ -46,8 +46,8 @@ namespace num_util{
    *@param t elements' numpy type. Default is double.
    *@return a numeric array of shape dimens with elements initialized to zero.
    */
-  boost::python::numeric::array makeNum(std::vector<intp> dimens, 
-					PyArray_TYPES t);
+  boost::python::numeric::array makeNum(std::vector<int> dimens, 
+					PyArray_TYPES t=PyArray_DOUBLE);
 				      
   /** 
    *Function template returns PyArray_Type for C++ type

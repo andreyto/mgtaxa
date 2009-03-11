@@ -51,17 +51,17 @@ class PerfMetrics(Struct):
             closeOut = True
         else:
             closeOut = False
-        labToId = self.labToName
+        labToName = self.labToName
         lab = n.arange(len(m),dtype='i4')
-        name = [ labToName[l] for l in lab ]
+        name = [ labToName.get(l,"") for l in lab ]
         out.write('0,0,')
         for l in lab: out.write("%i," % l)
         out.write('\n')
         out.write('0,0,')
-        for i in name: out.write("%i," % i)
+        for s in name: out.write("%s," % s)
         out.write('\n')
         for l in lab:
-            out.write("%i,%i," % (l,name[l]))
+            out.write("%i,%s," % (l,name[l]))
             for x in m[l]: out.write("%i," % x)
             out.write('\n')
         if closeOut:
@@ -89,7 +89,14 @@ def perfMetrics(test,pred,balanceCounts=True):
     sen = (tp[tNzW].astype('f4')/t[tNzW])
     senLab = tNzW[0] + 1 #because mr = m[1:,1:]
     sen = n.rec.fromarrays([senLab,sen],names="label,val")
-    senMean = sen["val"].mean()
+    if len(sen) > 0:
+        senMean = sen["val"].mean()
+        senMin = sen["val"].min()
+        senStd = sen["val"].std()
+    else:
+        speMean = 0
+        speMin = 0
+        senStd = 0
     pNzW = n.where(p > 0)
     spe = (tp[pNzW].astype('f4')/p[pNzW])
     speLab = pNzW[0] + 1 #because mr = m[1:,1:]
@@ -97,22 +104,34 @@ def perfMetrics(test,pred,balanceCounts=True):
     if len(spe) > 0:
         speMean = spe["val"].mean()
         speMin = spe["val"].min()
+        speStd = spe["val"].std()
         speMeanTP = spe["val"][spe["val"]>0].mean()
     else:
         speMean = 0
         speMin = 0
+        speStd = 0
         speMeanTP = 0
     acc = float(tp.sum())/t.sum()
-    #print "Spe: ", spe
-    #print "Sen: ", sen
     if options.debug >= 1:
         print \
                 "TP: "+`tp.sum()`+" T: "+`t.sum()`+" P: "+`p.sum()`+" S: "+`m.sum()`+\
                 " CT: "+`(t>0).sum()`+" CP: "+`(p>0).sum()`+" CTP: "+`(tp>0).sum()`+\
-                " Sen: %.2f"%(senMean*100)+" Spe: %.f"%(speMean*100)+" SpeMin: %.f"%(speMin*100)+\
+                " Sen: %.2f"%(senMean*100)+" Spe: %.f"%(speMean*100)+\
+                " SenMin: %.f"%(senMin*100)+" SpeMin: %.f"%(speMin*100)+\
+                " SenStd: %.f"%(senStd*100)+" SpeStd: %.f"%(speStd*100)+\
                 " SpeTP: %.f"%(speMeanTP*100)+" Acc: %.f"%(acc*100)
-    pm = PerfMetrics(cm=cm,sen=sen,spe=spe,senMean=senMean,speMean=speMean,
-            speMin=speMin,speMeanTP=speMeanTP,acc=acc)
+        pr = spe.copy()
+        pr["val"] = (pr["val"]*100).round()
+        print "Class Spe: ", pr
+        pr = sen.copy()
+        pr["val"] = (pr["val"]*100).round()
+        print "Class Sen: ", pr
+    pm = PerfMetrics(cm=cm,
+            sen=sen,spe=spe,
+            senMean=senMean,speMean=speMean,
+            senMin=senMin,speMin=speMin,
+            senStd=senStd,speStd=speStd,
+            speMeanTP=speMeanTP,acc=acc)
     return pm
 
 
@@ -133,14 +152,18 @@ class PerfMetricsSet:
         @todo Currently all metrics types will be converted to 32 bit floats."""
         val = n.rec.fromrecords([ tuple([ getattr(pm,name) for name in names ]) for pm in self.perf ],
                 names=','.join(names),formats=','.join(["f4"]*len(names)))
-        #@todo param None?
         if self.param is not None:
             fields = ("param","val")
             arrs = (self.param,val)
         else:
             fields = ("val",)
             arrs = (val,)
-        return recFromArrays(arrs,names=fields) 
+        return recFromArrays(arrs,names=fields)
+
+    def exportMetricsCsv(self,names,out):
+        """Call getMetrics(names) and export the result as CSV file"""
+        arr = self.getMetrics(names=names)
+        saveRecArrayAsCsv(arr,out=out,sep='\t')
 
     def getMetricsNames(self):
         return self.perf[0].getMetricsNames()
@@ -150,7 +173,12 @@ class PerfMetricsSet:
         That means append new fields to the parameter records.
         @param param a single recarray.record or recarray[N_param]
         """
-        self.param = joinRecArrays([param,self.param])
+        if self.param is not None:
+            self.param = joinRecArrays([param,self.param])
+        else:
+            newpar = n.zeros(len(self.perf),dtype=param.dtype)
+            newpar[:] = param
+            self.param = newpar
 
     @classmethod
     def concatenate(klass,sets):

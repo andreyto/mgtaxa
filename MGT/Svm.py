@@ -1,26 +1,28 @@
 from MGT.Common import *
 from MGT.Taxa import *
-from MGT import Kmers
-from itertools import izip
 
-class SvmSparseFeatureWriterTxt(Kmers.SvmSparseFeatureWriterTxt):
+def featIdFileNameDef(featFile):
+    return featFile+'.id'
+
+from MGTX import kmersx
+class SvmSparseFeatureWriterTxt(kmersx.SvmSparseFeatureWriterTxt):
 
     def __init__(self,out,outId=None):
-        Kmers.SvmSparseFeatureWriterTxt.__init__(self,out)
+        kmersx.SvmSparseFeatureWriterTxt.__init__(self,out)
         if not hasattr(outId,'write'):
             if outId is None:
                 assert isinstance(out,str)
-                outId = open(out+'.id','w', buffering=1024*1024)
+                outId = open(featIdFileNameDef(out),'w', buffering=1024*1024)
         self.outId = outId
 
     def write(self,label,feature,id=None):
-        Kmers.SvmSparseFeatureWriterTxt.write(self,label,feature['values'],feature['indices'])
+        kmersx.SvmSparseFeatureWriterTxt.write(self,label,feature['val'],feature['ind'])
         if id is None:
             id = label
         self.outId.write("%s\n" % id)
 
     def close(self):
-        Kmers.SvmSparseFeatureWriterTxt.close(self)
+        kmersx.SvmSparseFeatureWriterTxt.close(self)
         self.outId.close()
 
 class SvmFastaFeatureWriterTxt:
@@ -35,7 +37,7 @@ class SvmFastaFeatureWriterTxt:
         self.out.close()
 
     def write(self,label,feature):
-        self.out.write(">%d\n" % label)
+        self.out.write(">%s\n" % label)
         self.out.write(feature.tostring())
         self.out.write("\n")
         self.nOut += 1
@@ -72,7 +74,7 @@ class SvmStringFeatureWriterTxt:
         if not hasattr(outId,'write'):
             if outId is None:
                 assert isinstance(out,str)
-                outId = open(out+'.id','w', buffering=1024*1024)
+                outId = open(featIdFileNameDef(out),'w', buffering=1024*1024)
         self.outId = outId
         if not hasattr(out,'write'):
             out = open(out,'w', buffering=1024*1024)
@@ -84,7 +86,7 @@ class SvmStringFeatureWriterTxt:
         self.outId.close()
 
     def write(self,label,feature,id=None):
-        self.out.write("%d " % label)
+        self.out.write("%s " % label)
         if isinstance(feature,str):
             self.out.write(feature)
         else:
@@ -104,7 +106,7 @@ class SvmDenseFeatureWriterTxt:
         if not hasattr(outId,'write'):
             if outId is None:
                 assert isinstance(out,str)
-                outId = open(out+'.id','w', buffering=1024*1024)
+                outId = open(featIdFileNameDef(out),'w', buffering=1024*1024)
         self.outId = outId
         if not hasattr(out,'write'):
             out = open(out,'w', buffering=1024*1024)
@@ -119,7 +121,7 @@ class SvmDenseFeatureWriterTxt:
     def write(self,label,feature,id=None):
         if self.formatStr is None:
             self.formatStr = ' '.join( ("%d:%%g" % ind for ind in xrange(1,len(feature)+1)) ) + '\n'
-        self.out.write("%d " % (label,))
+        self.out.write("%s " % (label,))
         self.out.write(self.formatStr % tuple(feature))
         if id is None:
             id = label
@@ -157,6 +159,45 @@ class SvmDenseFeatureWriterCsv:
     def numRec(self):
         return self.nOut
 
+
+class SvmDenseFeatureWriterXyz:
+    """Output first three components of a dense real feature as atom coordinates of Tinker XYZ file.
+    The output file can be loaded into some molecular viewer such as Pymol.
+    The idea is to use fast 3D graphics and selection algebra of a molecular viewer
+    in order to vizualize first three components of PCA or other dimensionality reduction procedure.
+    Label is written as atom type."""
+    
+    def __init__(self,out,nSamp,outId=None):
+        self.chemElem = "Ar"
+        if not hasattr(outId,'write'):
+            if outId is None:
+                assert isinstance(out,str)
+                outId = open(featIdFileNameDef(out),'w', buffering=1024*1024)
+        self.outId = outId
+        if not hasattr(out,'write'):
+            out = open(out,'w', buffering=1024*1024)
+        self.out = out
+        self.nOut = 0
+        self.formatStr = "%6d  %-3s%12.6f%12.6f%12.6f%6d\n"
+        #self.formatStr = "%i\t%s\t%f\t%f\t%f\%i\n"
+        out.write("%6d  \n" % nSamp)
+        
+    def close(self):
+        self.out.close()
+        self.outId.close()
+
+    def write(self,label,feature,id=None):
+        num = self.nOut + 1
+        if id is None:
+            id = num
+        self.out.write(self.formatStr % ((num,self.chemElem)+tuple(feature[:3])+(label,)))
+        self.outId.write("%s\n" % id)
+        self.nOut += 1
+
+    def numRec(self):
+        return self.nOut
+
+
 class RevCompl:
     def __init__(self):
         trans = ['C']*256
@@ -172,7 +213,7 @@ def transDegen(seq):
     if not checkSaneAlphaHist(seq,nonDegenSymb=abet,minNonDegenRatio=0.9):
         print "Apparently, wrong alphabet for sequence: " + seq
     nAbet = len(abet)
-    s = numpy.fromstring(seq.upper(),dtype='S1')
+    s = n.fromstring(seq.upper(),dtype='S1')
     for i in xrange(len(s)):
         if s[i] not in abet:
             #print i,s[i],"->",
@@ -195,8 +236,8 @@ def alphaHist(seq):
     return d
 
 def checkSaneAlphaHist(seq,nonDegenSymb,minNonDegenRatio=0.9):
-    hist = numpy.bincount(numpy.fromstring(seq,dtype='b'))
-    ind_nd = numpy.fromstring(nonDegenSymb,dtype='b')
+    hist = n.bincount(n.fromstring(seq,dtype='b'))
+    ind_nd = n.fromstring(nonDegenSymb,dtype='b')
     return float(hist[ind_nd[ind_nd<len(hist)]].sum())/len(seq) >= minNonDegenRatio
 
 def checkSaneAlphaHistOld(seq,nonDegenSymb,minNonDegenRatio=0.9):
@@ -209,7 +250,7 @@ def balance(data,maxCount=0,labTargets={}):
     @param data samples, must have data['label'] field
     @param maxCount if 0 - balance to the min class count, if <0 - only shuffle, else - to this count
     @param labTargets dict with optional per label maxCount values with the same semantics"""
-    cnt = numpy.bincount(data['label'].astype('i4'))
+    cnt = n.bincount(data['label'].astype('i4'))
     targCnt = cnt[cnt > 0].min()
     if maxCount > 0:
         targCnt = maxCount
@@ -229,7 +270,7 @@ def balance(data,maxCount=0,labTargets={}):
                 dataLab = data[data['label'].astype('i4') == lab]
                 dataLab = dataLab[random.sample(xrange(len(dataLab)),tcnt)]
                 dataSel.append(dataLab)
-    dataSel = numpy.concatenate(dataSel)
+    dataSel = n.concatenate(dataSel)
     #numpy permutation or shuffle do not work on arrays with 'O' datatypes
     dataSel = dataSel[nrnd.permutation(n.arange(len(dataSel),dtype=int))]
     return dataSel
@@ -238,7 +279,7 @@ def addRevComplRows(data):
     dataRC = data.copy()
     for rec in dataRC:
         rec['feature'] = revCompl(rec['feature'])
-    return numpy.concatenate([data,dataRC])
+    return n.concatenate([data,dataRC])
 
 def addRevComplCols(data):
     for rec in data:
@@ -255,7 +296,7 @@ def splitStringFeat(data,sampLen):
     applyToFeatData(data,lambda s: s[:sampLen])
     #applyToFeatData(dataRC,lambda s: s[sampLen:])
     return data
-    #return numpy.concatenate([data,dataRC])
+    #return n.concatenate([data,dataRC])
 
 def applyToFeatData(data,func):
     for rec in data:
@@ -265,13 +306,30 @@ def isUniqueId(data):
     return len(n.unique1d(data["id"])) == len(data["id"])
 
 class IdMap:
-    """Map of old IDs to new IDs created as a result of e.g. convFeat call"""
+    """Map of old IDs to new IDs created as a result of e.g. sequence shredding"""
 
-    def __init__(self,data):
-        self.data = data
+    def __init__(self,records):
+        """Constructor.
+        @param records numpy recarray mapping "oldId" to "id" field, 1-to-N, so that "id" is unique"""
+        self.records = records
+
+    def getRecords(self):
+        return self.records
+
+    def getIdToRec(self):
+        return dict( (rec["id"],rec) for rec in self.records )
+
+    def selByOldId(self,ids):
+        """Return a new IdMap object that contains only records within a given old ids sequence"""
+        ids = set(ids)
+        recs = self.getRecords()
+        ind = n.asarray([ ind for (ind,id) in it.izip(it.count(),recs["oldId"]) if id in ids ],dtype=int)
+        return self.__class__(records=recs[ind])
 
 class IdLabels:
     """Maps unique sample IDs into classification labels (many-to-one relationship) and their splits"""
+
+    _defRecDtype = n.dtype([("id",idDtype),("label","f8"),("split","i4")])
 
     def __init__(self,records=None,fileName=None,initMaps=True):
         """Ctor.
@@ -286,7 +344,15 @@ class IdLabels:
                 self.initMaps()
                 self.check()
         elif fileName is not None:
-            self.load(fileName,initMaps=initMaps)
+            assert initMaps == True, "Not implemented"
+            self.load(fileName)
+
+    def __getstate__(self):
+        return dict(data=self.data)
+
+    def __setstate__(self,state):
+        self.__dict__.update(state)
+        self.initMaps()
 
     def initMaps(self):
         records = self.getRecords()
@@ -295,9 +361,35 @@ class IdLabels:
         self.splitToRec = groupRecArray(records,keyField="split")
         self.initLabToNameMap()
 
+    @classmethod
+    def defRecDtype(klass):
+        """Return a default numpy dtype that can be used to construct new record arrays"""
+        #idDtype comes from UUID
+        return klass._defRecDtype
+
+    @classmethod
+    def makeRecords(klass,nrec,dtype=None):
+        """Return a zeroed out new record array of a given size.
+        The caller is responsible for filling it with values.
+        @param nrec size of returned array
+        @param dtype numpy dtype for array records, if None, the result of defRecDtype() will be used
+        """
+        if dtype is None:
+            dtype = klass.defRecDtype()
+        return n.zeros(nrec,dtype=dtype)
+
+    @classmethod
+    def union(klass,idLabs):
+        """Return a union of several IdLabels objects.
+        @param idlabs a sequence of IdLabels objects.
+        @return IdLabels object that is a union.
+        @pre if there are identical ID values in input arrays, the corresponding records must be fully identical too."""
+        return klass(records=n.concatenate([ x.getRecords() for x in idLabs ]))
+    
     def initLabToNameMap(self):
         if not hasattr(self.data,"labNames"):
-            self.labToName = dict( ( (lab,lab) for lab in self.labToRec ) )
+            self.labNames = dict( ( (lab,lab) for lab in self.labToRec ) )
+        self.labToName = self.labNames
 
     def check(self):
         records = self.getRecords()
@@ -338,57 +430,83 @@ class IdLabels:
         self.initLabToNameMap()
 
     def save(self,fileName):
-        dumpObj(self.data,fileName)
+        dumpObj(self,fileName)
 
-    def load(self,fileName,initMaps=True):
-        self.data = loadObj(fileName)
-        if initMaps:
-            self.initMaps()
-
-    def union(self,other):
-        """Return a union of self and other(s).
-        @param other either IdLabels object or a sequence of such objects.
-        @pre if there are identical ID values, the corresponding records are fully identical too."""
-        srec = self.getRecords()
-        if isinstance(other,IdLabels):
-            orec = other.getRecords()
-            nrec = n.concatenate([srec,orec])
-        else:
-            #other must be a sequence of IdLabels objects
-            orec = [ x.getRecords() for x in other ]
-            orec.append(srec)
-            nrec = n.concatenate(orec)
-        return self.__class__(records=nrec)
+    def load(self,fileName):
+        self.__dict__.update(loadObj(fileName).__dict__)
 
     def selDataInd(self,data):
-        """Return array of row indices for data rows that are present in self"""
+        """Return array of row indices for data rows that are referenced here"""
         idToRec = self.getIdToRec()
-        return n.asarray([ ind for (ind,id) in it.izip(it.count(),data["id"]) if id in idToRec ],dtype='i4')
+        return n.asarray([ ind for (ind,id) in it.izip(it.count(),data["id"]) if id in idToRec ],dtype=int)
 
     def selData(self,data,setLab=True):
+        """Return records from data array that are referenced here.
+        @param data feature data array
+        @param setLab if True, labels if returned data records will be updated from this object"""
         d = data[self.selDataInd(data)]
         if setLab:
             self.setDataLab(d)
         return d
 
+    def selById(self,ids):
+        """Return a new IdLabels object that contains only records within a given ids sequence"""
+        ids = set(ids)
+        recs = self.getRecords()
+        ind = n.asarray([ ind for (ind,id) in it.izip(it.count(),recs["id"]) if id in ids ],dtype=int)
+        return self.__class__(records=recs[ind])
+
     def setDataLab(self,data):
+        """Update labels in the data feature array from this object"""
         idToRec = self.getIdToRec()
         for rec in data:
             rec["label"] = idToRec[rec["id"]]["label"]
 
+    def balance(self,maxCount=0,targets={}):
+        """Return a new Idlabels object that has id counts balanced across splits and labels.
+        @param maxCount default maximum count value for each (split,label) combination, @see balance() 
+        at the module level for the meaning of zero and negative values.
+        @param targets dict {split : { "maxCount" : value, "labTargets" : value },...} where each value is optional
+        and overrides the maxCount parameter for a specific split or specific (split,label) pair.
+        @return new IdLabels balanced object."""
+        spRecs = self.getSplitToRec()
+        spRecsBal = []
+        for split in spRecs:
+            spTargets = targets.get(split,{})
+            spMaxCount = spTargets.get("maxCount",maxCount)
+            spLabTargets = spTargets.get("labTargets",{})
+            spRecsBal.append(balance(data=spRecs[split],maxCount=spMaxCount,labTargets=spLabTargets))
+        return self.__class__(records=n.concatenate(spRecsBal))
 
+    def count(self,keyFields=("split","label"),format="list"):
+        return countRecArray(arr=self.getRecords(),keyFields=keyFields,format=format)
+
+    def remapIds(self,idMap):
+        """Return a new IdLabels object that has new id values created from IdMap argument.
+        Because IdMap represents a 1-to-N old-to-new relation, the returned object will have
+        multiple copies of the same records but with different new id value."""
+        oldToRec = self.getIdToRec()
+        #some old ids from idMap may be absent in self, so drop them
+        idMap = idMap.selByOldId(oldToRec)
+        newToOld = idMap.getIdToRec()
+        idmapRecs = idMap.getRecords()
+        newrecs = self.makeRecords(nrec=len(idmapRecs))
+        newrecs["id"] = idmapRecs["id"]
+        for iRec in xrange(len(newrecs)):
+            newid = newrecs[iRec]["id"]
+            newrecs[iRec] = oldToRec[newToOld[newid]["oldId"]]
+            newrecs[iRec] ["id"] = newid
+        return self.__class__(records=newrecs)
+
+        
+def showSvmDataCounts(data):
+    return "%s records: %s" % (len(data),sorted(binCount(data['label'].astype('i4')).items()))
+        
 def unionIdLabels(idLabs):
-    if len(idLabs) == 1:
-        return idLabs[0]
-    elif len(idLabs) > 1:
-        first,rest = idLabs[0],idLabs[1:]
-        return first.union(rest)
-    else:
-        raise ValueError("Empty sequence is not allowed as argument to unionIdLabels")
-
+    return idLabs[0].union(idLabs)
 
 def loadIdLabelsMany(fileNames):
-    return unionIdLabels([ IdLabels(fileName=fileName) for fileName in fileNames ])
+    return unionIdLabels([ loadObj(fileName) for fileName in fileNames ])
         
 
 def saveIdLabelRecords(records,fileName):
@@ -399,6 +517,7 @@ def saveIdLabelRecords(records,fileName):
 
 
 class LoadSeqPreprocIdFilter:
+    """LoadSeq preprocessor that loads only records present in idToLab map and sets 'label' fields from idToLab"""
 
     def __init__(self,idToLab):
         self.idToLab = idToLab
@@ -448,11 +567,11 @@ class LoadSeqPreprocShred:
         else:
             ids = zeroId(n=len(sampSeq),val=id)
         oldIds = zeroId(n=len(sampSeq),val=id)
-        self.sampCoord.append(n.rec.fromarrays([oldIds,ids,sampStarts],names="oldId,id,sampStart"))
+        self.sampCoord.append(n.rec.fromarrays([oldIds,ids,sampStarts,sampStarts+sampLen],names="oldId,id,sampStart,sampEnd"))
         return [lab]*len(sampSeq),sampSeq,ids
 
     def getIdMap(self):
-        return IdMap(data=n.concatenate(self.sampCoord))
+        return IdMap(records=n.concatenate(self.sampCoord))
 
 def loadSeqPreprocIdent(lab,seq,id):
     return ([lab], [seq], [id])
@@ -482,13 +601,16 @@ def loadSeqPreprocParseSparse2(lab,seq,id):
     feat = n.rec.fromrecords([ entry.split(':') for entry in seq.split() ],dtype=[("ind","i4"),("val","f8")])
     return ([lab], [feat], [id])
 
-def featIdFileNameDef(featFile):
-    return featFile+'.id'
+
+def loadSeqsIdDef(inpFile):
+    return svmLoadId(featIdFileNameDef(inpFile))
 
 def loadSeqs(inpFile,preProc=loadSeqPreprocIdent,inpFileId=None,genMissingId=False):
+    idFileName = None
     if inpFileId is None:
         assert isinstance(inpFile,str)
         inpFileId = featIdFileNameDef(inpFile)
+        idFileName = inpFileId
         if not os.path.exists(inpFileId):
             inpFileId = None
     if inpFileId is not None:
@@ -498,7 +620,7 @@ def loadSeqs(inpFile,preProc=loadSeqPreprocIdent,inpFileId=None,genMissingId=Fal
         if genMissingId:
             _genId = lambda i: genId()
         else:
-            raise ValueError("Feature ID file not found")
+            raise ValueError("Feature ID file not found: %s" % (idFileName,))
     if isinstance(inpFile,str):
         inpFile=openCompressed(inpFile,'r')
         closeInp=True
@@ -519,10 +641,10 @@ def loadSeqs(inpFile,preProc=loadSeqPreprocIdent,inpFileId=None,genMissingId=Fal
             seqs.extend(rec[1])
             ids.extend(rec[2])
         iLine += 1
-    label = numpy.asarray(labs,dtype='f8')
-    feature = numpy.asarray(seqs,dtype='O')
-    id = numpy.asarray(ids,dtype=idDtype)
-    data = numpy.rec.fromarrays((label,feature,id),names='label,feature,id')
+    label = n.asarray(labs,dtype='f8')
+    feature = n.asarray(seqs,dtype='O')
+    id = n.asarray(ids,dtype=idDtype)
+    data = n.rec.fromarrays((label,feature,id),names='label,feature,id')
     if closeInp:
         inpFile.close()
     return data
@@ -537,10 +659,10 @@ def convFeat(data,preProc):
             labs.extend(rec[0])
             seqs.extend(rec[1])
             ids.extend(rec[2])
-    label = numpy.asarray(labs,dtype='f8')
-    feature = numpy.asarray(seqs,dtype='O')
-    id = numpy.asarray(ids,dtype=idDtype)
-    return numpy.rec.fromarrays((label,feature,id),names='label,feature,id')
+    label = n.asarray(labs,dtype='f8')
+    feature = n.asarray(seqs,dtype='O')
+    id = n.asarray(ids,dtype=idDtype)
+    return n.rec.fromarrays((label,feature,id),names='label,feature,id')
 
 def convFeatInPlace(data,preProc):
     """Convert feature array in place.
@@ -561,10 +683,21 @@ def convFeatInPlace(data,preProc):
     return data
 
 def loadSeqsMany(inpFiles,preProc=loadSeqPreprocIdent,inpFilesId=None):
+    assert not isinstance(inpFiles,str) # must be sequence of strings
     if inpFilesId is None:
         inpFilesId = [None]*len(inpFiles)
     return n.concatenate([ loadSeqs(inpFile=inpFile,preProc=preProc,inpFileId=inpFileId) for \
             (inpFile,inpFileId) in zip(inpFiles,inpFilesId) ])
+
+
+def makeDenseFeatDtype(label,feature,id):
+    return n.dtype([("label",label.dtype),
+                ("feature",feature.dtype,feature.shape[-1]),
+                ("id",id.dtype)])
+
+def makeDenseFeature(label,feature,id):
+    return n.rec.fromarrays((label,feature,id),
+            dtype=makeDenseFeatDtype(label,feature,id))
 
 def sparseToDenseSeqs(data):
     """Convert sparse representation of the 'feature' field into dense matrix one.
@@ -579,10 +712,8 @@ def sparseToDenseSeqs(data):
     for iRec in xrange(len(feat)):
         rec = feat[iRec]
         m[iRec,(rec['ind']-1,)] = rec['val']
-    return n.rec.fromarrays((data['label'],m,data['id']),
-            dtype=[("label",data.dtype["label"]),
-                ("feature",m.dtype,m.shape[-1]),
-                ("id",data.dtype["id"])])
+    return makeDenseFeature(data['label'],m,data['id'])
+
 
 def loadSparseSeqs(inpFile,inpFileId=None):
     return loadSeqs(inpFile=inpFile,preProc=loadSeqPreprocParseSparse,inpFileId=inpFileId)
@@ -616,6 +747,22 @@ def saveSeqs(data,outFile,outFileId=None):
     if closeOut:
         outFile.close()
 
+def saveDenseSeqsAsSparse(data,out,outFileId=None):
+    writer = SvmDenseFeatureWriterTxt(out=out,outId=outFileId)
+    for rec in data:
+        writer.write(label=rec["label"],feature=rec["feature"],id=rec["id"])
+    writer.close()
+
+def saveDenseSeqsAsXyz(data,out,outFileId=None):
+    writer = SvmDenseFeatureWriterXyz(out=out,nSamp=len(data),outId=outFileId)
+    for rec in data:
+        writer.write(label=rec["label"],feature=rec["feature"],id=rec["id"])
+    writer.close()
+
+def stdScaleAndCenter(matr):
+    matr = matr - matr.mean(0)
+    return matr/matr.std(0)
+
 
 class LabelRenum:
     """Renumber arbitrary type labels to consequitive numbers"""
@@ -641,6 +788,24 @@ def setLabelsFromIds(data):
     labRenum = LabelRenum(data["id"])
     labRenum.setDataLabels(data,data["id"])
     return labRenum
+
+
+def sparseDiv(x,y,alt=None):
+    """return x/y where x and y are sparse features represented as (ind,val) recarays.
+    @param x "ind","val" recarray
+    @param y "ind","val" recarray
+    @param alt "val" array with the same size as x, to use as a denominator when y index is missing
+    This assumes that each feature is sorted in index order.
+    @todo this is space/time inefficient for very sparse data and should be replaced by C code"""
+    yd = n.zeros(y["ind"][-1]+1,dtype=y["val"].dtype)
+    yd[y["ind"]] = y["val"]
+    z = x.copy()
+    yz = yd[z["ind"]]
+    if alt is not None:
+        z["val"] /= n.select([yz != 0],[yz],default=alt)
+    else:
+        z["val"] /= yz
+    return z
 
 class SVMLibLinear:
     
@@ -677,10 +842,10 @@ class SVMLib:
         kmersInp = KmerBinReader(inpPath)
         data = kmersInp.readAll()
         if testMode:
-            data = numpy.concatenate((data[:testRecNum/2],data[-testRecNum/2:-1]))
+            data = n.concatenate((data[:testRecNum/2],data[-testRecNum/2:-1]))
         kmersInp.close()
-        labels = data['taxid'].astype(numpy.float64)
-        vals = data['vals'].astype(numpy.float64)
+        labels = data['taxid'].astype(n.float64)
+        vals = data['vals'].astype(n.float64)
         print "labels: ", labels.shape, labels.dtype
         print "vectors: ", vals.shape, vals.dtype
         action = 'crossVal'

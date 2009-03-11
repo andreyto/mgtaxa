@@ -4,6 +4,8 @@ from MGT.CrossValidatorApp import CrossValidatorApp
 from MGT.Svm import *
 from MGT.PredProcessor import Predictions
 
+__all__ = ["ParamGridGen","ParamScanApp"] 
+
 def scalePow(base,start,stop,step=1):
     """Return an array that represents sequential powers of a given base"""
     return n.power(float(base),n.arange(start,stop,step))
@@ -32,7 +34,7 @@ class ParamGridGen:
     def add(self,name,values):
         """Add a scale (dimention) with a given name and values.
         Use scaleXXX set of functions to construct the values."""
-        self.scales.append(Struct(name=name,values=values))
+        self.scales.append(Struct(name=name,values=n.asarray(values)))
         return self
 
     def grid(self):
@@ -79,6 +81,9 @@ class ParamScanApp(App):
         It can hold file names for final result files etc."""
         return pjoin(self.cwd,"opt.pkl")
 
+    def getCvOptFileName(self,idParam):
+        return pjoin(self.getCvDirName(idParam),"opt.pkl")
+    
     def crossVal(self,param,idParam):
         opt = self.opt
         cvDir = self.getCvDirName(idParam)
@@ -97,21 +102,30 @@ class ParamScanApp(App):
         return jobs
 
     def gather(self):
-        """Collect results from from cross-validation jobs and save performance metrics in a single PerfMetricsSet"""
+        """Collect results from cross-validation jobs and save performance metrics in a single PerfMetricsSet"""
         opt = self.opt
         clOpt = self.clOpt
         perfAll = []
+        perfClAll = []
         for (param,idParam) in it.izip(opt.params,it.count()):
             cvDir = self.getCvDirName(idParam)
-            #@todo load the cv opt file and use the file names from where instead of hard-wired ones now -
-            #(see how it was done in CrossValidatorApp).
-            perf = loadObj(pjoin(cvDir,"perf.pkl"))
+            cvOpt = loadObj(self.getCvOptFileName(idParam))
+            perf = loadObj(cvOpt.perfFile)
             perf.joinParam(param)
             perfAll.append(perf)
+            perfCl = loadObj(cvOpt.perfFileCl)
+            perfCl.joinParam(param)
+            perfClAll.append(perfCl)
+            
         perfAll = perfAll[0].concatenate(perfAll)
         opt.setdefault("perfFile",pjoin(self.cwd,"perf.pkl"))
-        dumpObj(opt,self.getOptFileName())
         dumpObj(perfAll,opt.perfFile)
+        perfAll.exportMetricsCsv(names=("senMin","speMin","senMean","speMean","acc"),out=pjoin(self.cwd,"perf.csv"))
+        perfClAll = perfClAll[0].concatenate(perfClAll)
+        opt.setdefault("perfFileCl",pjoin(self.cwd,"perf.cl.pkl"))
+        dumpObj(perfClAll,opt.perfFileCl)
+        perfClAll.exportMetricsCsv(names=("senMin","speMin","senMean","speMean","acc"),out=pjoin(self.cwd,"perf.cl.csv"))
+        dumpObj(opt,self.getOptFileName())
 
 
 

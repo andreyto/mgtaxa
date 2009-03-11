@@ -5,8 +5,11 @@ from shogun.Features import *
 from MGT.Svm import *
 from MGT.App import *
 
-def showSvmDataCounts(data):
-    return "%s records: %s" % (len(data),sorted(binCount(data['label'].astype('i4')).items()))
+from MGT import Kmers
+from MGT.Kmers import NORM_POLICY
+
+__all__ = ["SeqFeaturesApp","NORM_POLICY"]
+
 
 def otherVsRest(data,otherLabel):
     data['label'][:] = numpy.select([data['label'] == otherLabel],[1],default=2)
@@ -40,11 +43,13 @@ class SeqFeaturesApp(App):
             make_option("-u", "--other-group",
             action="store", type="int",dest="otherGroupLab",default=0),
             make_option("-f", "--feat-type",
-            action="store", type="choice",choices=("wdh","kmer"),
+            action="store", type="choice",choices=("wdh","kmer","kmerlad"),
             dest="featType",default="wdh"),
             make_option("-r", "--rev-compl",
             action="store", type="choice",choices=("merge","forward","addcol","addrow","reverse"),
             dest="revCompl",default="merge"),
+            make_option(None, "--norm",
+            action="store", type="string",dest="norm",default=None),
             make_option("-a", "--alphabet",
             action="store", type="choice",choices=("dna","protein"),
             dest="alphabet",default="dna"),
@@ -58,7 +63,18 @@ class SeqFeaturesApp(App):
         return Struct(usage = "Construct several types of word frequency features\n"+\
                 "%prog [options]",option_list=option_list)
 
+    @classmethod
+    def parseCmdLinePost(klass,options,args,parser):
+        try:
+            if options.norm is not None:
+                options.norm = listOr(enumNamesToValues(options.norm,NORM_POLICY))
+        except ValueError,AttributeError:
+            parser.error("--norm value must be one or more of comma separated %s, received %s" % 
+                    (enumNames(NORM_POLICY),options.norm))
+    
     def doWork(self,**kw):
+        opt = self.opt
+        print "App options:\n", opt
         if opt.shredLen > 0:
             loadSeqPreproc = LoadSeqPreprocShred(sampLen=opt.shredLen,
                     sampNum=opt.shredNum,
@@ -81,9 +97,11 @@ class SeqFeaturesApp(App):
             shogAlpha = PROTEIN
             assert opt.revCompl == 'forward'
 
-        rcPolicy = WH_RC_FORWARD
+        rcPolicyShog = WH_RC_FORWARD
+        rcPolicyKmer = Kmers.RC_POLICY.DIRECT
         if opt.revCompl == "merge":
-            rcPolicy=WH_RC_MERGE
+            rcPolicyShog=WH_RC_MERGE
+            rcPolicyKmer=Kmers.RC_POLICY.MERGE
         elif opt.revCompl == "addcol":
             data = addRevComplCols(data)
         elif opt.revCompl == "forward":
@@ -95,8 +113,7 @@ class SeqFeaturesApp(App):
         else:
             raise ValueError("Value %s for revCompl is not supported" % opt.revCompl)
 
-        print "Program options are:\n%s\n" % (opt,)
-
+        
         print "Computing features: " + showSvmDataCounts(data) 
 
         if opt.featType == "wdh":
@@ -105,7 +122,7 @@ class SeqFeaturesApp(App):
             feat_char.set_string_features(data['feature'].tolist())
 
             feat_whd=WordHistogramFeatures()
-            feat_whd.obtain_from_char(feat_char,opt.kmerLen,opt.maxDist,opt.sigma,opt.minDist,rcPolicy)
+            feat_whd.obtain_from_char(feat_char,opt.kmerLen,opt.maxDist,opt.sigma,opt.minDist,rcPolicyShog)
             print "WHD number of feature elements: %d" % feat_whd.get_num_elements()
             feat_sparse = feat_whd.get_sparse_real_features()
             print "WHD number feature dimensionality: %d" % feat_whd.get_num_features()
@@ -115,16 +132,26 @@ class SeqFeaturesApp(App):
 
             svmSaveId(data['id'],opt.outFeat+'.id')
 
-        elif opt.featType == "kmer":
+        elif opt.featType in ("kmer","kmerlad"):
             maxSampLen = max( ( len(samp) for samp in data['feature'] ) )
-            kmerCnt = Kmers.KmerSparseFeatures(sampLen=maxSampLen,
-                    kmerLen=opt.kmerLen,
-                    rcPolicy=Kmers.RC_POLICY.MERGE)
+            if opt.featType == "kmer":
+                kmerCnt = Kmers.KmerSparseFeatures(sampLen=maxSampLen,
+                        kmerLen=opt.kmerLen,
+                        rcPolicy=rcPolicyKmer,
+                        normPolicy=opt.norm)
+            elif opt.featType == "kmerlad":
+                kmerCnt = Kmers.KmerLadderSparseFeatures(sampLen=maxSampLen,
+                        kmerLen=opt.kmerLen,
+                        rcPolicy=rcPolicyKmer,
+                        normPolicy=opt.norm)
             svmWriter = SvmSparseFeatureWriterTxt(opt.outFeat)
             for samp in data:
-                feat = kmerCnt.kmerFrequences(n.fromstring(samp['feature'],dtype='S1'))
+                feat = kmerCnt.kmerFrequencies(n.fromstring(samp['feature'],dtype='S1'))
                 svmWriter.write(int(samp['label']),feat,samp['id'])
             svmWriter.close()
+
+        else:
+            raise ValueError("Unknown feature type requested: %s" % opt.featType)
 
         print "Wrote " + showSvmDataCounts(data)
 
