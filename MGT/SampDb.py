@@ -24,13 +24,14 @@ class HdfSampInd(pt.IsDescription):
     nSeq holds that number. Otherwise, nSeq is set to zero. Knowing the number of sequences allows
     for more simple and faster Python code that pulls the sequence data.
     The reason for having this datatype at all instead of just creating another SeqInd is because
-    we need to insert spacers when we """
+    we need to insert spacers when we pull the sample spanning several sequences."""
 
     indSeq        = pt.Int64Col(pos=1) # index of record in seq.ind
     # if begin + sample size > sequence size, sample continues in the next sequence(s)
     begin     = pt.Int64Col(pos=2) # offset of this sample's first element relative to the start of sequence
     nSeq      = pt.UInt8Col(pos=3) # number of sequences
-    sampLen   = pt.UInt32Col(pos=4) # length of sample
+    #not used yet:
+    #sampLen   = pt.UInt32Col(pos=4) # length of sample
 
 # I could not find in Numpy any methods to obtain numeric limits for integer datatypes (found only for floats).
 # This converts -1 to the type of nSeq, which should give the max possible value for any unsigned integer type.
@@ -167,11 +168,13 @@ def hdfMakeSampIndexConcat(hdfFile,hdfGroup,hdfSeqInd,sampLen):
 
 class HdfSampleReader(MGTOptions):
 
-    def __init__(self,hdfSampFile,sampLen,spacer='N'):
+    def __init__(self,hdfSampFile,sampLen,spacer='N',featType="array"):
+        """@param featType type for output feature, "array" - numpy array('S1'), "string" - Python string"""
         MGTOptions.__init__(self)
         self.hdfSampFile = hdfSampFile
         self.sampLen = sampLen
         self.spacer = numpy.fromstring(spacer,'S1')
+        self.featType = featType
         self._openHdf()
         taxaInd = {}
         for row in self.hdfTaxaInd:
@@ -258,8 +261,11 @@ class HdfSampleReader(MGTOptions):
     def randomSamples(self,taxid,nSamples):
         (beginSamp,sizeSamp) = self.taxaInd[taxid]
         indSampSel = random.sample(xrange(beginSamp,beginSamp+sizeSamp),nSamples)
-        for sampInd in self.hdfSampInd.itersequence(indSampSel, sort=True):
-            yield self.subSampler(self.getSampleSeq(sampInd))
+        for sampInd in self.hdfSampInd.itersequence(indSampSel):
+            s = self.subSampler(self.getSampleSeq(sampInd))
+            if self.featType == "string":
+                s = s.tostring()
+            yield dict(id=sampInd.nrow,feature=s)
 
     def setSubSampler(self,subSampler):
         self.subSampler = subSampler

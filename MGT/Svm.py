@@ -419,6 +419,23 @@ class IdLabels:
             splits[key] = IdLabels(records=rec)
         return splits
 
+    def selBySplits(self,splits):
+        """Return a new IdLabels object that contains only records with 'split' value within a given list
+        @param splits sequence of allowed split values
+        @return new IdLabels object"""
+        splits = set(splits)
+        recs = self.getRecords()
+        ind = n.asarray([ ind for (ind,split) in it.izip(it.count(),recs["split"]) if split in splits ],dtype=int)
+        return self.__class__(records=recs[ind])
+
+    def selByCondition(self,condition):
+        """Return a new IdLabels object that contains only records for which 'condition(record)' returns True. 
+        @param condition unary predicate that will be applied to every record
+        @return new IdLabels object"""
+        recs = self.getRecords()
+        ind = n.asarray([ ind for (ind,rec) in it.izip(it.count(),recs) if condition(rec) ],dtype=int)
+        return self.__class__(records=recs[ind])
+    
     def getLabToName(self):
         return self.labToName
 

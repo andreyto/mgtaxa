@@ -10,8 +10,8 @@ class NodeStorageNcbiDump:
         ('taxid',int),
         ('partaxid',int),
         ('rank',str),
-#        ('embl_code',str),
-#        ('divid',int),
+        ('embl_code',str),
+        ('divid',int),
 #        ('inh_div',bool),
 #        ('gcode_id',int),
 #        ('inh_gc',bool),
@@ -22,7 +22,7 @@ class NodeStorageNcbiDump:
 #        ('comments',str)
      )
 
-    nInputFields = 3
+    nInputFields = 5
 
     # We will be parsing this string:
     # '1\t|\t1\t|\tno rank\t|\t\t|\t8\t|\t0\t|\t1\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|\n'
@@ -52,6 +52,7 @@ class NodeStorageNcbiDump:
             node.id = int(values[0])
             node.idpar = int(values[1])
             node.rank = values[2].replace(' ','_')
+            node.divid = int(values[4])
             #in NCBI file, root node points to itself as a parent.
             #We replace it with 0 for consistency with our SQL DB representation, where
             #circular self-reference would be inconvenient.

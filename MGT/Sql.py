@@ -272,6 +272,9 @@ class DbSql(MGTOptions):
         reader.close()
         return ret
 
+def sqlInList(l):
+    """Create a string that can be used after SQL 'IN' keyword from a given Python sequence"""
+    return "("+','.join(["%s" % x for x in l])+")"
 
 
 # Classes that describe Sql Db objects as Python objects in a portable way
@@ -342,8 +345,9 @@ class DbSqlMy(DbSql):
     def open(self,**kw):
         import MySQLdb.cursors
         self.close()
-        self.con = self.dbmod.connect(unix_socket="/tmp/atovtchi.mysql.sock",
-                                      host="localhost",
+        self.con = self.dbmod.connect(port=13306,
+                                      #unix_socket="/tmp/atovtchi.mysql.sock",
+                                      host="boxer.jcvi.org",
                                       db=kw.get('db',"mgtaxa"),
                                       user="root",
                                       passwd="OrangeN0",
@@ -542,7 +546,7 @@ class BulkInserter:
             self.buf = []
 
 
-class BulkInserterFile:
+class BulkInserterFile(object):
     
     def __init__(self,db,table,bufLen=500000,workDir="."):
         """Bulk loading from files is not part of SQL standard.
@@ -556,8 +560,7 @@ class BulkInserterFile:
         self.workDir = workDir
         self.buf = StringIO()
         self.n = 0
-        (fobj,self.bulkFile) = makeTmpFile(dir=self.workDir,prefix="sqlBulkIns_"+self.table,suffix=".csv",createParents=True)
-        fobj.close()
+        self.bulkFile = None
         self.isClosed = False
 
             
@@ -581,13 +584,36 @@ class BulkInserterFile:
     def __del__(self):
         self.close()
 
+    def newBulkFile(self):
+        self.delBulkFile()
+        (fobj,self.bulkFile) = makeTmpFile(dir=self.workDir,
+                prefix="sqlBulkIns_"+self.table,
+                suffix=".csv",
+                createParents=True,
+                bufsize=0)
+        return fobj
+
+    def delBulkFile(self):
+        if self.bulkFile is not None:
+            os.remove(self.bulkFile)
+            self.bulkFile = None
+
     def close(self):
         if not self.isClosed:
             self.flush()
             self.db = None
-            os.remove(self.bulkFile)
+            self.delBulkFile()
             self.isClosed = True
 
+    def dumpToBulkFile(self,s):
+        # we create a new tmp file every time to circumvent NFS client caching
+        # issues that are possible when SQL server and this process are on different hosts.
+        # with a new unique file name, worst case is that the server will not find the file,
+        # rather than see the old data again.
+        out = self.newBulkFile()
+        out.write(s)
+        fileSync(out)
+        out.close()
             
     def flush(self):
         if self.n > 0:
@@ -597,9 +623,7 @@ class BulkInserterFile:
 
             s = self.buf.getvalue()
             
-            out = open(self.bulkFile,'w',0)
-            out.write(s)
-            out.close()
+            self.dumpToBulkFile(s)
 
             #out = open(self.bulkFile+'.append','a')
             #out.write(s)
@@ -635,14 +659,17 @@ class BulkInserterFileMy(BulkInserterFile):
 
     def __init__(self,*l,**kw):
         BulkInserterFile.__init__(self,*l,**kw)
-        chmod(self.bulkFile,'o+r')
     
+    def newBulkFile(self):
+        fobj = super(BulkInserterFileMy,self).newBulkFile()
+        #hopefully, it is safe to use chmod on an open file
+        chmod(self.bulkFile,'o+r')
+        return fobj
+
     def flush(self):
         if self.n > 0:
-            out = open(self.bulkFile,'w',0)
             outStr = self.buf.getvalue()
-            out.write(outStr)
-            out.close()
+            self.dumpToBulkFile(outStr)
             sql = """
                     load data infile '%s'
                     into table %s

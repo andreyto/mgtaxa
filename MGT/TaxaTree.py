@@ -1,6 +1,7 @@
 """Classes to represent and traverse a taxonomy tree (NCBI format)"""
 
 from MGT.Common import *
+from MGT.TaxaConst import *
 
 import os
 import numpy
@@ -885,43 +886,6 @@ class RankFakerVisitor:
                            " original lineage: %s, current lineage: %s, previous lineage: %s") % \
                            (rank,node.id,lin_orig,node.lineageRanksStr(),lin_before)
 
-
-#
-# Names for various important taxonomy IDs
-#
-
-unclassRootTaxid = 12908
-viralRootTaxid = 10239
-virTaxid = viralRootTaxid
-myovirTaxid = 10662 # Myoviridae - most of cyanophages are where
-bacTaxid = 2
-archTaxid = 2157
-eukTaxid = 2759
-micTaxids = (bacTaxid,archTaxid)
-
-diatomsTaxid = 2836 # unicellular euk phytoplankton, major group of euk algae
-cyanobacTaxid = 1117 # Cyanobacteria phylum
-shewanTaxid = 22 # Shewanella genus
-
-viralTaxidLev2 = (\
-        35237, #dsDNA
-        35325, #dsRNA
-        35268, #retroid
-        29258, #ssDNA
-        439488, #ssRNA
-        )
-phageTailedTaxid = 28883
-viroidsTaxid = 12884
-cellTaxid = 131567 # cellular organisms - bact, arch & euk
-micVirTaxids = (virTaxid,bacTaxid,archTaxid)
-skingdomTaxids = (virTaxid,bacTaxid,archTaxid,eukTaxid,viroidsTaxid)
-
-
-#main Linnaean ranks, modified with superkingdom in place of domain rank
-linnMainRanks = ("species","genus","family","order","class","phylum","kingdom","superkingdom")
-viralRanksTemplate = linnMainRanks
-noRank = "no_rank"
-unclassRank = "unclassified"
 
 
 class TaxaLevels:

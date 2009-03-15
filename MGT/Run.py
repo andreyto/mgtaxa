@@ -1,6 +1,7 @@
 """Convenience methods to make it easier to run external programs"""
 
 from subprocess import Popen, call, PIPE
+import os
 
 defineCalledProcessError = False
 try:

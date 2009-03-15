@@ -4,11 +4,20 @@ from MGT.Sql import *
 
 
 
-def sqlIsSubTree(aliasSub,aliasSuper):
-    """SQL 'macro'. Return part of the WHERE clause: require that node from 'aliasSub' is in sub-tree of node from 'aliasSuper'.
-    It uses 'nested sets' index fields 'lnest' and 'rnest'."""
-    return "( %(sub)s.lnest > %(sup)s.lnest and %(sub)s.rnest < %(sup)s.rnest )" % \
-        {'sub':aliasSub,'sup':aliasSup}
+def sqlIsSubTree(aliasSub,aliasSup,withEquality=False):
+    """SQL 'macro'. Return part of the WHERE clause in round braces: require that node from 'aliasSub' is in sub-tree of the node from 'aliasSup'.
+    It uses 'nested sets' index fields 'lnest' and 'rnest'.
+    @param aliasSub SQL select alias for the table with sub-nodes
+    @param aliasSup SQL select alias for the table with super-nodes
+    @param withEquality if True, a node is considered to be in the subtree of itself"""
+    if withEquality:
+        opmore = ">="
+        opless = "<="
+    else:
+        opmore = ">"
+        opless = "<"
+    return "( %(sub)s.lnest %(opmore)s %(sup)s.lnest and %(sub)s.rnest %(opless)s %(sup)s.rnest )" % \
+        dict(sub=aliasSub,sup=aliasSup,opmore=opmore,opless=opless)
 
 class NodeStorageDb:
     """Taxonomy nodes storage in SQL DB"""
@@ -17,7 +26,7 @@ class NodeStorageDb:
     ## from the initial NCBI taxonomy dump file, so load them from a fixed
     ## DB table named by 'tblNames'. This assumes that all other trees that
     ## we construct are reductions of that original NCBI tree. This might change
-    ## in the, in which case we will use specific name table for each tree.
+    ## in the future, in which case we will use specific name table for each tree.
     ## It will still make sense to keep the names in a separate table because they
     ## are long and rarely needed strings.
     ## Currently we just expect the 'tblNames' to be loaded into the database already.
@@ -48,6 +57,7 @@ class NodeStorageDb:
                 node.seq_len = rec['seq_len']
                 node.seq_len_tot = rec['seq_len_tot']
                 node.idlevel = rec['idlevel']
+                node.divid = rec['divid']
                 nodes[node.id] = node
         reader.close()
         return nodes
@@ -65,7 +75,8 @@ class NodeStorageDb:
         seq_len_tot bigint,
         idlevel tinyint,
         depth tinyint,
-        rank char(20)
+        rank char(20),
+        divid tinyint
         )
         """ % (self.tblNodes,),
         dropList=["table %s" % (self.tblNodes,)])
@@ -80,11 +91,12 @@ class NodeStorageDb:
                       n.seq_len_tot,
                       n.idlevel,
                       n.depth,
-                      n.rank))
+                      n.rank,
+                      n.divid))
         inserter.flush()
         db.ddl("ANALYZE TABLE %s" % (self.tblNodes,),ifDialect="mysql")
         db.createIndices(table=self.tblNodes,primary="id",
-                names=["idpar","lnest","rnest","idlevel","depth","rank"],
+                names=["idpar","lnest","rnest","idlevel","depth","rank","divid"],
                 attrib={"lnest":{"unique":True},"rnest":{"unique":True}})
 
 

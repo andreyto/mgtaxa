@@ -3,7 +3,7 @@ import sys, os
 #sys.path.append(os.environ['CA_BINDIR'])
 
 from MGT.CollectTaxa import *
-from MGT.LabelTaxa import *
+from MGT.TreeSamplerApp import *
 from MGT.Svm import *
 
 dbSql = createDbSql()
@@ -34,11 +34,21 @@ dbSql = createDbSql()
 #txcol.indexHdfSeq()
 
 
-sampler = SamplerConcat(db = dbSql,sampLen=options.sampLen,kmerLen=options.kmerLen,namePrefix=options.sampNamePrefix)
-#sampler.mkHdfSampleInd()
-sampler.rebuild()
-#sampler.submitTraining()
+def run_Sampler():
+    opt = Struct()
+    opt.sampLen = 5000
+    opt.db = dbSql
+    opt.cwd = "samp_%s" % opt.sampLen
+    opt.runMode = "inproc" #"inproc" #"batchDep"
+    opt.rank = "family"
+    modes = ["label"] # "shred" "split"
+    jobs = []
+    for mode in modes:
+        opt.mode = mode
+        app = TreeSamplerApp(opt=opt)
+        jobs = app.run(depend=jobs)
 
+run_Sampler()
 sys.exit(0)
 
 nrnd.seed(1)

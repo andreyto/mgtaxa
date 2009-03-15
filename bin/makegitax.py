@@ -1,4 +1,4 @@
-"""Read a file with sequence features and create a file with sparse real features based on word distance histogram."""
+"""Create binary representation of NCBI taxonomy dump."""
 
 from MGT.Taxa import *
 

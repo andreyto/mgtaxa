@@ -1,5 +1,7 @@
 """I/O of FASTA formatted sequence files"""
 
+__all__ = [ "FastaReader", "fastaReaderGzip" ]
+
 from MGT.Util import openGzip, openCompressed
 
 from cStringIO import StringIO

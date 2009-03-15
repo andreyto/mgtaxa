@@ -6,7 +6,7 @@ dldir=$dbdir/dl
 mkdir -p $dbdir
 mkdir -p $dldir
 
-for name in refseq_genomic other_genomic nt htgs wgs; do
+for name in refseq_genomic other_genomic wgs nt htgs; do
 	cd $dldir && \
 	wget -v "ftp://ftp.ncbi.nih.gov/blast/db/${name}.*" && \
 	for f in ${name}.*.gz; do

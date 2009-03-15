@@ -24,23 +24,45 @@ class TaxaCollector(MGTOptions):
         
 
     def rebuild(self):
-        self.loadGiTaxNumpy()
-        self.loadRefseqAcc()
-        self.loadTaxTables()
-        self.loadSeq()
-        self.loadSeqToHdf()
-        self.indexHdfSeq()
-        self.selectActiveSeq()
-        self.indexHdfActiveSeq()
+        #self.loadGiTaxNumpy()
+        #self.loadRefseqAcc()
+        #self.loadTaxTables()
+        #self.loadSeq()
+        # we currently use act_seq instead of seq
+        # in loadSeqToHdf() because act_seq is filtered by
+        # all_src and thus skips all records that we drop while
+        # creating all_src
+        #self.selectActiveSeq()
+        #self.tmp_restart()
+        #self.loadSeqToHdf()
+        #self.indexHdfSeq()
+        #self.indexHdfActiveSeq()
         # only for analysis:
         #self.loadTaxLevelsSql()
+        #self.reportStat()
         pass
+
+    def tmp_restart(self):
+        db = self.dbSql
+        self.selectTaxSet()
+        self.excludePostSource()
+        return
+        db.createIndices(table="seq",
+                         names=["gi"],
+                         attrib={"gi":{"unique":True}})
+        db.createIndices(table="seq_hdr",
+                         names=["gi"],
+                         attrib={"gi":{"unique":True}})
+        db.ddl("analyze table seq",ifDialect="mysql")
+        db.ddl("analyze table seq_hdr",ifDialect="mysql")
+        self.createFullTextIndexSeqHeader()
 
     def loadTaxTables(self):
         """Create and fill all initial tables with taxa tree data.
-        It only needs NCBU taxonomy dump files.
+        It only needs NCBI taxonomy dump files.
         It assigns dummy zero values to seq_len and seq_len_total attributes.
-        Result: tree is saved in SQL DB"""
+        Result: original tree dumf files as well as our tree object with nested set index etc 
+        is saved in SQL DB"""
         self.loadTaxCategories()
         self.loadTaxNodes()
         self.loadTaxNames()
@@ -439,7 +461,8 @@ class TaxaCollector(MGTOptions):
         print sorted(((cnt,taxid) for (taxid,cnt) in taxaCnt.iteritems()))
 
     def loadGiTaxNumpy(self):
-        makeGiTaxBin(self.taxaGiFile,self.taxaPickled)
+        if not os.path.exists(self.taxaPickled):
+            makeGiTaxBin(self.taxaGiFiles,self.taxaPickled)
 
     def loadGiTaxPickled(self):
         self.gi2taxa = loadGiTaxBin(self.taxaPickled)
@@ -487,11 +510,37 @@ class TaxaCollector(MGTOptions):
 
     def excludePreSource(self):
         """Exclude some sequence before selectTaxSource()
-        @post table seq_excl has excluded idseq's."""
-        ## Currently we use MySQL specific full text search
+        @post table seq_excl has excluded idseq's.
+        We exclude records that are likely to be outliers in composition:
+        rRNA genes, plasmids and genomic islands.
+        Then we exclude all NT records that are not complete genome or complete chromosome."""
+        ## Currently we use MySQL-specific full text search
         db = self.dbSql
+        db.createTableAs("seq_excl_1","""
+            (select id_seq as id from seq_hdr where MATCH(hdr) 
+            AGAINST('"ribosomal RNA" "rRNA" "plasmid" "genomic island"' IN BOOLEAN MODE) )
+            """)
+        
+        db.createTableAs("seq_incl","""
+            (select id_seq as id from seq_hdr where MATCH(hdr) 
+            AGAINST('"complete chromosome" "complete genome"' IN BOOLEAN MODE) )
+            """)
+        db.createIndices(primary="id",table="seq_incl")
+
+        db.ddl("""
+        INSERT
+        INTO    seq_excl_1
+        SELECT  a.id
+        FROM    seq a
+        WHERE   a.src_db = 'n'
+            AND a.id NOT IN
+                (SELECT id
+                FROM    seq_incl
+                )
+        """)
+
         db.createTableAs("seq_excl","""
-            (select id_seq as id from seq_hdr where MATCH(hdr) AGAINST('"ribosomal RNA" "rRNA"' IN BOOLEAN MODE) )
+            (select DISTINCT id from seq_excl_1)
             """)
         db.createIndices(primary="id",table="seq_excl")
 
@@ -732,9 +781,31 @@ class TaxaCollector(MGTOptions):
         """)
     
     #def selectTaxSet(self):
-
         #db = self.dbSql
-        ## We exclude records that we do not need here.
+        
+        tblNodes = self.taxaTreeDbStore.tblNodes
+        ## We exclude records that are in subtrees of taxidDrop taxids,
+        ## or have undefined taxonomy fields 
+        ## or with divid from dividDrop list.
+        
+        
+        db.createTableAs("excl_taxid","""
+        (SELECT b.id
+                FROM    
+                        %(tblNodes)s b,
+                        %(tblNodes)s c
+                WHERE
+                      %(isSub_B_C)s
+                      AND c.id in %(taxidDrop)s
+        )
+        """ % dict(isSub_B_C=sqlIsSubTree(aliasSub='b',aliasSup='c',withEquality=True),
+            tblNodes=tblNodes,
+            taxidDrop=sqlInList(self.taxidDrop)))
+        
+        db.ddl("ANALYZE TABLE excl_taxid",ifDialect="mysql")
+
+        db.createIndices(table="excl_taxid",primary="id")
+
         db.createTableAs("all_src","""
         (SELECT a.*            ,
                         b.cat  ,
@@ -747,13 +818,13 @@ class TaxaCollector(MGTOptions):
                         ON      a.taxid = c.taxid
                 WHERE   not (
                     a.taxid IS NULL
+                    OR a.taxid IN (SELECT id FROM excl_taxid)
                     OR a.taxid = 0
                     OR c.divid IS NULL
-                    OR b.cat   IS NULL
-                    OR c.divid IN (7,8,11)
-                    )
+                    OR b.cat   IS NULL 
+                    OR c.divid IN %(dividDrop)s)
         )
-        """)
+        """ % dict(dividDrop=sqlInList(self.dividDrop)))
 
         db.ddl("ANALYZE TABLE all_src",ifDialect="mysql")
 
@@ -771,7 +842,7 @@ class TaxaCollector(MGTOptions):
         @post table act_seq is mapping into seq and act_src
         @post table act_src is all_src with some records
         dropped and seq_len recomputed from seq_src.
-        The compination of these two new tables allows to
+        The combination of these two new tables allows to
         filter initial sequence set described by all_src 
         both at individual sequence level (e.g. drop short sequences)
         and at source id level (meaning origin,sequence type)
@@ -783,7 +854,9 @@ class TaxaCollector(MGTOptions):
 
         db.createTableAs("act_seq","""
         (SELECT         a.id,
+                        a.gi,
                         b.id as id_src,
+                        a.taxid,
                         a.seq_len
                 FROM    seq a,
                         all_src b
@@ -795,7 +868,8 @@ class TaxaCollector(MGTOptions):
                     AND a.id not in (SELECT id FROM seq_excl)
         )
         """)
-        db.createIndices(names=["id_src"],primary="id",table="act_seq")
+        db.createIndices(names=["gi","id_src","taxid"],primary="id",
+                table="act_seq",attrib={"gi":{"unique":True}})
         db.ddl("ANALYZE TABLE act_seq",ifDialect="mysql")
 
         db.createTableAs("act_src","""
@@ -825,9 +899,18 @@ class TaxaCollector(MGTOptions):
         db.createIndices(primary="taxid",table="taxa_seq_len")
         db.ddl("ANALYZE TABLE taxa_seq_len",ifDialect="mysql")
 
+        # To analyze what sorts of NT records might be included, use something like
+        # (remember that currently we drop most of NT in excludePreSource).
+        # Withourt that drop, there are things like RNA spikes collections,
+        # many genomic islands. The reasonable candidates are large genome clusters (100Kb),
+        # but currently we drop them because they might be biased across subtrees. Also,
+        # we often have for such things: Species node (genome clusters) -> strain node (complete genome).
+        #select b.*,avg(a.seq_len) as avg_len,sum(a.seq_len) as sum_len,max(a.gi) from act_seq a, act_src b where a.seq_len >= 150000 and a.id_src = b.id and b.src_db = 'n' and b.cat = 'B' group by a.id_src having sum_len >= 100000 order by avg_len desc limit 100;
 
-    def exportIdsForSeqDb(self):
+
+    def exportIdsForSeqDb(self,seqTable):
         """Write text files with sequence ids that will be used to create sequence HDF5 files.
+        Ids are extracted from act_seq table.
         Currently we load only NCBI sequence, but we want to decouple SeqDB from NCBI GIs
         in case we will also use non-NCBI sequence in the future. Therefore, we write
         a file with (GI,ID) pairs where ID is our internal sequence id. The order is defined by
@@ -839,11 +922,11 @@ class TaxaCollector(MGTOptions):
         db.exportToFile(\
         """SELECT  a.gi,a.id""",
         """
-        FROM            seq a,
+        FROM            %(seqTable)s a,
                         %(treeTable)s b
         WHERE           a.taxid = b.id
         ORDER BY        b.lnest,a.id
-        """ % {"treeTable":treeTable},
+        """ % {"seqTable":seqTable,"treeTable":treeTable},
         fileName=self.seqGiIdFile,fieldsTerm=' ',linesTerm=r'\n')
 
 
@@ -951,12 +1034,13 @@ class TaxaCollector(MGTOptions):
 
     def loadSeqToHdf(self):
         """Load sequence data for all records in 'seq' table into HDF dataset."""
-        self.exportIdsForSeqDb()
+        seqTable = "act_seq"
+        self.exportIdsForSeqDb(seqTable=seqTable)
         ## CAUTION! mode="w" trancates the HDF file if it already exists.
         ## "a" opens file for writing w/o destroying existing data,
         ## "r+" is the same as "a" but file must exist
-        seq_len_tot = long(self.dbSql.selectScalar("select sum(seq_len) from seq"))
-        seq_cnt = long(self.dbSql.selectScalar("select count(*) from seq"))
+        seq_len_tot = long(self.dbSql.selectScalar("select sum(seq_len) from %s" % seqTable))
+        seq_cnt = long(self.dbSql.selectScalar("select count(*) from %s" % seqTable))
         hdfFile = pt.openFile(self.hdfSeqFile,mode="w")
         hdfLoader = HdfSeqLoader(hdfFile=hdfFile,
                 hdfGroup=self.hdfSeqGroup,
@@ -983,16 +1067,7 @@ class TaxaCollector(MGTOptions):
 
     def reportStat(self):
         """Output a report that shows a high-level overview of data."""
-        db.executeAndPrint("""
-        select level,avg(cnt) from
-        (select level,partaxid,count(*) as cnt from taxa_level group by level,partaxid) a
-        group by level
-        """)
-        db.executeAndPrint("""
-        select level,count(*) from
-        (select level,partaxid,count(*) as cnt from taxa_level group by level,partaxid) a
-        group by level
-        """)
+        db = self.dbSql
         
         ## Some tables to report statistics on data
 
@@ -1117,90 +1192,3 @@ refseqAccFormat = \
 ('ZP','ZP_12345678','Protein','Automated','Protein products; annotated on NZ_ accessions (often via computational methods).')
 )
 
-class OldTaxaCollector:
-    def mergeSelWithSeq(self,skipSeq=False):
-        #from itertool import izip
-        outFasta = gzip.open(self.selFastaFile,'w',compresslevel=4)
-        inpDump = open(self.selDumpFile,'r')
-        selGiFile = os.path.abspath(self.selGiFile)
-        fldsDump = "gi,taxid,src_db,kind,project,cat,stage,src_type,id,seq_len,divid,rank".split(',')
-        pipe = Popen(("fastacmd -i %s -d %s" % (selGiFile,self.srcDbNameAlias)).split(), 
-                     cwd=self.blastDataDir, env=os.environ, bufsize=2**16, stdout=PIPE, close_fds=True).stdout
-        #inpFasta = readFastaRecords(pipe,readSeq=True)
-        FGI_SKIP  = 0x01
-        FGI_WRITE = 0x02
-        FGI_MISM  = 0x04
-        giSeen = {}
-        iRec = 0
-        skip = True
-        mismatchRun = 0 # how many gi mismatches in a row
-        for line in pipe:
-            try:
-                if line.startswith(">"):
-                    skip = False
-                    #header line can be:
-                    #>gi|23455713|ref|NC_004301.1| Enterobacteria phage FI, complete genome >gi|15183|emb|X07489.1| Bacteriophage SP genomic RNA
-                    headers = line.split('>')
-                    gi2 = -1
-                    if len(headers) > 2:
-                        hdr2 = headers[2]
-                        if hdr2.startswith('gi|'):
-                            gi2 = int(hdr2.split('|',2)[1])
-                            if not giSeen.has_key(gi2):
-                                giSeen[gi2] = 0
-                    (gifld,gi,accfld,acc,txt) = line[1:].split('|',4)
-                    assert gifld == 'gi'
-                    gi = int(gi)
-                    valsDump = inpDump.readline().rstrip('\n').split(' ') #empty string fields will be ok
-                    giDump = int(valsDump[0])
-                    taxidDump = int(valsDump[1])
-                    try:
-                        lineage = self.taxaTree.getNode(taxidDump).lineageRanksStr()
-                    except KeyError:
-                        lineage = 'NULL'
-                        print "Warning: Lineage not found for taxid %s" % (taxidDump,)
-                    if giDump == gi:
-                        line = ">gi|%s|%s|%s|" % (gi,accfld,acc) + \
-                            ''.join(["%s:%s " % (fld,val) for (fld,val) in zip(fldsDump[1:],valsDump[1:])]) + \
-                            "lineage:%s " % (lineage,) + \
-                            txt
-                        if gi2 > 0:
-                            giSeen[gi2] |= FGI_WRITE
-                        mismatchRun = 0
-                    elif giDump == gi2:
-                        giSeen[giDump] |= FGI_SKIP
-                        skip = True
-                        mismatchRun = 0
-                    else:
-                        if mismatchRun >= 10:
-                            raise ValueError("Mismatch between FASTA and SQl DUMP input streams:" + \
-                                "fastaTitle = %s valsDump = %s" % (line,' '.join(valsDump)))
-                        else:
-                            if not giSeen.has_key(giDump):
-                                giSeen[giDump] = 0
-                            giSeen[giDump] |= (FGI_SKIP | FGI_MISM)
-                            skip = True
-                            mismatchRun += 1
-                            print "GI mismatch for ", giDump
-                    if iRec % 10000 == 0:
-                        print "Done %s records" % (iRec,)
-                    iRec += 1
-                elif skipSeq:
-                    skip = True
-                if not skip:
-                    outFasta.write(line)
-            except:
-                print "Exception with input line: ", line
-                pipe.close()
-                raise
-        pipe.close()
-        inpDump.close()
-        outFasta.close()
-        print 'giSeen = \n', sorted(giSeen.items())
-        print 'len(giSeen) = ',len(giSeen)
-        for (gi,val) in sorted(giSeen.items()):
-            if val & FGI_SKIP and not val & FGI_WRITE:
-                print "%s never written %s" % (gi,val)
-            if val & FGI_MISM:
-                print "%s mistamtch %s" % (gi,val)
-    

@@ -93,33 +93,6 @@ def makeTmpFile(*l,**kw):
     (fd,name) = mkstemp(*l,**opts1)
     return (os.fdopen(fd,*l2),name)
 
-def makedir(path,dryRun=False):
-    run(["mkdir","-p",path],dryRun=dryRun)
-
-def makeFilePath(fileName):
-    """Assume that the argument is a file name and make all directories that are part of it"""
-    dirName = os.path.dirname(fileName)
-    if dirName not in ("","."):
-        makedir(dirName)
-
-#perhaps use shutil.rmtree instead?    
-def rmdir(path,dryRun=False):
-    run(["rm","-rf",path],dryRun=dryRun)
-
-rmrf = rmdir
-
-def rmf(path,dryRun=False):
-    try:
-        os.remove(path)
-    except OSError:
-        pass
-
-def chmod(path,mode,opts='',dryRun=False):
-    if isinstance(path,basestring):
-        path = [path]
-    else:
-        path = list(path)
-    run(["chmod"]+opts.split()+[mode]+path,dryRun=dryRun)
 
 def strToFile(s,fileName,mode="w",dryRun=False):
     if not dryRun:
@@ -129,6 +102,12 @@ def strToFile(s,fileName,mode="w",dryRun=False):
     else:
         print "Write to file %s mode %s:" % (fileName,mode)
         print s
+
+def fileSync(f):
+    """Flush both user and kernel buffers of an open file object.
+    @param f file object as returned by open()"""
+    f.flush()
+    os.fsync(f.fileno())
 
 def stripSfx(s,sep='.'):
     """Remove right-most instance of separator string and everything past it.
@@ -604,6 +583,35 @@ def getRectStencil(arr,center,halfSize):
     sel = arr[ind[0][0]:ind[1][0],ind[0][1]:ind[1][1]]
     #print center, halfSize, ind, sel
     return sel,ind
+
+class ArrayAppender:
+    """Wrapper for Numpy 1D array that emulates list.append() behaviour"""
+    def __init__(self,arr):
+        self.arr = arr
+
+    def getMemory(self):
+        """Return entire internal array"""
+        return self.arr
+
+    def getData(self):
+        """Return only used portion of the internal array"""
+        return self.arr[:self.num]
+
+    def __len__(self):
+        """Return length of getData() result"""
+        return self.num
+
+    def next(self):
+        """Advance to the next unused element, resizing the internal array when necessary
+        @return tuple (internal array, index of the next element)"""
+        inext = self.num
+        self.num += 1
+        arr = self.arr
+        if inext >= len(arr):
+            arr = n.append(arr,n.zeros_like(arr))
+            self.arr = arr
+        return (arr,inext)
+
 
 def enumNames(obj):
     """Return a tuple with all attribute names of an obj not starting with '_'

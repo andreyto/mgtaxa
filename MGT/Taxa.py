@@ -21,7 +21,7 @@ def makeGiTaxBin(ncbiDumpFiles,outFile):
     """Create and save a pickled numpy gi->taxid index from a list of ncbi dump files.
     Typically, there are two dump files: one for nucleotide and another for protein sequences.
     This function checks that no GI is present in more than one file.
-    The rsulting file can be loaded back into memory with loadGiTaxBin()."""
+    The resulting file can be loaded back into memory with loadGiTaxBin()."""
     dst = None
     for ncbiDumpFile in ncbiDumpFiles:
         inp = openCompressed(ncbiDumpFile,'r')

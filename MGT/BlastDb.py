@@ -3,6 +3,7 @@ Calls NCBI 'fastacmd' executable.
 """
 
 from MGT.Common import *
+from MGT.FastaIO import *
 
 class BlastDb(MGTOptions):
 

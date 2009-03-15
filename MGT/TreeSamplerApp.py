@@ -74,8 +74,11 @@ from MGT.Common import *
 from MGT.Taxa import *
 from MGT.Sql import *
 from MGT.SampDb import *
-from MGT.SampDbKmer import *
-from MGT.PredictorDb import *
+#from MGT.SampDbKmer import *
+from MGT.DirStore import *
+
+
+__all__ = ["TreeSamplerApp"]
 
 def exclude_rRNA(self):
     db.createTableAs(
@@ -83,7 +86,8 @@ def exclude_rRNA(self):
     )
 
 
-class SamplerConcat(MGTOptions):
+
+class TreeSamplerApp(MGTOptions,App):
     """Sample chunks of available training sequence by concatenating all sequences for each taxid.
     Concatenating (as opposed to chunking each sequence individually) greatly simplifies random
     sampling of taxid chunks w/o replacement and increases the amount of sample data for small
@@ -97,31 +101,25 @@ class SamplerConcat(MGTOptions):
 
     termTopRanks = ("genus","species","subspecies","subgenus")
 
-    def __init__(self,db,sampLen,kmerLen,namePrefix):
-        """Constructor.
-        @param db - SqlDB instance
-        @param sampLen - length of sequence chunks to sample
-        @param kmerLen - length of k-mer (k)
-        @param namePrefix - files will be in a directory with this name and tables created by this 
-        object will have this prefix in their names.
-        """
+    def __init__(self,*l,**kw):
         MGTOptions.__init__(self)
-        self.stage = 2
-        self.db = db
-        self.sampLen = sampLen
-        self.kmerLen = kmerLen
-        self.namePrefix = namePrefix
-        self.tblPrefix = namePrefix + '_'
-        self.dirPrefix = namePrefix
-        makedir(self.dirPrefix)
-        self.hdfSampFile = self.getFileName("samp.hdf")
+        App.__init__(self,*l,**kw)
+
+    def init(self,stage):
+        opt = self.opt
+        self.store = SampStore.open(path=opt.get("cwd",os.getcwd()))
+        self.db = opt.db
+        self.sampLen = opt.sampLen
+        self.namePrefix = self.store.getName()
+        self.tblPrefix = self.namePrefix + '_'
+        self.hdfSampFile = self.getFilePath("samp.hdf")
         # @todo: after we debug this faster version, load the tree from SQL storage to reflect possible
         # tree modifications saved from earlier stages
-        self.storePickle = NodeStoragePickleSep(fileName=self.getFileName(name="taxaTree.postMarkTraining.pkl"))
+        self.storePickle = NodeStoragePickleSep(fileName=self.getFilePath(name="taxaTree.postMarkTraining.pkl"))
         self.storeDump = NodeStorageNcbiDump(ncbiDumpFile=self.taxaNodesFile,
                 ncbiNamesDumpFile=self.taxaNamesFile)
         self.levels = TaxaLevels()
-        if self.stage == 1:
+        if stage == 1:
             print "DEBUG: Loading the tree from dump file"
             self.taxaTree = TaxaTree(storage=self.storeDump)
             self.levels.setLevels(self.taxaTree)
@@ -130,21 +128,33 @@ class SamplerConcat(MGTOptions):
             self.taxaTree = TaxaTree(storage=self.storePickle)
         print "DEBUG: tree loaded"
         self.taxaTreeStore = NodeStorageDb(db=self.db,tableSfx=self.taxaTreeTableSfxMain)
-
+    
     def getTableName(self,name):
         """Given a stem table name, return full table name unique for this object (prefix+name).
         @param name - stem name
         """
         return self.tblPrefix+name.strip()
 
-    def getFileName(self,name):
+    def getFilePath(self,name):
         """Same as getTableName() but for files."""
-        return os.path.join(self.dirPrefix,name)
+        return self.store.getFilePath(name)
 
-    def rebuild(self):
-        if self.stage == 1:
+    def doWork(self,**kw):
+        opt = self.opt
+        print "SamplerConcatApp options: \n%s\n" % opt
+        if opt.mode in ("shred","split"):
+            stage = 1
+        else:
+            stage = 2
+        self.init(stage)
+        
+        if opt.mode == "shred":
+
             self.mkHdfSampleInd()
             self.mkDbSampleCounts()
+
+        elif opt.mode == "split":
+
             print "DEBUG: loadSampleCountsMem()"
             self.loadSampleCountsMem()
             print "DEBUG: setIsUnderUnclassMem()"
@@ -163,15 +173,29 @@ class SamplerConcat(MGTOptions):
             self.storePickle.save(tree=self.taxaTree)
             print "DEBUG: Writing statistics into SQL"
             self.statTestTaxa()
-        else:
+
+        elif opt.mode == "label":
+            ## Try to allocate enough idLab records for both training and testing, but wrap 
+            ## it in ArrayAppender just in case we reach the end at some point
+            self.idLabRecs =  ArrayAppender(IdLabels.makeRecords(opt.maxSamplesTrain*4))
+            ## labToName items that are always present, others will be added later -
+            ## "rj" reject group, always 0; "bg" background samples, always 1
+            self.labToName = {0:"rj",1:"bg"}
+
             print "DEBUG: writeTraining()"
             #self.tmp_hdfSamplesConv()
             #return
+            self.labelStore = self.store.subStore(name=opt.rank,mode='w')
             self.setTrainTarget()
-            trNodes = self.selectAllFamilies()
+            #trNodes = self.selectAllFamilies()
+            trNodes = self.selectMicFamilies()
             self.writeTraining(trNodes=trNodes)
+            print "DEBUG: writeTesting()"
             self.writeTesting()
-            self.tmp_hdfSamplesConv()
+            #self.tmp_hdfSamplesConv()
+
+        else:
+            raise ValueError(opt.mode)
 
     def mkHdfSampleInd(self):
         hdfFileActSeq = pt.openFile(self.hdfActSeqFile,mode="r")
@@ -618,11 +642,11 @@ class SamplerConcat(MGTOptions):
             if node.whichSupernode(micNodes) is not None:
                 if node.level == self.labelLevel:
                     if node.is_class:
-                        if node.samp_n_tot_train >= 80:
+                        if node.samp_n_tot_train >= 80 and nrnd.sample()<0.9:
                             fgNodes.append(node)
                         else:
                             bgNodes.append(node)
-        trainTarg = 600000/len(fgNodes)
+        trainTarg = 10000/len(fgNodes)
         for node in fgNodes:
             node.samp_n_train_targ = min(max(trainTarg,node.sampSel.test.train.min),
                 node.samp_n_tot_train)
@@ -666,8 +690,7 @@ class SamplerConcat(MGTOptions):
         samp_n_tot_test - number of testing samples in a subtree
         samp_n_tot_train - number of training samples in a subtree (excluding testing)
         is_test - True if a subtree is used for testing
-        @post Data sets ready for SVM training are saved. This is done through the
-        creation of PredictorDb and descendants of Predictor class.
+        @post Data sets ready for feature generation are saved.
         @post taxaTree.getRootNode().setIndex() resets internal node index.
         This method must be called after markTraining() sets needed node attributes.
         """
@@ -684,19 +707,13 @@ class SamplerConcat(MGTOptions):
             else:
                 return node.samp_n
         self.sampNTrainSelf = rootNode.makePropArrayFromFunc(dtype='i4',func=samp_n_choice)
-        makedir(self.predictorDir)
-        kmerReader = KmerReader(hdfSampFile=self.hdfSampFile,sampLen=self.sampLen,kmerLen=self.kmerLen,spacer='N'*self.kmerLen)
-        #kmerReader = KmerReaderComb(hdfSampFile=self.hdfSampFile,sampLen=self.sampLen,kmerLenRange=[2,self.kmerLen],spacer='N')
+        labelStore = self.labelStore
+        sampReader = HdfSampleReader(hdfSampFile=self.hdfSampFile,sampLen=self.sampLen,spacer='N'*self.kmerLen)
         excludeBranches= [ taxaTree.getNode(id) for id in (35325,35237) ] #dsRNA, dsDNA
         start = time.time()
-        if self.kmerRepr == "Sequences":
-            svmWriter = SvmStringFeatureWriterTxt(os.path.join(self.predictorDir,self.svmTrainFile))
-            svmWriterSplits = (SvmStringFeatureWriterTxt(os.path.join(self.predictorDir,self. svmTrainFile+'.s.1')),SvmStringFeatureWriterTxt(os.path.join(self.predictorDir,self. svmTrainFile+'.s.2')))
-
-        else:
-            svmWriter = SvmSparseFeatureWriterTxt(os.path.join(self.predictorDir,self.svmTrainFile))
-            svmWriterSplits = (SvmSparseFeatureWriterTxt(os.path.join(self.predictorDir,self. svmTrainFile+'.s.1')),SvmSparseFeatureWriterTxt(os.path.join(self.predictorDir,self. svmTrainFile+'.s.2')))
-        #kmerReader.openOutput(predictor.trainFile)
+        svmWriter = SvmStringFeatureWriterTxt(labelStore.getFilePath(self.svmTrainFile))
+        svmWriterSplits = (SvmStringFeatureWriterTxt(labelStore.getFilePath(self.svmTrainFile+'.s.1')),
+                SvmStringFeatureWriterTxt(labelStore.getFilePath(self.svmTrainFile+'.s.2')))
         children = trNodes.fgNodes
         #children = [ n for n in children if sum( (n.isSubnode(e) for e in excludeBranches) ) == 0 ]
         #children = [ n for n in node.iterDepthTop() if n.is_class and \
@@ -711,7 +728,7 @@ class SamplerConcat(MGTOptions):
         for bg_node in bg_nodes:
             bg_node.label = 1
             bg_node.bg_label = 1
-        dumpObj(ids,os.path.join(self.predictorDir,"labelToId.pkl"))
+        labelStore.saveObj(ids,"labelToId")
         children.extend(bg_nodes)
         for child in children:
             child.splitCounts = numpy.zeros(2,'i4')
@@ -741,12 +758,11 @@ class SamplerConcat(MGTOptions):
                 sampNodes.sort(key=lambda n: n.lnest)
                 nWritten = 0
                 for taxidSamp in (n.id for n in sampNodes):
-                    #nWritten += kmerReader.randomFrequencesWriteSvmSparseTxt(label=child.label,
+                    #nWritten += sampReader.randomFrequencesWriteSvmSparseTxt(label=child.label,
                     #        taxidSamples=taxidSamp,
                     #        nSamples=taxaSampChild[taxidSamp])
                     #continue
-                    kmerMethod = getattr(kmerReader,"random"+self.kmerRepr)
-                    for (feature,total) in kmerMethod(taxid=taxidSamp,
+                    for samp in sampReader.randomSamples(taxid=taxidSamp,
                             nSamples=taxaSampChild[taxidSamp]):
                         sampNode = taxaTree.getNode(taxidSamp)
                         assert sampNode is child or sampNode.isSubnode(child)
@@ -762,22 +778,22 @@ class SamplerConcat(MGTOptions):
                                 splitId = nrnd.permutation(splitIdsMin)[0]
                                 genNode.splitId = splitId
                             child.splitCounts[splitId]+=1
-                            svmWriterSplits[splitId].write(child.label,feature)
+                            svmWriterSplits[splitId].write(child.label,samp["feature"],samp["id"])
 
                         svmWriter.write(child.label,
-                                        feature,
-                                        taxidSamp)
+                                        samp["feature"],
+                                        samp["id"]) #taxidSamp
                         nWritten += 1
                 if nWritten < child.samp_n_train_targ:
                     print "Warning: written samples %s - less than requested %s for label %s taxid %s min samples %s" % \
                             (nWritten,child.samp_n_train_targ,child.label,child.id,child.sampSel.test.train.min)
             iChild += 1
-        #kmerReader.closeOutput()
+        #sampReader.closeOutput()
         svmWriter.close()
         for svmWriterSplit in svmWriterSplits:
             svmWriterSplit.close()
-        dumpObj(taxaSampLog,os.path.join(self.predictorDir,"taxaSamp.train.pkl"))
-        print "DEBUG: Done predictor iteration in %s sec" % (time.time() - start)
+        labelStore.saveObj(taxaSampLog,"taxaSamp.train")
+        print "DEBUG: Done writing training samples in %s sec" % (time.time() - start)
 
 
     def pickRandomSampleCounts(self,node):
@@ -848,28 +864,21 @@ class SamplerConcat(MGTOptions):
         is_test - True if a subtree is used for testing
         This method must be called after markTraining() sets needed node attributes.
         """
+        labelStore = self.labelStore
         taxaTree = self.taxaTree
         rootNode = taxaTree.getRootNode()
         rootNode.setIndex()
         class SampTest(pt.IsDescription):
             lind = pt.Int32Col(pos=1)
-        hdfFile = pt.openFile(os.path.join(self.predictorDir,self.hdfTestFile), mode='w')
+        hdfFile = pt.openFile(labelStore.getFilePath(self.hdfTestFile), mode='w')
         hdfSamples = hdfFile.createTable(hdfFile.root, 'sampTest', SampTest, "Testing Samples")
         sampTestDtype = hdfDtype(hdfSamples) 
-        kmerReader = KmerReader(hdfSampFile=self.hdfSampFile,
+        sampReader = HdfSampleReader(hdfSampFile=self.hdfSampFile,
                 sampLen=self.sampLen,
-                kmerLen=self.kmerLen,
                 spacer='N')
-        #kmerReader = KmerReaderComb(hdfSampFile=self.hdfSampFile,
-        #        sampLen=self.sampLen,
-        #        kmerLenRange=[2,self.kmerLen],
-        #        spacer='N')
-        kmerReader.setSubSamplerUniRandomEnd(minLen=self.minTestSampLen,maxLen=self.maxTestSampLen)
-        #kmerReader.openOutput(self.getFileName(self.svmTestFile))
-        if self.kmerRepr == "Sequences":
-            svmWriter = SvmStringFeatureWriterTxt(os.path.join(self.predictorDir,self.svmTestFile))
-        else:
-            svmWriter = SvmSparseFeatureWriterTxt(os.path.join(self.predictorDir,self.svmTestFile))
+        sampReader.setSubSamplerUniRandomEnd(minLen=self.minTestSampLen,maxLen=self.maxTestSampLen)
+        #sampReader.openOutput(self.getFilePath(self.svmTestFile))
+        svmWriter = SvmStringFeatureWriterTxt(labelStore.getFilePath(self.svmTestFile))
         taxaSampLog = {}
         children = [ n for n in self.taxaTree.iterDepthTop() if hasattr(n,"label") ]
         for child in children:
@@ -880,26 +889,25 @@ class SamplerConcat(MGTOptions):
                     #DEBUG TMP:
                     #lin = node.lineage()
                     #print [ n.name for n in reversed(lin) ]
-                    #nSampTestOut = kmerReader.randomFrequencesWriteSvmSparseTxt(label=child.label,
+                    #nSampTestOut = sampReader.randomFrequencesWriteSvmSparseTxt(label=child.label,
                     #        taxidSamples=node.id,
                     #        nSamples=nSampTestTarg)
                     nSampTestOut = 0
-                    kmerMethod = getattr(kmerReader,"random"+self.kmerRepr)
-                    for (feature,total) in kmerMethod(taxid=node.id,
+                    for samp in sampReader.randomSamples(taxid=node.id,
                                 nSamples=nSampTestTarg):
                         assert node == child or node.isSubnode(child)
                         svmWriter.write(child.label,
-                                        feature,
-                                        node.id)
+                                        samp["feature"],
+                                        samp["id"]) #node.id
                         nSampTestOut += 1
                     samples = numpy.zeros(nSampTestOut,dtype=sampTestDtype)
                     samples['lind'] = node.lind
                     hdfSamples.append(samples)
                     taxaSampLog[child.id][node.id] = nSampTestOut
-        #kmerReader.closeOutput()
-        kmerReader.clearSubSampler()
+        #sampReader.closeOutput()
+        sampReader.clearSubSampler()
         svmWriter.close()
-        dumpObj(taxaSampLog,os.path.join(self.predictorDir,"taxaSamp.test.pkl"))
+        labelStore.saveObj(taxaSampLog,"taxaSamp.test")
         hdfSamples.flush()
 
     def tmp_hdfSamplesConv(self):
@@ -934,44 +942,3 @@ class SamplerConcat(MGTOptions):
         dumpObj(sampSplit,os.path.join(self.predictorDir,"sampSplit.test.pkl"))
         #pdb.set_trace()
 
-    def writeTestingTree(self):
-        """TMP: Write HDF file with tree structure data needed for loading testing results."""
-        taxaTree = self.taxaTree
-        # (id,rind)[lind]
-
-    def submitTraining(self):
-        "TMP: Submit training batch jobs"
-
-        btOpt = self.batchRun
-
-        bt = BatchSubmitter(PROJECT_CODE=btOpt.PROJECT_CODE,MEM=btOpt.MEM,ARCH=btOpt.ARCH)
-
-        iPredictor = 0
-        for predDir in [ os.path.join(self.predictorDir,d) for d in sorted(os.listdir(self.predictorDir)) ]:
-            svm = SVMLibLinear(workDir=os.path.join(predDir,"ms"))
-            bt.submitIf(maxQueued=btOpt.maxQueued,cmd=' '.join(svm.trainCmd(trainFile=os.path.join(predDir,"train.svm"))),
-                    scriptName="train",runDir=svm.workDir,sleepTime=1,dryRun=False)
-            print "DEBUG: iPredictor = ", iPredictor
-            iPredictor += 1
-            if iPredictor > 0:
-                break
-
-    
-    def mkDbTestingTaxaDb(self,rank="genus",superRank="family"):
-        """Select complete 'rank' nodes uniformly distributed across 'superRank' super-nodes."""
-        rankId = self.levels.getLevelId(rank)
-        superRankId = self.levels.getLevelId(superRank)
-        tblTxSamp = self.getTableName("tx_samp")
-        """
-        select id 
-        from %(tblTree)s tr_leaf, %(tblTxSamp) tx_samp, %(tblTree)s tr_sup
-        where 
-        tr_leaf.id = tx_samp.id and
-        %(subtreeLeafSup)s and
-        tr_sup.idlevel >= %(superRankId)i and min_depth
-        """ % { 'subtreeLeafSup' : sqlIsSubTree('tr_leaf', 'tr_sup'),
-                'superRankId'    : superRankId }
-            
-
-class RandomSampPicker:
-    pass

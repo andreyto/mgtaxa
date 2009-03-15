@@ -1,4 +1,5 @@
 from MGT.Options import *
+from MGT.TaxaConst import *
 import os
 pjoin = os.path.join
 
@@ -26,6 +27,12 @@ class MGTOptions:
         # Max length to store for a full header. It is stored in a separate table,
         # so size does not matter that much
         self.fastaHdrSqlLen = 2048
+        ## Drop sequence records with these NCBI divid's at the earliest stage of DB construction
+        ## Currently this is unknown stuff + large creatures (that still leaves plants because
+        ## they include algae)
+        self.dividDrop= (7,8,11) + (2,5,6,10)
+        ## Drop sequence records in subtrees (top included) under these NCBI taxid's at the earliest stage of DB construction
+        self.taxidDrop = (embryophytaTaxid,chordataTaxid)
         self.blastDataDir = 'blast'
         self.collectTaxaGiFile = os.path.abspath('mgt_coll_taxa.gi')
         self.seqGiIdFile = os.path.abspath('mgt_seq.giid')
@@ -78,13 +85,13 @@ class MGTOptions:
         #self.labelLevel = "superkingdom"
         #self.labelLevel = "family"
         self.labelLevel = "order"
-        self.sampLen = 1000
+        self.sampLen = 5000
         self.kmerLen = 8
         self.maxTestSampPerTaxa = 300
         #self.kmerRepr = "Frequences"
         self.kmerRepr = "Bits"
         #self.kmerRepr = "Sequences"
-        self.sampNamePrefix = "samp_1k"
+        self.sampNamePrefix = "samp_5000"
         self.predictorDir = os.path.join(self.tmpDir,"pred-1k-ord-8-b")
         self.hdfTestFile = 'test.hdf'
         self.svmTestFile = 'test.svm'
@@ -105,7 +112,8 @@ class MGTOptions:
         taxaDataDir = getattr(self,'taxaDataDir'+sfx) 
         setattr(self,'taxaPickled'+sfx,os.path.join(taxaDataDir,'gi_taxid.pkl.gz'))
         setattr(self,'taxaCatFile'+sfx,os.path.join(taxaDataDir,'categories.dmp'))
-        setattr(self,'taxaGiFile'+sfx,os.path.join(taxaDataDir,'gi_taxid_nucl.dmp.gz'))
+        setattr(self,'taxaGiFiles'+sfx,[ os.path.join(taxaDataDir,'gi_taxid_%s.dmp.gz' % moltype) 
+                for moltype in ("nucl","prot") ])
         setattr(self,'taxaDumpDir'+sfx,taxaDataDir)
         taxaDumpDir = getattr(self,'taxaDumpDir'+sfx) 
         setattr(self,'taxaNodesFile'+sfx,os.path.join(taxaDumpDir,'nodes.dmp'))
