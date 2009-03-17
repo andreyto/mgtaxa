@@ -94,12 +94,6 @@ class TreeSamplerApp(MGTOptions,App):
     sequences. It creates chimeric k-mer vectors however (but not chimeric k-mers because we insert
     spacers)."""
 
-    # Subtrees starting at these nodes are considered "testing terminal" -
-    # entire subtree is always selected for testing
-    # We need "sub..." ranks because there subspecies that do not have
-    # a species or genus node in their lineage.
-
-    termTopRanks = ("genus","species","subspecies","subgenus")
 
     def __init__(self,*l,**kw):
         MGTOptions.__init__(self)
@@ -109,6 +103,8 @@ class TreeSamplerApp(MGTOptions,App):
         opt = self.opt
         self.store = SampStore.open(path=opt.get("cwd",os.getcwd()))
         self.db = opt.db
+        if self.db is None:
+            self.db = createDbSql()
         self.sampLen = opt.sampLen
         self.namePrefix = self.store.getName()
         self.tblPrefix = self.namePrefix + '_'
@@ -180,18 +176,27 @@ class TreeSamplerApp(MGTOptions,App):
             self.idLabRecs =  ArrayAppender(IdLabels.makeRecords(opt.maxSamplesTrain*4))
             ## labToName items that are always present, others will be added later -
             ## "rj" reject group, always 0; "bg" background samples, always 1
-            self.labToName = {0:"rj",1:"bg"}
+            self.labToName = {opt.labRj:"rj",opt.labBg:"bg"}
 
             print "DEBUG: writeTraining()"
             #self.tmp_hdfSamplesConv()
             #return
-            self.labelStore = self.store.subStore(name=opt.rank,mode='w')
+            labelStore = self.store.subStore(name=opt.rank,mode='w')
+            self.labelStore = labelStore
             self.setTrainTarget()
             #trNodes = self.selectAllFamilies()
             trNodes = self.selectMicFamilies()
-            self.writeTraining(trNodes=trNodes)
+            sampFile = labelStore.getSampFilePath()
+            svmWriter = SvmStringFeatureWriterTxt(sampFile)
+            self.writeTraining(trNodes=trNodes,svmWriter=svmWriter)
             print "DEBUG: writeTesting()"
-            self.writeTesting()
+            self.writeTesting(svmWriter=svmWriter)
+            svmWriter.close()
+            idLabRecs = self.idLabRecs.getData()
+            idLabs = IdLabels(records=idLabRecs)
+            idLabs.setLabNames(self.labToName)
+            labelStore.saveIdLabs(idLabs)
+
             #self.tmp_hdfSamplesConv()
 
         else:
@@ -416,7 +421,7 @@ class TreeSamplerApp(MGTOptions,App):
             # training samples).
             # For other subnodes, we call the same function recursively
             for child in children:
-                if child.rank in self.termTopRanks:
+                if child.rank in self.opt.termTopRanks:
                     child.isTestTerm = True
                     child.samp_n_tot_test = 0
                     child.samp_n_tot_train = child.samp_n_tot
@@ -559,7 +564,7 @@ class TreeSamplerApp(MGTOptions,App):
             node.is_class = False
             par = node.getParent()
             # that will exclude every node below genus or species
-            if par.is_class and not par.rank in self.termTopRanks:
+            if par.is_class and not par.rank in self.opt.termTopRanks:
                 if node.samp_n_tot_train >= node.sampSel.test.train.min and \
                         not node.isUnderUnclass:
                     node.is_class = True
@@ -632,6 +637,7 @@ class TreeSamplerApp(MGTOptions,App):
 
 
     def selectMicFamilies(self):
+        opt = self.opt
         taxaTree = self.taxaTree
         rootNode = taxaTree.getRootNode()
         rootNode.setIndex()
@@ -640,13 +646,13 @@ class TreeSamplerApp(MGTOptions,App):
         micNodes = [ taxaTree.getNode(id) for id in micTaxids ]
         for node in taxaTree.iterDepthTop():
             if node.whichSupernode(micNodes) is not None:
-                if node.level == self.labelLevel:
+                if node.rank == opt.rank:
                     if node.is_class:
                         if node.samp_n_tot_train >= 80 and nrnd.sample()<0.9:
                             fgNodes.append(node)
                         else:
                             bgNodes.append(node)
-        trainTarg = 10000/len(fgNodes)
+        trainTarg = opt.maxSamplesTrain/len(fgNodes)
         for node in fgNodes:
             node.samp_n_train_targ = min(max(trainTarg,node.sampSel.test.train.min),
                 node.samp_n_tot_train)
@@ -661,6 +667,7 @@ class TreeSamplerApp(MGTOptions,App):
 
 
     def selectAllFamilies(self):
+        opt = self.opt
         taxaTree = self.taxaTree
         rootNode = taxaTree.getRootNode()
         rootNode.setIndex()
@@ -673,7 +680,7 @@ class TreeSamplerApp(MGTOptions,App):
                         fgNodes.append(node)
                     else:
                         bgNodes.append(node)
-        trainTarg = 300000/len(fgNodes)
+        trainTarg = opt.maxSamplesTrain/len(fgNodes)
         for node in fgNodes:
             node.samp_n_train_targ = min(max(trainTarg,node.sampSel.test.train.min),
                 node.samp_n_tot_train)
@@ -682,7 +689,7 @@ class TreeSamplerApp(MGTOptions,App):
             node.samp_n_train_targ = min(bgTrainTarg,node.samp_n_tot_train)
         return Struct(fgNodes=fgNodes,bgNodes=bgNodes)
 
-    def writeTraining(self,trNodes):
+    def writeTraining(self,trNodes,svmWriter):
         """Write training data set for each eligible node.
         @pre Nodes have the following attributes: 
         is_class - True for nodes that can serve as classes in SVM
@@ -694,6 +701,7 @@ class TreeSamplerApp(MGTOptions,App):
         @post taxaTree.getRootNode().setIndex() resets internal node index.
         This method must be called after markTraining() sets needed node attributes.
         """
+        opt = self.opt
         taxaTree = self.taxaTree
         rootNode = taxaTree.getRootNode()
         rootNode.setIndex()
@@ -708,31 +716,30 @@ class TreeSamplerApp(MGTOptions,App):
                 return node.samp_n
         self.sampNTrainSelf = rootNode.makePropArrayFromFunc(dtype='i4',func=samp_n_choice)
         labelStore = self.labelStore
+        idLabRecs = self.idLabRecs #ArrayAppender
+        ## already has:
+        ## "rj" reject group, always 0; "bg" background samples, always 1
+        labToName = self.labToName
         sampReader = HdfSampleReader(hdfSampFile=self.hdfSampFile,sampLen=self.sampLen,spacer='N'*self.kmerLen)
-        excludeBranches= [ taxaTree.getNode(id) for id in (35325,35237) ] #dsRNA, dsDNA
         start = time.time()
-        svmWriter = SvmStringFeatureWriterTxt(labelStore.getFilePath(self.svmTrainFile))
-        svmWriterSplits = (SvmStringFeatureWriterTxt(labelStore.getFilePath(self.svmTrainFile+'.s.1')),
-                SvmStringFeatureWriterTxt(labelStore.getFilePath(self.svmTrainFile+'.s.2')))
         children = trNodes.fgNodes
         #children = [ n for n in children if sum( (n.isSubnode(e) for e in excludeBranches) ) == 0 ]
         #children = [ n for n in node.iterDepthTop() if n.is_class and \
         #        n.id in ([2,2157]+list(viralTaxidLev2))] #and n.id in (10811,10780,10662,10699)]
         bg_nodes = trNodes.bgNodes
-        ids = numpy.zeros(len(children)+2,dtype='i4')
-        label = 2
+        label = opt.labCl
         for child in children:
             child.label = label
-            ids[label] = child.id
+            labToName[label] = child.id
             label += 1
         for bg_node in bg_nodes:
-            bg_node.label = 1
+            bg_node.label = opt.labBg
             bg_node.bg_label = 1
-        labelStore.saveObj(ids,"labelToId")
+        #labelStore.saveObj(ids,"labelToId")
         children.extend(bg_nodes)
         for child in children:
             child.splitCounts = numpy.zeros(2,'i4')
-        print "Labels-Taxids: ", ids
+        print "Labels-Taxids: ", sorted(labToName.items())
         # log and pickle the sequences taxids and sample counts for each 'child'
         taxaSampLog = {}
         iChild = 1
@@ -766,7 +773,12 @@ class TreeSamplerApp(MGTOptions,App):
                             nSamples=taxaSampChild[taxidSamp]):
                         sampNode = taxaTree.getNode(taxidSamp)
                         assert sampNode is child or sampNode.isSubnode(child)
-                        genNode = sampNode.findRankInLineage("genus")
+                        genNode = sampNode.findRankInLineage(opt.splitRank)
+                        # we also had condition not genNode.isUnderUnclass, but
+                        # removed it - if the node is classified as genus or species, it should be
+                        # separate from all other nodes of the same rank, wether they are under
+                        # unclassified tree or not
+                        split = opt.splitIdTrainPred
                         if genNode is not None and not genNode.isUnderUnclass:
                             try:
                                 splitId = genNode.splitId
@@ -778,8 +790,12 @@ class TreeSamplerApp(MGTOptions,App):
                                 splitId = nrnd.permutation(splitIdsMin)[0]
                                 genNode.splitId = splitId
                             child.splitCounts[splitId]+=1
-                            svmWriterSplits[splitId].write(child.label,samp["feature"],samp["id"])
-
+                            split = splitId + opt.splitIdTrainCv
+                        
+                        idLabRec = idLabRecs.nextElem()
+                        idLabRec["id"] = samp["id"]
+                        idLabRec["label"] = child.label
+                        idLabRec["split"] = split
                         svmWriter.write(child.label,
                                         samp["feature"],
                                         samp["id"]) #taxidSamp
@@ -789,9 +805,6 @@ class TreeSamplerApp(MGTOptions,App):
                             (nWritten,child.samp_n_train_targ,child.label,child.id,child.sampSel.test.train.min)
             iChild += 1
         #sampReader.closeOutput()
-        svmWriter.close()
-        for svmWriterSplit in svmWriterSplits:
-            svmWriterSplit.close()
         labelStore.saveObj(taxaSampLog,"taxaSamp.train")
         print "DEBUG: Done writing training samples in %s sec" % (time.time() - start)
 
@@ -847,7 +860,7 @@ class TreeSamplerApp(MGTOptions,App):
         return taxaCounts
 
 
-    def writeTesting(self):
+    def writeTesting(self,svmWriter):
         """Write testing data set.
         Currently, we write one dataset and use it on all classifiers.
         The reason is because we use external executables for prediction,
@@ -864,6 +877,7 @@ class TreeSamplerApp(MGTOptions,App):
         is_test - True if a subtree is used for testing
         This method must be called after markTraining() sets needed node attributes.
         """
+        opt = self.opt
         labelStore = self.labelStore
         taxaTree = self.taxaTree
         rootNode = taxaTree.getRootNode()
@@ -877,11 +891,12 @@ class TreeSamplerApp(MGTOptions,App):
                 sampLen=self.sampLen,
                 spacer='N')
         sampReader.setSubSamplerUniRandomEnd(minLen=self.minTestSampLen,maxLen=self.maxTestSampLen)
-        #sampReader.openOutput(self.getFilePath(self.svmTestFile))
-        svmWriter = SvmStringFeatureWriterTxt(labelStore.getFilePath(self.svmTestFile))
+        idLabRecs = self.idLabRecs
         taxaSampLog = {}
         children = [ n for n in self.taxaTree.iterDepthTop() if hasattr(n,"label") ]
+        iChild = 1
         for child in children:
+            print "DEBUG: writing test samples for label node %i out of %i" % (iChild,len(children))
             taxaSampLog[child.id] = {}
             for node in child.iterDepthTop():
                 if node.is_test and node.samp_n > 0:
@@ -896,6 +911,10 @@ class TreeSamplerApp(MGTOptions,App):
                     for samp in sampReader.randomSamples(taxid=node.id,
                                 nSamples=nSampTestTarg):
                         assert node == child or node.isSubnode(child)
+                        idLabRec = idLabRecs.nextElem()
+                        idLabRec["id"] = samp["id"]
+                        idLabRec["label"] = child.label
+                        idLabRec["split"] = opt.splitIdTest
                         svmWriter.write(child.label,
                                         samp["feature"],
                                         samp["id"]) #node.id
@@ -904,9 +923,8 @@ class TreeSamplerApp(MGTOptions,App):
                     samples['lind'] = node.lind
                     hdfSamples.append(samples)
                     taxaSampLog[child.id][node.id] = nSampTestOut
-        #sampReader.closeOutput()
+            iChild += 1
         sampReader.clearSubSampler()
-        svmWriter.close()
         labelStore.saveObj(taxaSampLog,"taxaSamp.test")
         hdfSamples.flush()
 

@@ -90,6 +90,9 @@ class ClassifierApp(App):
             action="store_true", dest="exportConfMatr",default=False),
             make_option(None, "--save-conf-matr",
             action="store_true", dest="saveConfMatr",default=False),
+            make_option(None, "--balance-test-counts",
+            action="store_true", dest="balanceTestCounts",default=False,
+            help="Balance test sample counts across labels when calculating confusion matrix"),
         ]
         return Struct(usage = "Construct several types of classifiers or use previously"+\
                 " trained classifier for testing and prediction\n"+\
@@ -113,6 +116,8 @@ class ClassifierApp(App):
         if labels is None:
             labels = [ lf+".idlab" for lf in opt.inFeat ]
         idLab = loadIdLabelsMany(fileNames=labels)
+        #DEBUG:
+        #idLab = idLab.balance(100)
         self.idLab = idLab
         assert not isinstance(opt.inFeat,str),"Need a sequence of feature files"
         assert len(opt.inFeat) > 0
@@ -283,13 +288,15 @@ class ClassifierApp(App):
             if opt.mode == "test":
                 perf = pred.calcPerfMetrics(idLab=self.idLab,
                         confMatrFileStem=opt.perfFile if opt.exportConfMatr else None,
-                        keepConfMatr=opt.saveConfMatr)
+                        keepConfMatr=opt.saveConfMatr,balanceCounts=opt.balanceTestCounts)
                 dumpObj(perf,opt.perfFile)
+                perf.exportMetricsCsv(names=("senMin","speMin","senMean","speMean","acc"),
+                        out=stripPathSfx(opt.perfFile)+".csv")
             elif opt.mode == "predict":
-                print self.labels.labNames()
-                print n.bincount(pred.labPred[0].astype('i4'))
-                if opt.gosDir is not None:
-                    analyzePredGos(labPred,opt.gosDir)
+                #print n.bincount(pred.labPred[0].astype('i4'))
+                #if opt.gosDir is not None:
+                #    analyzePredGos(labPred,opt.gosDir)
+                pass
 
 
 

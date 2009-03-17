@@ -79,15 +79,15 @@ class MGTOptions:
         sampSel.vir = vir
         sampSel.freeze()
         self.sampSel = sampSel
-        self.maxTestSampLen = 1000
-        self.minTestSampLen = 1000
+        self.maxTestSampLen = 5000
+        self.minTestSampLen = 5000
         self.labelTopNodeId = 1 #35237 #10239 - all vir, 35237 - dsDNA vir
         #self.labelLevel = "superkingdom"
         #self.labelLevel = "family"
-        self.labelLevel = "order"
+        #self.labelLevel = "order"
         self.sampLen = 5000
         self.kmerLen = 8
-        self.maxTestSampPerTaxa = 300
+        self.maxTestSampPerTaxa = 100
         #self.kmerRepr = "Frequences"
         self.kmerRepr = "Bits"
         #self.kmerRepr = "Sequences"
@@ -99,10 +99,10 @@ class MGTOptions:
         self.predictorTable = "pred"
         self.batchRun = Options(
                 PROJECT_CODE = 600005,
-                MEM = 4000,
+                MEM = 7000,
                 ARCH = "lx26-eon64",
                 maxQueued = 50,
-                LENGTH = "fast") #"fast"
+                LENGTH = "medium") #"fast"
         self.app = Options(
                 runMode = "default"#override App.opt.runMode value if not "default" here. Other choices are "inproc"
                 )

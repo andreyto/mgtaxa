@@ -71,6 +71,10 @@ class PerfMetrics(Struct):
         return self.keys()
 
 def perfMetrics(test,pred,balanceCounts=True):
+    """@todo This needs to be redone, probably, with numpy masked arrays or python hashes,
+    additional metrics. One particular problem with per class specificities is when we
+    have no testing samples for a given class, then even one false positive will create
+    per class specificity of zero, weighing down the average specificity."""
     maxLabel = max(test.max(),pred.max()) + 1
     cm = confusionMatrix(maxLabel,izip(test,pred))
     if balanceCounts:
@@ -206,7 +210,7 @@ class Predictions:
         self.param = param
         self.idPred = idPred
 
-    def calcPerfMetrics(self,idLab,confMatrFileStem=None,keepConfMatr=False):
+    def calcPerfMetrics(self,idLab,confMatrFileStem=None,keepConfMatr=False,balanceCounts=False):
         """Compute and return performance metrics.
         @param idLab IdLabels (currently true label values are taken from self.idPred array rather than from idLab)
         @param confMatrFileStem if not None, save confusion matrices for each prediction set in files with this stem name
@@ -215,7 +219,7 @@ class Predictions:
         perf = []
         for iPred in range(len(self.labPred)):
             labP = self.labPred[iPred]
-            pm = perfMetrics(self.idPred["label"].astype(int),labP,balanceCounts=False)
+            pm = perfMetrics(self.idPred["label"].astype(int),labP,balanceCounts=balanceCounts)
             pm.setLabToName(idLab.getLabToName())
             #print pm.toNameSpeStr()
             #print pm.toNameSenStr()

@@ -156,6 +156,14 @@ class SampStore(DirStore):
     parScanName = "1"
     ## name of default sample file
     sampName = "samp"
+    ## name of dirstore under which all TestStore's are created
+    testSupName = "test"
+    ## name of default TestStore
+    testName = "1"
+    ## name of dirstore under which all TestStore's are created
+    predictSupName = "pred"
+    ## name of default TestStore
+    predictName = "1"
     
 
     def getSampFilePath(self,name=None):
@@ -221,7 +229,7 @@ class SampStore(DirStore):
 
     def parScanSupStore(self):
         return self.subStore(name=self.parScanSupName,klass=DirStore)
-
+    
     def parScan(self,opt,name=None,idLabsName=None):
         store = self.parScanSupStore().subStore(name=self.getDefault(name,"parScanName"),
                 klass=ParamScanStore,
@@ -234,8 +242,39 @@ class SampStore(DirStore):
     
     def parScanStore(self,name=None):
         return self.parScanSupStore().loadStore(name)
+    
+    def testSupStore(self):
+        return self.subStore(name=self.testSupName,klass=DirStore)
 
+    
+    def test(self,opt,name=None,idLabsName=None):
+        store = self.testSupStore().subStore(name=self.getDefault(name,"testName"),
+                klass=TestStore,
+                mode="w",
+                opt=opt,
+                sampStore=self,
+                idLabsName=idLabsName)
 
+        return store.run()
+    
+    def testStore(self,name=None):
+        return self.testSupStore().loadStore(name)
+
+    def predictSupStore(self):
+        return self.subStore(name=self.predictSupName,klass=DirStore)
+    
+    def predict(self,opt,name=None,idLabsName=None):
+        store = self.predictSupStore().subStore(name=self.getDefault(name,"predictName"),
+                klass=PredictStore,
+                mode="w",
+                opt=opt,
+                sampStore=self,
+                idLabsName=idLabsName)
+
+        return store.run()
+    
+    def predictStore(self,name=None):
+        return self.predictSupStore().loadStore(name=self.getDefault(name,"predictName"))
 
 class FeatStore(SampStore):
 
@@ -270,4 +309,61 @@ class ParamScanStore(DirStore):
         self.opt = app.getOpt()
         self.save()
         return app.run()
+
+class TestStore(DirStore):
+    
+    def __init__(self,path,opt,sampStore=None,idLabsName=None):
+        opt = deepcopy(opt)
+        if sampStore is not None:
+            o = opt
+            o.inFeat = [ sampStore.getSampFilePath() ]
+            if o.get("labels",None) is None:
+                o.labels = [sampStore.getIdLabsPath(idLabsName)]
+        opt.cwd = path
+        DirStore.__init__(self,path,opt=opt)
+
+    def run(self):
+        opt = self.opt
+        opt.cwd = self.path # in case we moved it after __init__()
+        opt.predFile = pjoin(opt.cwd,"pred.pkl")
+        opt.perfFile = pjoin(opt.cwd,"perf.pkl")
+        jobs = []
+        opt.mode = "train"
+        app = ClassifierApp(opt=opt)
+        opt = app.getOpt() #get the missing options filled with defaults
+        # we need to clean up the models directory otherwise we run a danger
+        # of picking up old models that are not trained in this session
+        rmrf(self.getFilePath(opt.modelRoot))
+        jobs = app.run(cwd=opt.cwd)
+        opt.mode = "test"
+        app = ClassifierApp(opt=opt)
+        opt = app.getOpt() #get the missing options filled with defaults
+        self.save()
+        jobs = app.run(cwd=opt.cwd,depend=jobs)
+        return jobs
+
+
+class PredictStore(DirStore):
+    
+    def __init__(self,path,opt,sampStore=None,idLabsName=None):
+        opt = deepcopy(opt)
+        if sampStore is not None:
+            o = opt
+            o.inFeat = [ sampStore.getSampFilePath() ]
+            if o.get("labels",None) is None:
+                o.labels = [sampStore.getIdLabsPath(idLabsName)]
+        opt.cwd = path
+        DirStore.__init__(self,path,opt=opt)
+
+    def run(self):
+        opt = self.opt
+        opt.cwd = self.path # in case we moved it after __init__()
+        opt.predFile = pjoin(opt.cwd,"pred.pkl")
+        jobs = []
+        opt.mode = "predict"
+        app = ClassifierApp(opt=opt)
+        opt = app.getOpt() #get the missing options filled with defaults
+        jobs = app.run(cwd=opt.cwd)
+        self.save()
+        return jobs
 

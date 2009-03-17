@@ -248,9 +248,15 @@ def checkSaneAlphaHistOld(seq,nonDegenSymb,minNonDegenRatio=0.9):
 def balance(data,maxCount=0,labTargets={}):
     """Balance sample counts by to data['label'] and randomly shuffle entire set.
     @param data samples, must have data['label'] field
-    @param maxCount if 0 - balance to the min class count, if <0 - only shuffle, else - to this count
+    @param maxCount if 0 - balance to the min class count, if <0 - only shuffle, else - to this count, 
+    if "median" - to median count
     @param labTargets dict with optional per label maxCount values with the same semantics"""
     cnt = n.bincount(data['label'].astype('i4'))
+    if isinstance(maxCount,str):
+        if maxCount == "median":
+            maxCount = int(round(n.median(cnt[cnt>0])))
+        else:
+            raise ValueError(maxCount)
     targCnt = cnt[cnt > 0].min()
     if maxCount > 0:
         targCnt = maxCount
@@ -379,6 +385,16 @@ class IdLabels:
         return n.zeros(nrec,dtype=dtype)
 
     @classmethod
+    def fromIdFile(klass,featFile,label=0,split=0):
+        """Create new object by IDs setting other fields to constant values"""
+        ids = loadSeqsIdDef(featFile)
+        recs = klass.makeRecords(len(ids))
+        recs["id"] = ids
+        recs["label"] = label
+        recs["split"] = split
+        return klass(records=recs)
+
+    @classmethod
     def union(klass,idLabs):
         """Return a union of several IdLabels objects.
         @param idlabs a sequence of IdLabels objects.
@@ -388,8 +404,8 @@ class IdLabels:
     
     def initLabToNameMap(self):
         if not hasattr(self.data,"labNames"):
-            self.labNames = dict( ( (lab,lab) for lab in self.labToRec ) )
-        self.labToName = self.labNames
+            self.data.labNames = dict( ( (lab,lab) for lab in self.labToRec ) )
+        self.labToName = self.data.labNames
 
     def check(self):
         records = self.getRecords()
@@ -419,6 +435,12 @@ class IdLabels:
             splits[key] = IdLabels(records=rec)
         return splits
 
+    def labSet(self):
+        return set(self.getLabToRec())
+
+    def splitSet(self):
+        return set(self.getSplitToRec())
+
     def selBySplits(self,splits):
         """Return a new IdLabels object that contains only records with 'split' value within a given list
         @param splits sequence of allowed split values
@@ -426,6 +448,21 @@ class IdLabels:
         splits = set(splits)
         recs = self.getRecords()
         ind = n.asarray([ ind for (ind,split) in it.izip(it.count(),recs["split"]) if split in splits ],dtype=int)
+        return self.__class__(records=recs[ind])
+
+    def selByLabs(self,labs):
+        """Return a new IdLabels object that contains only records within a given labels sequence.
+        @todo write a single selByField() method and call that from other selByXXX()."""
+        labs = set(labs)
+        recs = self.getRecords()
+        ind = n.asarray([ ind for (ind,lab) in it.izip(it.count(),recs["label"]) if lab in labs ],dtype=int)
+        return self.__class__(records=recs[ind])
+
+    def selById(self,ids):
+        """Return a new IdLabels object that contains only records within a given ids sequence"""
+        ids = set(ids)
+        recs = self.getRecords()
+        ind = n.asarray([ ind for (ind,id) in it.izip(it.count(),recs["id"]) if id in ids ],dtype=int)
         return self.__class__(records=recs[ind])
 
     def selByCondition(self,condition):
@@ -466,13 +503,6 @@ class IdLabels:
             self.setDataLab(d)
         return d
 
-    def selById(self,ids):
-        """Return a new IdLabels object that contains only records within a given ids sequence"""
-        ids = set(ids)
-        recs = self.getRecords()
-        ind = n.asarray([ ind for (ind,id) in it.izip(it.count(),recs["id"]) if id in ids ],dtype=int)
-        return self.__class__(records=recs[ind])
-
     def setDataLab(self,data):
         """Update labels in the data feature array from this object"""
         idToRec = self.getIdToRec()
@@ -480,7 +510,7 @@ class IdLabels:
             rec["label"] = idToRec[rec["id"]]["label"]
 
     def balance(self,maxCount=0,targets={}):
-        """Return a new Idlabels object that has id counts balanced across splits and labels.
+        """Return a new Idlabels object that has id counts balanced within each split across labels.
         @param maxCount default maximum count value for each (split,label) combination, @see balance() 
         at the module level for the meaning of zero and negative values.
         @param targets dict {split : { "maxCount" : value, "labTargets" : value },...} where each value is optional
@@ -494,6 +524,20 @@ class IdLabels:
             spLabTargets = spTargets.get("labTargets",{})
             spRecsBal.append(balance(data=spRecs[split],maxCount=spMaxCount,labTargets=spLabTargets))
         return self.__class__(records=n.concatenate(spRecsBal))
+
+    def selAcrossSplits(self):
+        """Return a new IdLabels object such that each label left is present in every split.
+        Rational: if we do cross-validation and label is not present in training split, but
+        present in testing, we will get zero true positives for that label during testing.
+        Therefore, it makes sense to do CV only when every label is present in every split.
+        Alternatively we could skip during testing all samples with labels not present in
+        training, but would negatively bias our specificity estimate (because corresponding
+        classes would have a chance of showing false positives only."""
+        splits = self.getSplits()
+        labcross = set(self.getLabToRec())
+        for split in splits.values():
+            labcross &= set(split.getLabToRec())
+        return self.selByLabs(labcross)
 
     def count(self,keyFields=("split","label"),format="list"):
         return countRecArray(arr=self.getRecords(),keyFields=keyFields,format=format)

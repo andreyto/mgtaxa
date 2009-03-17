@@ -115,6 +115,10 @@ def stripSfx(s,sep='.'):
     @return input string s without the suffix or original input if suffix is not found"""
     return s.rsplit(sep,1)[0]
 
+def stripPathSfx(s,sep='.'):
+    """Same as stripSfx but looks only inside the os.path.basename(s)"""
+    (head,tail) = os.path.split(s)
+    return os.path.join(head,stripSfx(s,sep=sep))
 
 def strFilter(s,allowed):
     allowed = set(allowed)
@@ -411,8 +415,8 @@ def recFromArrays(arrays,names):
     assert len(names) == len(arrays) and len(arrays)>0, "'arrays' and 'names' must have non-zero and equal length"
     arrMax = arrays[n.argmax([sum(arr.shape) for arr in arrays])]
     for arr in arrays:
-        assert arr.shape == arrMax.shape or len(arr.shape) == 0,\
-            "Input arrays must have the same shape or be numpy scalars"
+        assert arr.shape == arrMax.shape or len(arr.shape) <= 1,\
+            "Input arrays must have the same shape or be numpy scalars or size 1 arrays"
     dt = [(name,arr.dtype) for (name,arr) in it.izip(names,arrays)]
     out = n.empty(arrMax.shape,dtype=dt)
     for (name,arr) in it.izip(names,arrays):
@@ -588,6 +592,7 @@ class ArrayAppender:
     """Wrapper for Numpy 1D array that emulates list.append() behaviour"""
     def __init__(self,arr):
         self.arr = arr
+        self.num = 0
 
     def getMemory(self):
         """Return entire internal array"""
@@ -601,16 +606,22 @@ class ArrayAppender:
         """Return length of getData() result"""
         return self.num
 
-    def next(self):
+    def nextItem(self):
         """Advance to the next unused element, resizing the internal array when necessary
         @return tuple (internal array, index of the next element)"""
         inext = self.num
         self.num += 1
         arr = self.arr
         if inext >= len(arr):
-            arr = n.append(arr,n.zeros_like(arr))
+            arr = n.append(arr,n.zeros(len(arr),arr.dtype))
             self.arr = arr
         return (arr,inext)
+
+    def nextElem(self):
+        """Like nextItem(), but return the next element itself.
+        That only makes sense when the array has mutable elements (e.g. is a record array)"""
+        arr,inext = self.nextItem()
+        return arr[inext]
 
 
 def enumNames(obj):
