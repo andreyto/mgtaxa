@@ -22,7 +22,7 @@ class ParamScanTestApp(App):
         psOpt = opt.setdefault("psOpt",Struct())
         ftOpt = opt.setdefault("ftOpt",Struct())
         clOpt.thresh = n.arange(-2.,1.01,0.1)
-        clOpt.C = 1.
+        clOpt.C = 4.
         #clOpt.saveConfMatr = True
         #clOpt.exportConfMatr = True
         clOpt.method = "svm" #"svm" "knn"
@@ -154,7 +154,7 @@ class ParamScanTestApp(App):
         opt = self.opt
         store = self.store
         clOpt = opt.psOpt.clOpt
-        clOpt.thresh = [-2000]
+        clOpt.thresh = [0.] #[-2000]
         clOpt.runMode = opt.runMode
         featStoreTrain = self.getFeatStore(opt.featName)
         clOpt.modelRoot = pjoin(featStoreTrain.getPath(),"test/1",clOpt.modelRoot)

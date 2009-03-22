@@ -72,6 +72,8 @@ class CrossValidatorApp(App):
         spPerfs = []
         param = None
         idPred = []
+        if options.debug > 0:
+            print "CV results:"
         for (spDir,split) in self.listSplitDirNames():
             spClOpt = loadObj(self.getSplitOptFileName(split))
             spPred = loadObj(spClOpt.predFile)

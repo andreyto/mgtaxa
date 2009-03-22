@@ -5,7 +5,7 @@ from MGT.ClassifierApp import ClassifierApp
 def makeClOpt(testDataDir):
     o,a = ClassifierApp.defaultOptions()
     o.C = 0.03
-    o.kernel = "rbf"
+    o.kernel = "lin" #"rbf"
     origFeat = [pjoin(testDataDir,"usps-train.libsvm"),pjoin(testDataDir,"usps-test.libsvm")]
     o.inFeat = origFeat
     #o.inFeat = [pjoin(testDataDir,"usps.libsvm.pca")]
@@ -20,13 +20,14 @@ makedir(workDir)
 os.chdir(workDir)
 
 clOpt = makeClOpt(testDataDir)
-#clOpt.thresh = n.arange(-2.,1.,0.1)
+clOpt.thresh = n.arange(-2.,1.,0.1)
 o = Options()
 o.clOpt = clOpt
 o.mode = "scatter" #"gather" #"scatter"
-o.runMode = "batchDep" #"inproc" #"batchDep"
+o.runMode = "inproc" #"batchDep" #"inproc" #"batchDep"
 pgen = ParamGridGen()
-params = pgen.add("C",pgen.p2(-2,6,2)).add("rbfWidth",pgen.p2(3,16,3)).grid()
+#params = pgen.add("C",pgen.p2(-2,6,2)).add("rbfWidth",pgen.p2(3,16,3)).grid()
+params = pgen.add("C",pgen.p2(-2,6,2)).grid()
 o.params = params
 print o
 app = ParamScanApp(opt=o)

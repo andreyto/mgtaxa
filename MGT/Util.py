@@ -8,6 +8,7 @@ from cPickle import dump, load
 from cStringIO import StringIO
 import numpy
 n = numpy
+nma = numpy.ma
 import numpy.random as nrnd
 from tempfile import mkstemp
 from textwrap import dedent
@@ -670,4 +671,27 @@ def binIntToStr(x,digits=8):
     """Return a string representation of x as a binary encoded number.
     Taken from some discussion list."""
     return ''.join(x & (1 << i) and '1' or '0' for i in range(digits-1,-1,-1))
+
+def floatsToPcntStr(arr):
+    return [ "%.2f" % (x*100) for x in arr ]
+
+def floatToPcntStr(x):
+    return "%.2f" % (x*100)
+
+def dictToMaskedArray(d,maxInd=None,dtype='O'):
+    """Create masked array out of dict
+    @param d dict(index->value) where index is integer type
+    @param maxInd maxiumum possible index value plus one, if None, obtain from dict keys
+    @param dtype dtype of the result
+    @return Numpy masked array with values not present in the original dict masked"""
+    if maxInd is None:
+        maxInd = int(max(d.keys()))+1
+    ind = n.zeros(maxInd,dtype=dtype)
+    mask = n.zeros(maxInd,dtype=bool)
+    mask[:] = True
+    for (i,v) in d.items():
+        i = int(i)
+        ind[i] = v
+        mask[i] = False
+    return nma.masked_array(ind,mask=mask)
 

@@ -287,7 +287,7 @@ class SvmOneVsAll:
         modIter = self.modStore.loadModels()
         self.srm = numpy.zeros(len(self.labSeen),dtype='f8')
         for (label,svm) in modIter:
-            ##FIXME for RBF
+            ##@todo FIXME for RBF
             w = svm.get_w()
             wf = numpy.inner(w,w)/2.
             c = svm.get_C1()

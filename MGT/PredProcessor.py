@@ -5,6 +5,10 @@ import pdb
 import os
 
 def confusionMatrix(maxLabel,tests):
+    """Build a confusion matrix from (true label, predicted label) pairs.
+    @param maxLabel upper bound on the label value (max value + 1)
+    @param tests sequence of pairs (true label, predicted label)
+    @return {m=raw confusion matrix,mb=class balanced confusion matrix} where rows are positives and columns are predictions"""
     m = n.zeros((maxLabel,maxLabel),'i4')
     for test in tests:
         m[test[0],test[1]] += 1
@@ -27,23 +31,98 @@ def confusionMatrix(maxLabel,tests):
 
 
 class PerfMetrics(Struct):
+    """Calculates performance metrics from pairs of true and predicted labels for each test case.
+    Designated reject group is treated in a special way."""
+
+    ## This label is designated for reject group.
+    ## Reject group contributes to sensitivity but has undefined specificity
+    rejectLabel = 0
+
+    
+    def __init__(self,test,pred,balanceCounts=True,maxLabel=None):
+        """Constructor.
+        @param sequence of test (true) labels (int)
+        @param sequence of predicted labels (int)
+        @param balanceCount if True, use confusion matrix balanced by per-class test counts
+        @param maxLabel maximum value for labels plus one, if None - computed from actual test and pred values
+        @post this object has masked array attributes for specificity, sensitivity, true positives etc for each class
+        @todo Add additional metrics. One particular problem with per class specificities is when we
+        have no testing samples for a given class, then even one false positive will create
+        per class specificity of zero, weighing down the average specificity.
+        @todo check out MaskedArrayAlternative in scipy, which has (experimental) masked recod array - 
+        this way we can create a single record array (table) with fields like sen,spe,tp etc and one record
+        for each class, and have each field in each record masked separately. Sort of like Excel table with
+        possible empty values."""
+        if maxLabel is None:
+            maxLabel = max(test.max(),pred.max()) + 1
+        cm = confusionMatrix(maxLabel,izip(test,pred))
+        if balanceCounts:
+            m = cm.mb
+        else:
+            m = cm.m
+        #mr = m[1:,1:]
+        #t = m[1:,:].sum(axis=1)
+        mr = m[:,:]
+        t = m[:,:].sum(axis=1)
+        p = mr.sum(axis=0)
+        tp = mr.diagonal()
+        tMask = (t == 0)
+        tm = nma.masked_array(t,mask=tMask)
+        tpf = tp.astype('f4')
+        sen = tpf/tm
+        senMean = sen.mean()
+        senMin = sen.min()
+        senStd = sen.std()
+        pMask = (p == 0)
+        # For reject group (label 0) specificity is always undefined
+        pMask[self.rejectLabel] = True
+        pm = nma.masked_array(p,mask=pMask)
+        spe = tpf/pm
+        speMean = spe.mean()
+        speMin = spe.min()
+        speStd = spe.std()
+        acc = tpf.sum()/t.sum()
+        self.cm = cm
+        self.sen = sen
+        self.spe = spe
+        self.senMean = senMean
+        self.speMean = speMean
+        self.senMin = senMin
+        self.speMin = speMin
+        self.senStd = senStd
+        self.speStd = speStd
+        self.acc    = acc
+        self.tp = tpf
+        self.p = pm
+        self.t = tm
+        self.names = n.arange(len(self.t))
+        self.labToName = dict(enumerate(self.names))
+        #if options.debug >= 1:
+        #    self.summary()
 
     def setLabToName(self,labToName):
         self.labToName = labToName
-    
-    def toNameSpe(self):
-        return [ (self.labToName[spe["label"]],spe) for spe in self.spe ]
+        # create masked array out of dict
+        self.names = dictToMaskedArray(labToName,maxInd=len(self.p),dtype='S32')
 
-    def toNameSpeStr(self):
-        return "[name:lab:spe...]: ", "  ".join( [ "%s:%s:%.2f" % (p[0],p[1]["label"],p[1]["val"]) for p in  self.toNameSpe() ] )
+    def summary(self,out=None):
+        if out is None:
+            out = sys.stdout
+        metrNames = ("names","spe","sen","tp","t","p")
+        metrDict = dict([(metrName,getattr(self,metrName)) for metrName in metrNames])
+        for name in ("spe","sen"):
+            metrDict[name] = floatsToPcntStr(metrDict[name])
+        metrVals = zip(*[metrDict[name] for name in metrNames])
+        out.write(' '.join(["%10s" % x for x in metrNames])+'\n')
+        out.write(' '.join(["%10s" % x for x in ["mean"]+floatsToPcntStr([self.speMean,self.senMean])])+'\n')
+        out.write(' '.join(["%10s" % x for x in ["min"]+floatsToPcntStr([self.speMin,self.senMin])])+'\n')
+        out.write(' '.join(["%10s" % x for x in ["std"]+floatsToPcntStr([self.speStd,self.senStd])])+'\n')
+        for vals in metrVals:
+            out.write(' '.join(["%10s" % x for x in vals])+'\n')
 
-    def toNameSen(self):
-        return [ (self.labToName[sen["label"]],sen) for sen in self.sen ]
-
-    def toNameSenStr(self):
-        return "[name:lab:sen...]: ", "  ".join( [ "%s:%s:%.2f" % (p[0],p[1]["label"],p[1]["val"]) for p in  self.toNameSen() ] )
 
     def confMatrCsv(self,out,m=None):
+        """Write confusion matrix in CSV format"""
         if m is None:
             m = self.cm.m
         if isinstance(out,str):
@@ -70,73 +149,6 @@ class PerfMetrics(Struct):
     def getMetricsNames(self):
         return self.keys()
 
-def perfMetrics(test,pred,balanceCounts=True):
-    """@todo This needs to be redone, probably, with numpy masked arrays or python hashes,
-    additional metrics. One particular problem with per class specificities is when we
-    have no testing samples for a given class, then even one false positive will create
-    per class specificity of zero, weighing down the average specificity."""
-    maxLabel = max(test.max(),pred.max()) + 1
-    cm = confusionMatrix(maxLabel,izip(test,pred))
-    if balanceCounts:
-        m = cm.mb
-    else:
-        m = cm.m
-    #print m
-    #print cm.m
-    #print cm.mb
-    mr = m[1:,1:]
-    t = m[1:,:].sum(axis=1)
-    p = mr.sum(axis=0)
-    tp = mr.diagonal()
-    tNzW = n.where(t > 0)
-    senT = t[tNzW]
-    sen = (tp[tNzW].astype('f4')/t[tNzW])
-    senLab = tNzW[0] + 1 #because mr = m[1:,1:]
-    sen = n.rec.fromarrays([senLab,sen],names="label,val")
-    if len(sen) > 0:
-        senMean = sen["val"].mean()
-        senMin = sen["val"].min()
-        senStd = sen["val"].std()
-    else:
-        speMean = 0
-        speMin = 0
-        senStd = 0
-    pNzW = n.where(p > 0)
-    spe = (tp[pNzW].astype('f4')/p[pNzW])
-    speLab = pNzW[0] + 1 #because mr = m[1:,1:]
-    spe = n.rec.fromarrays([speLab,spe],names="label,val")
-    if len(spe) > 0:
-        speMean = spe["val"].mean()
-        speMin = spe["val"].min()
-        speStd = spe["val"].std()
-        speMeanTP = spe["val"][spe["val"]>0].mean()
-    else:
-        speMean = 0
-        speMin = 0
-        speStd = 0
-        speMeanTP = 0
-    acc = float(tp.sum())/t.sum()
-    if options.debug >= 1:
-        print \
-                "TP: "+`tp.sum()`+" T: "+`t.sum()`+" P: "+`p.sum()`+" S: "+`m.sum()`+\
-                " CT: "+`(t>0).sum()`+" CP: "+`(p>0).sum()`+" CTP: "+`(tp>0).sum()`+\
-                " Sen: %.2f"%(senMean*100)+" Spe: %.f"%(speMean*100)+\
-                " SenMin: %.f"%(senMin*100)+" SpeMin: %.f"%(speMin*100)+\
-                " SenStd: %.f"%(senStd*100)+" SpeStd: %.f"%(speStd*100)+\
-                " SpeTP: %.f"%(speMeanTP*100)+" Acc: %.f"%(acc*100)
-        pr = spe.copy()
-        pr["val"] = (pr["val"]*100).round()
-        print "Class Spe: ", pr
-        pr = sen.copy()
-        pr["val"] = (pr["val"]*100).round()
-        print "Class Sen: ", pr
-    pm = PerfMetrics(cm=cm,
-            sen=sen,spe=spe,
-            senMean=senMean,speMean=speMean,
-            senMin=senMin,speMin=speMin,
-            senStd=senStd,speStd=speStd,
-            speMeanTP=speMeanTP,acc=acc)
-    return pm
 
 
 class PerfMetricsSet:
@@ -219,15 +231,16 @@ class Predictions:
         perf = []
         for iPred in range(len(self.labPred)):
             labP = self.labPred[iPred]
-            pm = perfMetrics(self.idPred["label"].astype(int),labP,balanceCounts=balanceCounts)
+            pm = PerfMetrics(self.idPred["label"].astype(int),labP,balanceCounts=balanceCounts)
             pm.setLabToName(idLab.getLabToName())
-            #print pm.toNameSpeStr()
-            #print pm.toNameSenStr()
             if confMatrFileStem is not None:
                 pm.confMatrCsv(confMatrFileStem+'.%00i.cm.csv' % iPred)
             if not keepConfMatr:
                 delattr(pm,"cm")
             perf.append(pm)
+            if options.debug > 0:
+                print self.param[iPred]
+                pm.summary()
         return PerfMetricsSet(perf=perf,param=self.param)
 
 class Predictor:

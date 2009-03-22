@@ -308,12 +308,12 @@ class TreeSamplerApp(MGTOptions,App):
             else:
                 node.sampSel = sampSel.all
 
-    def mkDbTestingTaxa(self,rank="genus",superRank="family"):
+    def unused_mkDbTestingTaxa(self,rank="genus",superRank="family"):
         """Select complete 'rank' nodes uniformly distributed across 'superRank' super-nodes."""
         pairs = self.lowRankTestPairs(rank=rank,superRank=superRank)
         self.sampleTestPairs(pairs)
 
-    def lowRankTestPairs(self,rank,superRank):
+    def unused_lowRankTestPairs(self,rank,superRank):
         """Return set of unique pairs (testing node,first supernode).
         @param rank - entire nodes of this rank will be selected as testing samples (e.g. genus).
         @param superRank - a second member of each pair will have at least this rank (e.g. family).
@@ -352,7 +352,7 @@ class TreeSamplerApp(MGTOptions,App):
                                         fields = (SqlField("id_sub","integer"),SqlField("id_sup","integer"))))
         return pairs
 
-    def sampleTestPairs(self,pairs):
+    def unused_sampleTestPairs(self,pairs):
         """Randomly sample a list of (testing node,first supernode) pairs obtained with lowRankTestPairs()."""
         #samp_n_tot - test check above for every genus
         pass

@@ -89,8 +89,8 @@ def run_ParamScanTest():
     #modes = ["feat","idlabs"]
     #modes = ["idlabs"]
     #modes = ["feat","idlabs","parscan"]
-    modes = ["parscan"]
-    #modes = ["test"]
+    #modes = ["parscan"]
+    modes = ["test"]
     jobs = []
     for mode in modes:
         opt.mode = mode
@@ -118,11 +118,7 @@ def run_Pred():
     opt.cwd = pjoin(opt.cwd,opt.rank)
     optSI = makeOptSeqImportApp()
     opt.sampStorePred = optSI.cwd
-    #modes = ["feat"]
-    #modes = ["idlabs"]
-    #modes = ["feat","idlabs"]
-    #modes = ["parscan"]
-    #modes = ["featPred"]
+    #modes = ["featPred","predict"]
     modes = ["predict"]
     jobs = []
     for mode in modes:
@@ -131,9 +127,9 @@ def run_Pred():
         jobs = app.run(depend=jobs)
 
 #run_Sampler()
-run_ParamScanTest()
+#run_ParamScanTest()
 #run_SeqImportApp()
-#run_Pred()
+run_Pred()
 sys.exit(0)
 
 nrnd.seed(1)
