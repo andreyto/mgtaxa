@@ -1,5 +1,6 @@
 from MGT.Common import *
 from MGT.Svm import *
+from MGT.FastaIO import FastaReader
 #from MGT.SampDb import *
 #from MGT.SampDbKmer import *
 #from MGT.PredictorDb import *
@@ -10,17 +11,21 @@ def getProgOptions():
     from optparse import OptionParser, make_option
     option_list = [
         make_option("-i", "--in-seq",
-        action="append", type="string",dest="inSeq"),
-        make_option("-o", "--out-dir",
-        action="store", type="string",dest="outDir",default="."),
+        action="store", type="string",dest="inSeq"),
+        make_option("-o", "--out-seq",
+        action="store", type="string",dest="outSeq"),
         make_option("-l", "--min-len",
         action="store", type="int",dest="minSampLen",default=0),
         make_option("-f", "--inp-format",
         action="store", type="choice",choices=("gos","ncbi","ca"),dest="inFormat",default="gos"),
+        make_option("-z", "--out-format",
+        action="store", type="choice",choices=("svm","fasta"),dest="outFormat",default="fasta"),
         make_option("-e", "--degen-len",
         action="store", type="int",dest="degenLen",default=-1),
         make_option("-p", "--prefix-id",
-        action="store_true",dest="prefixId",default=True),
+        action="store_true",dest="prefixId",default=False),
+        make_option(None, "--fasta-line-len",
+        action="store", type="int",dest="fastaLineLen",default=1000),
     ]
     parser = OptionParser(usage = "usage: %prog [options]",option_list=option_list)
     (options, args) = parser.parse_args()
@@ -30,10 +35,13 @@ def getProgOptions():
 
 opt,args = getProgOptions()
 
-assert len(opt.inSeq) > 0, "Need at least one in-seq option"
+assert opt.inSeq is not None, "Need at least --in-seq option"
 
 def fastaToSvm(inFileFasta,outName,opt):
-    svmWriter = SvmStringFeatureWriterTxt(outName+".samp")
+    if opt.outFormat == "svm":
+        svmWriter = SvmStringFeatureWriterTxt(outName)
+    elif opt.outFormat == "fasta":
+        svmWriter = SvmFastaFeatureWriterTxt(outName,lineLen=opt.fastaLineLen)
     inpSeq = FastaReader(inFileFasta)
     if opt.degenLen >= 0:
         symCompr = SymbolRunsCompressor('N',opt.degenLen)
@@ -75,7 +83,7 @@ def gosToSvm(inpSeq,svmWriter,symCompr,opt):
             fldValues.append(metaRec)
             if opt.prefixId:
                 id_read = "%s_%s" % (library_id,id_read)
-            svmWriter.write(0,seq,id_read)
+            svmWriter.write(None,seq,id_read)
         allLen.append(lenSeq)
         if iRec % 1000 == 0:
             print "Processed %i records" % iRec
@@ -96,7 +104,7 @@ def caToSvm(inpSeq,svmWriter,symCompr,opt):
         seq = symCompr(rec.sequence())
         lenSeq = len(seq)
         if lenSeq >= opt.minSampLen:
-            svmWriter.write(0,seq,id)
+            svmWriter.write(None,seq,id)
             fldValues.append((id,
                         lenSeq))
         allLen.append(lenSeq)
@@ -109,11 +117,6 @@ def caToSvm(inpSeq,svmWriter,symCompr,opt):
     return meta,allLen
 
 #/usr/local/projects/GOSII/ANNOTATION/GSIOVIR110-I-01-3-4KB/GSIOVIR110-I-01-3-4KB.fasta
-for inFile in opt.inSeq:
-    outName = os.path.basename(inFile)
-    outName = stripSfx(outName,'.')
-    outName = os.path.join(opt.outDir,outName)
-    assert not isSamePath(inFile,outName)
-    makedir(outName)
-    fastaToSvm(inFileFasta=inFile,outName=os.path.join(outName,"inp"),opt=opt)
+assert not isSamePath(opt.inSeq,opt.outSeq)
+fastaToSvm(inFileFasta=opt.inSeq,outName=opt.outSeq,opt=opt)
 

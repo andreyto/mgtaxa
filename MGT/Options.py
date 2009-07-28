@@ -64,6 +64,9 @@ class Struct(object):
             else:
                 raise KeyError(l[0])
 
+    def pop(self,key):
+        return self.__dict__.pop(key)
+
     def update(self,other):
         if isinstance(other,Struct):
             o = other.__dict__
@@ -72,6 +75,7 @@ class Struct(object):
         self.__dict__.update(o)
 
     def updateOtherMissing(self,other):
+        """Update in other keys that are not yet present where"""
         if isinstance(other,Struct):
             o = other.__dict__
         else:
@@ -79,6 +83,17 @@ class Struct(object):
         s = self.asDict()
         for (key,value) in s.items():
             o.setdefault(key,value)
+
+    def updateFromOtherExisting(self,other):
+        """Update in self keys that already present in self"""
+        if isinstance(other,Struct):
+            o = other.__dict__
+        else:
+            o = other
+        s = self.asDict()
+        for key in list(s.keys()):
+            if key in o:
+                s[key] = o[key]
 
     def asDict(self):
         return self.__dict__

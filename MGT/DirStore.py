@@ -16,19 +16,27 @@ class DirStore:
 
     @classmethod
     def open(klass,path,mode="a",**kw):
+        """Open existing or create a new store (optionally deleting existing one with the same path).
+        @param path filesystem path of the store
+        @param mode string with one of 
+        @li "w" - will open exisiting store or create new and call save() method
+        @li "c" - will erase existing store (if exists) then create the new store and call save()
+        @li "r" - will open existing store, will never create a new one, will not call save()
+        @li "a" - if store exists, acts same as "r", else same as "w"."""
         dPath = klass._dumpPath(path)
-        if mode == "w":
-            mode = "c" #currently we just re-create the store state files
+        if mode == "c":
+            rmdir(path)
+            mode = "w" 
         if mode == "a":
             if not os.path.isfile(dPath):
-                mode = "c"
+                mode = "w"
             else:
                 mode = "r"
         if mode == "r":
             o = loadObj(dPath)
             o.path = path
             # fix path so that we can safely move store trees on disk
-        elif mode == "c":
+        elif mode == "w":
             o = klass(path=path,**kw)
             o.save()
         else:
@@ -160,9 +168,13 @@ class SampStore(DirStore):
     testSupName = "test"
     ## name of default TestStore
     testName = "1"
+    ## name of dirstore under which all TrainStore's are created
+    trainSupName = "train"
+    ## name of default TrainStore
+    trainName = "1"
     ## name of dirstore under which all TestStore's are created
     predictSupName = "pred"
-    ## name of default TestStore
+    ## name of default PredictStore
     predictName = "1"
     
 
@@ -230,15 +242,17 @@ class SampStore(DirStore):
     def parScanSupStore(self):
         return self.subStore(name=self.parScanSupName,klass=DirStore)
     
-    def parScan(self,opt,name=None,idLabsName=None):
+    def parScan(self,opt,name=None,idLabsName=None,**kw):
+        """Create a new substore under parScanSupStore() and run parameter scan where.
+        If a substore with a given name already exists, it will be first erased."""
         store = self.parScanSupStore().subStore(name=self.getDefault(name,"parScanName"),
                 klass=ParamScanStore,
-                mode="w",
+                mode="c",
                 opt=opt,
                 sampStore=self,
                 idLabsName=idLabsName)
 
-        return store.run()
+        return store.run(**kw)
     
     def parScanStore(self,name=None):
         return self.parScanSupStore().loadStore(name)
@@ -247,38 +261,54 @@ class SampStore(DirStore):
         return self.subStore(name=self.testSupName,klass=DirStore)
 
     
-    def test(self,opt,name=None,idLabsName=None):
+    def test(self,opt,name=None,idLabsName=None,**kw):
         store = self.testSupStore().subStore(name=self.getDefault(name,"testName"),
                 klass=TestStore,
-                mode="w",
+                mode="c",
                 opt=opt,
                 sampStore=self,
                 idLabsName=idLabsName)
 
-        return store.run()
+        return store.run(**kw)
     
     def testStore(self,name=None):
         return self.testSupStore().loadStore(name)
 
-    def predictSupStore(self):
-        return self.subStore(name=self.predictSupName,klass=DirStore)
+    def trainSupStore(self):
+        return self.subStore(name=self.trainSupName,klass=DirStore)
     
-    def predict(self,opt,name=None,idLabsName=None):
-        store = self.predictSupStore().subStore(name=self.getDefault(name,"predictName"),
-                klass=PredictStore,
-                mode="w",
+    def train(self,opt,name=None,idLabsName=None,**kw):
+        store = self.trainSupStore().subStore(name=self.getDefault(name,"trainName"),
+                klass=TrainStore,
+                mode="c",
                 opt=opt,
                 sampStore=self,
                 idLabsName=idLabsName)
 
-        return store.run()
+        return store.run(**kw)
+    
+    def trainStore(self,name=None):
+        return self.trainSupStore().loadStore(name)
+    
+    def predictSupStore(self):
+        return self.subStore(name=self.predictSupName,klass=DirStore)
+    
+    def predict(self,opt,name=None,idLabsName=None,**kw):
+        store = self.predictSupStore().subStore(name=self.getDefault(name,"predictName"),
+                klass=PredictStore,
+                mode="c",
+                opt=opt,
+                sampStore=self,
+                idLabsName=idLabsName)
+
+        return store.run(**kw)
     
     def predictStore(self,name=None):
         return self.predictSupStore().loadStore(name=self.getDefault(name,"predictName"))
 
 class FeatStore(SampStore):
 
-    def fromOther(self,sampStore):
+    def fromOther(self,sampStore,**kw):
         opt = self.opt
         ## predefined opt.inSeq should be relative name or None
         opt.inSeq = sampStore.getSampFilePath(opt.get("inSeq",None))
@@ -287,7 +317,7 @@ class FeatStore(SampStore):
         opt.runMode = "inproc"
         opt.cwd = self.getPath()
         app = SeqFeaturesApp(opt=opt)
-        app.run()
+        app.run(**kw)
 
 class ParamScanStore(DirStore):
     
@@ -301,14 +331,14 @@ class ParamScanStore(DirStore):
         opt.cwd = path
         DirStore.__init__(self,path,opt=opt)
 
-    def run(self):
+    def run(self,**kw):
         opt = self.opt
         opt.cwd = self.path # in case we moved it after __init__()
         opt.mode = "scatter"
         app = ParamScanApp(opt=opt)
         self.opt = app.getOpt()
         self.save()
-        return app.run()
+        return app.run(**kw)
 
 class TestStore(DirStore):
     
@@ -322,25 +352,51 @@ class TestStore(DirStore):
         opt.cwd = path
         DirStore.__init__(self,path,opt=opt)
 
-    def run(self):
+    def run(self,**kw):
         opt = self.opt
         opt.cwd = self.path # in case we moved it after __init__()
         opt.predFile = pjoin(opt.cwd,"pred.pkl")
         opt.perfFile = pjoin(opt.cwd,"perf.pkl")
         jobs = []
-        opt.mode = "train"
+        opt.mode = "trainScatter"
         app = ClassifierApp(opt=opt)
         opt = app.getOpt() #get the missing options filled with defaults
         # we need to clean up the models directory otherwise we run a danger
         # of picking up old models that are not trained in this session
         rmrf(self.getFilePath(opt.modelRoot))
-        jobs = app.run(cwd=opt.cwd)
+        jobs = app.run(**kw)
         opt.mode = "test"
         app = ClassifierApp(opt=opt)
         opt = app.getOpt() #get the missing options filled with defaults
         self.save()
-        jobs = app.run(cwd=opt.cwd,depend=jobs)
+        kw = kw.copy()
+        kw["depend"] = jobs
+        jobs = app.run(**kw)
         return jobs
+
+class TrainStore(DirStore):
+    
+    def __init__(self,path,opt,sampStore=None,idLabsName=None):
+        opt = deepcopy(opt)
+        if sampStore is not None:
+            o = opt
+            o.inFeat = [ sampStore.getSampFilePath() ]
+            if o.get("labels",None) is None:
+                o.labels = [sampStore.getIdLabsPath(idLabsName)]
+        opt.cwd = path
+        DirStore.__init__(self,path,opt=opt)
+
+    def run(self,**kw):
+        opt = self.opt
+        opt.cwd = self.path # in case we moved it after __init__()
+        jobs = []
+        opt.mode = "trainScatter"
+        app = ClassifierApp(opt=opt)
+        opt = app.getOpt() #get the missing options filled with defaults
+        # we need to clean up the models directory otherwise we run a danger
+        # of picking up old models that are not trained in this session
+        rmrf(self.getFilePath(opt.modelRoot))
+        return app.run(**kw)
 
 
 class PredictStore(DirStore):
@@ -355,7 +411,7 @@ class PredictStore(DirStore):
         opt.cwd = path
         DirStore.__init__(self,path,opt=opt)
 
-    def run(self):
+    def run(self,**kw):
         opt = self.opt
         opt.cwd = self.path # in case we moved it after __init__()
         opt.predFile = pjoin(opt.cwd,"pred.pkl")
@@ -363,7 +419,7 @@ class PredictStore(DirStore):
         opt.mode = "predict"
         app = ClassifierApp(opt=opt)
         opt = app.getOpt() #get the missing options filled with defaults
-        jobs = app.run(cwd=opt.cwd)
+        jobs = app.run(**kw)
         self.save()
         return jobs
 

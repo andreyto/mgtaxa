@@ -1,8 +1,9 @@
 """Split a multi-FASTA file into chunks constrained by a total size"""
-
-from MGT.Shogun import *
-from MGT.Shogun.Util import *
-from shogun.Features import *
+from MGT.FastaIO import *
+from MGT.Common import*
+#from MGT.Shogun import *
+#from MGT.Shogun.Util import *
+#from shogun.Features import *
 
 def getProgOptions():
     from optparse import OptionParser, make_option
@@ -21,6 +22,7 @@ def getProgOptions():
 
 
 opt,args = getProgOptions()
+assert opt.inpFasta is not None and opt.outName is not None
 
 chunkSize = opt.chunkSize.upper()
 if chunkSize.endswith("M"):

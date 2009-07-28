@@ -13,7 +13,7 @@ class CrossValidatorApp(App):
         self.clOpt = opt.clOpt
         self.cwd = opt.get("cwd",os.getcwd())
         self.loadIdLabels()
-        return self.crossVal()
+        return self.crossVal(**kw)
 
     def loadIdLabels(self):
         self.idLab = loadIdLabelsMany(fileNames=self.clOpt.labels)
@@ -36,7 +36,7 @@ class CrossValidatorApp(App):
         It can hold file names for final result files etc."""
         return pjoin(self.cwd,"opt.pkl")
 
-    def trainTest(self,testSplit):
+    def trainTest(self,testSplit,**kw):
         idLab = self.idLab
         spDir = self.getSplitDirName(testSplit)
         makedir(spDir)
@@ -50,7 +50,7 @@ class CrossValidatorApp(App):
         spClOpt.labels = [spIdLabFile]
         spClOpt.predFile = pjoin(spDir,"pred.pkl")
         spClOpt.perfFile = pjoin(spDir,"perf.pkl")
-        spClOpt.mode = "train"
+        spClOpt.mode = "trainScatter"
         spClOpt.runMode = self.opt.runMode
         spOptFile = self.getSplitOptFileName(testSplit)
         spApp = ClassifierApp(opt=spClOpt)
@@ -58,13 +58,16 @@ class CrossValidatorApp(App):
         #that just saves a copy for us - App will create its own when it 
         #submits a batch job (unique and slightly modified)
         dumpObj(spClOpt,spOptFile)
-        jobs = spApp.run(cwd=spDir)
+        kw = kw.copy()
+        kw["cwd"] = spDir
+        jobs = spApp.run(**kw)
         spClOpt.mode = "test"
         spApp = ClassifierApp(opt=spClOpt)
-        jobs = spApp.run(cwd=spDir,depend=jobs)
+        kw["depend"] = jobs
+        jobs = spApp.run(**kw)
         return jobs
 
-    def gatherSplits(self):
+    def gatherSplits(self,**kw):
         """Collect results from training/testing all splits and compute total performance metrics"""
         opt = self.opt
         clOpt = self.clOpt
@@ -101,18 +104,21 @@ class CrossValidatorApp(App):
         dumpObj(spPerfs,opt.perfFileCl)
 
 
-    def crossVal(self):
+    def crossVal(self,**kw):
         if self.opt.mode == "scatter":
             jobs = []
             for split in sorted(self.idLab.getSplitToRec()):
-                jobs.extend(self.trainTest(testSplit=split))
+                jobs.extend(self.trainTest(testSplit=split,**kw))
             gtOpt = copy(self.opt)
             gtOpt.mode = "gather"
             gtApp = self.factory(opt=gtOpt)
-            jobs = gtApp.run(cwd=self.cwd,depend=jobs)
+            kw = kw.copy()
+            kw["cwd"] = self.cwd
+            kw["depend"] = jobs
+            jobs = gtApp.run(**kw)
             return jobs
         elif self.opt.mode == "gather":
-            self.gatherSplits()
+            self.gatherSplits(**kw)
 
 
 

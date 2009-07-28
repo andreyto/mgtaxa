@@ -4,7 +4,7 @@ import string, os
 from time import sleep
 import time
 from copy import copy, deepcopy
-from cPickle import dump, load
+from cPickle import dump, load, Pickler, Unpickler
 from cStringIO import StringIO
 import numpy
 n = numpy
@@ -15,6 +15,8 @@ from textwrap import dedent
 from collections import defaultdict as defdict
 import operator
 import itertools as it
+import datetime
+import pdb
 
 from MGT.Options import Struct
 from MGT.Config import options, Options
@@ -23,16 +25,64 @@ from MGT.Run import *
 
 from MGT.Bits.Unique import unique, uniquePick
 
-def dumpObj(obj,fileName):
-    out = openCompressed(fileName,'w')
+class Timer(object):
+    """Very simple timer object"""
+
+    def __init__(self):
+        ##time.clock() seems to be broken on SuSe 10 x86_64 Python 2.4
+        ##- it always returns the same value
+        self.start = time.time()
+
+    def __call__(self):
+        finish = time.time()
+        lap = finish-self.start
+        self.start = finish
+        return lap
+
+def dumpObj(obj,fileName,**kw):
+    out = openCompressed(fileName,'w',**kw)
     dump(obj,out,-1)
     out.close()
     
-def loadObj(fileName):
-    inp = openCompressed(fileName,'rb')
+def loadObj(fileName,**kw):
+    inp = openCompressed(fileName,'rb',**kw)
     ret = load(inp)
     inp.close()
     return ret
+
+def PickleReader(inp,**kw):
+    if isinstance(inp,str):
+        closeInp = True
+        inp = openCompressed(inp,'rb',**kw)
+    else:
+        closeInp = False
+    pkl = Unpickler(inp)
+    while True:
+        try:
+            x = pkl.load()
+        except EOFError:
+            break
+        yield x
+    if closeInp:
+        inp.close()
+
+class PickleWriter(object):
+
+    def __init__(self,out,**kw):
+        self.out = out
+        if isinstance(out,str):
+            self.closeOut = True
+            self.out = openCompressed(out,'w',**kw)
+        else:
+            self.closeOut = False
+        self.pkl = Pickler(self.out,-1)
+
+    def write(self,x):
+        self.pkl.dump(x)
+    
+    def close(self):
+        if self.closeOut:
+            self.out.close()
 
 def allChr():
     """Return a string with all characters in C local [0-255]"""
@@ -65,6 +115,10 @@ def varsub(template,*l,**kw):
     o.update(kw)
     return string.Template(template).substitute(*p,**o)
 
+def currTimeAsFileName():
+    """Return current datetime formatted as suitable for use as a file name"""
+    return datetime.datetime.today().strftime("%y-%m-%d_%H-%M")
+
 def makeTmpFile(*l,**kw):
     """Create and open a temporary file that will exist after this program closes it.
     Return a tuple (file object,file name).
@@ -91,6 +145,8 @@ def makeTmpFile(*l,**kw):
         if opts1.has_key(k):
             l2.append(opts1[k])
             del opts1[k]
+    if opts1.pop("withTime",False):
+        opts1["prefix"] = opts1.get("prefix","") + currTimeAsFileName()+'.'
     (fd,name) = mkstemp(*l,**opts1)
     return (os.fdopen(fd,*l2),name)
 
@@ -144,11 +200,23 @@ def isSamePath(path1,path2):
     paths = [ os.path.abspath(os.path.realpath(p)) for p in (path1,path2) ]
     return paths[0] == paths[1]
 
-def openCompressed(filename,mode,**kw):
-    if filename.endswith('.gz'):
+def openCompressed(filename,mode,compressFormat=None,**kw):
+    """Open a filename which can be either compressed or plain file.
+    @param compressFormat if None, an attempt will be made to autodetect format 
+    (currently by extension, only '.gz' is recognized); if "none" - open as plain
+    file, if "gzip" - open as gzip file."""
+    cform = compressFormat
+    if cform is None:
+        cform = "none"
+        if filename.endswith('.gz'):
+            cform = "gzip"
+    #print "DEBUG: openCompressed(%s,%s,%s)" % (filename,mode,cform)
+    if cform == "gzip":
         return openGzip(filename,mode,**kw)
-    else:
+    elif cform == "none":
         return open(filename,mode,2**20,**kw)
+    else:
+        raise ValueError(compressFormat)
 
 def openGzip(filename,mode,compresslevel=6):
     compresslevel = int(compresslevel)
@@ -488,6 +556,14 @@ def joinRecArrays(arrays):
     #a group of fields at once.
     return recFromArrays(arrays,names=grNames).view(dt)
 
+def fieldDtypeRecArray(arr,name):
+    """Return dtype of a field with name 'name' from a record array 'arr'.
+    Note: you should not try to determine field's dtype as a single element's
+    dtype, such as arr[0][name].dtype, because this will return the dtype
+    of a numpy scalar, which for string fields will the length of a given
+    value that might be smaller than the field length in a record array."""
+    return arr.dtype.fields[name][0]
+
 def permuteObjArray(arr):
     #numpy permutation or shuffle do not work on arrays with 'O' datatypes
     return arr[nrnd.permutation(n.arange(len(arr),dtype=int))]
@@ -503,7 +579,9 @@ def groupPairs(data,keyField=0):
         key = rec[keyField]
         val = rec[valField]
         x[key].append(val)
-    return x
+    # important to convert to regular dictionary otherwise we get
+    # silent insertion of default elements on access to non-existing keys
+    return dict(x)
 
 
 def groupRecArray(arr,keyField):
@@ -513,14 +591,17 @@ def groupRecArray(arr,keyField):
     @param arr Numpy record array
     @param keyField name of field to create the key from
     @return dict that for each unique value of keyField contains a numpy record 
-    array with all records that have this key value."""
+    array with all records that have this key value.
+    @postcondition Grouping is stable - the original order of records within each group is preserved."""
     m = defdict(list)
     for rec in arr:
         #recarray records are compared by address in dict, for some reason, hence .item()
         m[rec[keyField].item()].append(rec)
     for key in m:
         m[key] = n.asarray(m[key],dtype=arr.dtype)
-    return m
+    # important to convert to regular dictionary otherwise we get
+    # silent insertion of default elements on access to non-existing keys
+    return dict(m)
 
 def countRecArray(arr,keyFields,format="dict"):
     return binCount(selFieldsArray(arr,fields=keyFields),format=format)
@@ -608,7 +689,7 @@ class ArrayAppender:
         return self.num
 
     def nextItem(self):
-        """Advance to the next unused element, resizing the internal array when necessary
+        """Advance to the next unused element, resizing (2x) the internal array when necessary
         @return tuple (internal array, index of the next element)"""
         inext = self.num
         self.num += 1
@@ -694,4 +775,8 @@ def dictToMaskedArray(d,maxInd=None,dtype='O'):
         ind[i] = v
         mask[i] = False
     return nma.masked_array(ind,mask=mask)
+
+def izipCount(l):
+    """Return iterator of pairs (0,l[0]),(1,l[1]),... where l is an input iterable"""
+    return it.izip(it.count(),l)
 

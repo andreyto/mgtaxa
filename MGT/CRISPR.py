@@ -58,13 +58,18 @@ def crisprHasSimilarSpacers(arr,nLookAhead=3,maxIdentity=0.6,maxSimilarRatio=0.2
     return found > maxSimilarRatio * len(spacers)
 
 
-def parseSpacerBlast(inFile):
+def parseSpacerBlast(inFile,minAlignLen=20,minBitScore=40,maxEvalue=1e-5,out=None):
+    if out is None:
+        out = sys.stdout
     inp = openCompressed(inFile,"r")
     blastRecs = NCBIXML.parse(inp)
+    spcnt = defdict(int)
     for blastRec in blastRecs:
         for alignment in blastRec.alignments:
             for hsp in alignment.hsps:
-                if hsp.align_length >= 20 and hsp.bits >= 40:
+                if hsp.align_length >= minAlignLen \
+                        and hsp.bits >= minBitScore \
+                        and hsp.expect <= maxEvalue:
                 #if hsp.align_length >= 20 and \
                 #        abs(hsp.align_length - blastRec.query_letters) <= 2 and \
                 #        hsp.align_length - hsp.identities <= 2 and \
@@ -72,18 +77,21 @@ def parseSpacerBlast(inFile):
                     #print str(sorted(hsp.__dict__.items()))
                     #print str(sorted(blastRec.__dict__.items()))
                     #print str(sorted(alignment.__dict__.items()))
-                    print 'Query: ', blastRec.query
-                    print 'Hit: ', alignment.hit_def
-                    print hsp.query
-                    print hsp.match
-                    print hsp.sbjct
-                    print   'Query lenght: ', blastRec.query_letters,\
+                    spcnt[blastRec.query] += 1
+                    print >> out, 'Query: ', blastRec.query
+                    print >> out, 'Hit: ', alignment.hit_def
+                    print >> out, hsp.query
+                    print >> out, hsp.match
+                    print >> out, hsp.sbjct
+                    print >> out,   'Query lenght: ', blastRec.query_letters,\
                             'Alignment length: ', hsp.align_length,\
                             'Bit-score: ', hsp.bits,\
                             'Query Coverage: ', round(float(hsp.align_length)/blastRec.query_letters*100),\
                             'Mismatches: ', (hsp.align_length - hsp.identities),\
                             'Identity: ', round(float(hsp.identities)/hsp.align_length*100),\
                             'E-value: %e' % hsp.expect
-                    print "\n\n"
+                    print >> out, "\n\n"
                     #pdb.set_trace()
+    print >> out, "Number of unique spacers with conforming hits: %s" % len(spcnt)
+    print >> out, sorted(spcnt.items())
 

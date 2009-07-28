@@ -2,6 +2,7 @@ from MGT.Options import *
 from MGT.TaxaConst import *
 import os
 pjoin = os.path.join
+pabs = os.path.abspath
 
 
 class MGTOptions:
@@ -20,10 +21,12 @@ class MGTOptions:
         self.tmpDir = "/usr/local/scratch/atovtchi"
         self.dataDir = "/home/atovtchi/work/mgtdata"
         self.srcDir = "/home/atovtchi/work/mgtaxa"
+        def _pdata(dir):
+            return pjoin(self.dataDir,dir)
         self.instDir = self.srcDir
         self.binDir = pjoin(self.instDir,"bin")
         self.testDataDir = os.path.join(self.srcDir,"test_data")
-        self.refSeqDataDir = os.path.join(self.dataDir,"refseq")
+        self.refSeqDataDir = _pdata("refseq")
         # Max length to store for a full header. It is stored in a separate table,
         # so size does not matter that much
         self.fastaHdrSqlLen = 2048
@@ -34,21 +37,21 @@ class MGTOptions:
         ## Drop sequence records in subtrees (top included) under these NCBI taxid's at the earliest stage of DB construction
         self.taxidDrop = (embryophytaTaxid,chordataTaxid)
         self.blastDataDir = 'blast'
-        self.collectTaxaGiFile = os.path.abspath('mgt_coll_taxa.gi')
-        self.seqGiIdFile = os.path.abspath('mgt_seq.giid')
+        self.collectTaxaGiFile = _pdata('mgt_coll_taxa.gi')
+        self.seqGiIdFile = _pdata('mgt_seq.giid')
         #self.selDumpFile = 'mgt_sel.csv'
         self.selFastaFile = 'mgt_sel.fasta.gz'
         self.blastSelAlias = 'mgt'
-        self._setTaxaFileNames(os.path.join(self.dataDir,'taxonomy'),sfx="")
-        self._setTaxaFileNames(os.path.join(self.dataDir,'taxonomy.new'),sfx="New")
+        self._setTaxaFileNames(_pdata('taxonomy'),sfx="")
+        self._setTaxaFileNames(_pdata('taxonomy.new'),sfx="New")
         self.taxaTreeTablePrefix = "txtr"
         self.taxaTreeTableSfxMain = ""
         #self.kmerTxtDir = os.environ['PHYLA_KMERS']
         #self.kmerTestFile = os.path.join(self.kmerTxtDir,'6mers_1K.gz')
-        self.hdfSeqFile = 'seq.hdf'
+        self.hdfSeqFile = _pdata('seq.hdf')
         self.hdfSeqGroup = '/seq'
         #This will only hold index that references sequence from hdfSeqFile
-        self.hdfActSeqFile = 'act_seq.hdf'
+        self.hdfActSeqFile = _pdata('act_seq.hdf')
         self.hdfActSeqInd = '/ind'
         #This will hold sample index that references both active sequence index
         #and sequence data. We create a separate HDF file for each sample chunkLen
@@ -92,15 +95,12 @@ class MGTOptions:
         self.kmerRepr = "Bits"
         #self.kmerRepr = "Sequences"
         self.sampNamePrefix = "samp_5000"
-        self.predictorDir = os.path.join(self.tmpDir,"pred-1k-ord-8-b")
         self.hdfTestFile = 'test.hdf'
-        self.svmTestFile = 'test.svm'
-        self.svmTrainFile = 'train.svm'
         self.predictorTable = "pred"
         self.batchRun = Options(
                 PROJECT_CODE = 600005,
-                MEM = 7000,
-                ARCH = "lx26-eon64",
+                MEM = 2000,
+                ARCH = "lx*64",
                 maxQueued = 50,
                 LENGTH = "medium") #"fast"
         self.app = Options(

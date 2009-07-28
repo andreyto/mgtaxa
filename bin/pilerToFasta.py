@@ -1,6 +1,8 @@
 from MGT.Common import *
 from MGT.Svm import *
 from MGT.CRISPR import *
+from MGT.FastaIO import *
+from MGT.Common import *
 import pdb
 
 def getProgOptions():
@@ -54,7 +56,7 @@ for line in inp:
     parts = [ part.strip() for part in line.split('\t') ]
     spLen = int(parts[FLD_IND_SPLEN])
     spLen = int(parts[FLD_IND_SPLEN])
-    idseq = parts[FLD_IND_ID]
+    idseq = parts[FLD_IND_ID].split()[0]
     rep = parts[FLD_IND_REP]
     sp = parts[FLD_IND_SP]
     if idseq != idseqLast:
@@ -121,6 +123,8 @@ dumpObj(data,opt.outArrays)
 inpSeq = FastaReader(opt.inSeq)
 outSeq = openCompressed(opt.outSeq,'w')
 
+arrSeq = {}
+
 for rec in inpSeq.records():
     idSeq = rec.getSimpleId()
     if idSeq in arrBySeq:
@@ -132,11 +136,15 @@ for rec in inpSeq.records():
             startSeq = max(arrRange[0] - opt.outSeqLeft,0)
             startArr = arrRange[0] - startSeq
             endSeq = min(arrRange[1] + opt.outSeqRight,len(seq))
-            assert arrRange[1] <= len(seq)
+            if arrRange[1] > len(seq):
+                print "erroneus array range %s for seq len %s, skipping array" % (arrRange,len(seq))
+                continue
             for rep in arrReps:
                 rseq = rep['repeat'].replace('-','')
                 x,y = rep['pos'],rep['pos']+len(rseq)
                 seq[x:y] = n.fromstring(seq[x:y].tostring().upper(),dtype='S1')
+            # should output startSeq instead of arrRange[0]
+            # convert all coordinates to absolute on seq and pickle
             outSeq.write(">%s_%s %s:%s %s %s\n" % (idSeq,arrRange[0],arrRange[0],len(seq)-arrRange[1],startArr,len(arrReps)))
             outSeq.write(seq[startSeq:endSeq].tostring())
             outSeq.write("\n")

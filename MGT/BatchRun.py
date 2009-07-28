@@ -9,8 +9,9 @@ class BatchJob(Struct):
 _BatchJobTemplate = \
 """#!/bin/tcsh
 #$$ -hard -P $PROJECT_CODE
-#$$ -l memory=${MEM}M -l $LENGTH -l arch="$ARCH"
+#$$ -l memory=${MEM}M $LLENGTH -l arch="$ARCH"
 #$$ -cwd
+#$$ -r n
 ## Submit as 'qsub -b n -S /bin/tcsh script_name'. Apparently admins changed the default value of -b to 'y'
 ## and by default qstat now thinks of script_name as a binary file and does not parse it for
 ## embedded options (09/14/07).  Shell NEEDS to be correctly specified both at the top and (?) 
@@ -30,17 +31,29 @@ top -b -n 1 | head -n 15
 """
 
 class BatchSubmitter(object):
-    def __init__(self,**kw):
-        opts = {}
-        opts.update(kw)
+    
+    @classmethod
+    def defaultOptions(klass):
+        opts = Struct()
         # use global options
         if hasattr(options,"batchRun"):
             options.batchRun.updateOtherMissing(opts)
         opts.setdefault('MEM',2000)
-        opts.setdefault('ARCH',"lx*eon64")
+        opts.setdefault('ARCH',"lx*64")
         opts.setdefault('LENGTH',"medium")
+        return opts
+    
+    def __init__(self,**kw):
+        opts = self.defaultOptions()
         self.opts = opts
-        self.header = varsub(_BatchJobTemplate,**opts)
+        opts.update(kw)
+        length = opts.pop("LENGTH")
+        if length is None:
+            length = ""
+        else:
+            length = "-l %s" % (length,)
+        opts.LLENGTH = length
+        self.header = varsub(_BatchJobTemplate,**opts.asDict())
         
     def submit(self,cmd,scriptName=None,cwd=None,sleepTime=0,depend=[],dryRun=False):
         """Submit a batch job.
@@ -62,7 +75,7 @@ class BatchSubmitter(object):
                 scriptName = osNameFilter(cmd)[:10]
                 if scriptName == "":
                     scriptName = "bs"
-            outScr,scriptName = makeTmpFile(suffix=".qsub",prefix=scriptName+'.',dir=cwd)
+            outScr,scriptName = makeTmpFile(suffix=".qsub",prefix=scriptName+'.',dir=cwd,withTime=True)
             outScr.close()
             script = self.header + cmd + '\n'
             strToFile(script,scriptName,dryRun=dryRun)

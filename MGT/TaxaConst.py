@@ -41,6 +41,9 @@ skingdomTaxids = (virTaxid,bacTaxid,archTaxid,eukTaxid,viroidsTaxid)
 
 ## Main Linnaean ranks, modified with superkingdom in place of domain rank
 linnMainRanks = ("species","genus","family","order","class","phylum","kingdom","superkingdom")
+## All Linnaenan ranks, modified as linnMainRanks
+## @todo add sub- and super-ranks, such as subspecies and superfamily
+linnRanks = linnMainRanks
 viralRanksTemplate = linnMainRanks
 noRank = "no_rank"
 unclassRank = "unclassified"

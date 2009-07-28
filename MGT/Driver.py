@@ -42,12 +42,12 @@ def makeOpt():
     opt.runMode = "inproc" #"inproc" #"batchDep"
     opt.rank = "genus"
     ## Subtrees starting at these nodes are considered "testing terminal" -
-    ## entire subtree is always selected for testing
-    ## We need "sub..." ranks because there are subspecies that do not have
+    ## entire subtree is always selected for testing. CV splits are also
+    ## created along these boundaries.
+    ## We use "sub..." ranks here because there are subspecies that do not have
     ## a species or genus node in their lineage.
-    opt.termTopRanks = ("species","subspecies") #("genus","species","subspecies","subgenus")
-    ## cross-validation splits will be done along these boundaries
-    opt.splitRank = "species"
+    #opt.termTopRanks = ("species","subspecies") #("genus","species","subspecies","subgenus")
+    opt.termTopRanks = (TreeSamplerApp.termTopRankLeaf,)
     opt.maxSamplesTrain = 60000
     ## label for reject group
     opt.labRj = 0
@@ -63,6 +63,56 @@ def makeOpt():
     opt.splitIdTrainCv = 3
     return opt
 
+def makeOptParamScanTest():
+    opt = makeOpt()
+    opt.parScanName = "2"
+    opt.featName = "kmer_8" #"kmer_8a" #"kmerlad_4f_nnorm_rndGenGcFixed" #"kmerlad_4f" #"wd_2_10"
+    clOpt = opt.setdefault("clOpt",Struct())
+    psOpt = opt.setdefault("psOpt",Struct())
+    tsOpt = opt.setdefault("tsOpt",Struct())
+    ftOpt = opt.setdefault("ftOpt",Struct())
+    #TMP:
+    clOpt.thresh = [-2000] #n.arange(-2.,1.01,0.1)
+    clOpt.C = 1.
+    clOpt.numTrainJobs = 100
+    clOpt.MEM = 8000
+    clOpt.saveConfMatr = True
+    clOpt.exportConfMatr = True
+    clOpt.method = "svm" #"svm" "knn"
+    clOpt.kernel = "lin" #"rbf"
+    clOpt.knnK = 10
+    ClassifierApp.fillWithDefaultOptions(clOpt)
+    tsOpt.clOpt = deepcopy(clOpt)
+    tsOpt.clOpt.MEM = 6000
+    tsOpt.clOpt.numTrainJobs = 100
+    pgen = ParamGridGen()
+    #psOpt.params = pgen.add("C",[1]).grid() #(-10,10,2)(0,1,2)
+    #psOpt.params = pgen.add("C",pgen.p2(6,16,2)).add("rbfWidth",pgen.p2(-4,10,2)).grid()
+    psOpt.params = pgen.add("C",pgen.p2(-8,10,2)).grid() #(-10,10,2)(0,1,2)
+    #psOpt.params = pgen.add("knnK",pgen.lin(1,20,2)).grid()
+    #psOpt.params = pgen.add("knnMaxDist",pgen.lin(0.01,0.1,0.01)).grid()
+    psOpt.clOpt = deepcopy(clOpt)
+    psOpt.clOpt.MEM = 4000
+    psOpt.clOpt.numTrainJobs = 10
+    #ftOpt.inSeq = "samp.rndGenGcFixed"
+    ftOpt.featType = "kmer" #"wdh" "kmerlad" #"kmer"
+    if ftOpt.featType == "wdh":
+        ftOpt.revCompl = "merge" #"addcol" #"forward"
+    elif ftOpt.featType == "kmerlad":
+        ftOpt.kmerLen = 9
+        ftOpt.revCompl = "addcol" #"forward"
+        ftOpt.norm = NORM_POLICY.EXPECT | NORM_POLICY.EU_ROW
+    elif ftOpt.featType == "kmer":
+        ftOpt.kmerLen = 8
+        ftOpt.revCompl = "merge" #"forward"
+        ftOpt.norm = NORM_POLICY.FREQ | NORM_POLICY.EU_ROW
+    ftOpt.balance = -2 #do not even shuffle (somehow it takes a while) - we do it anyway when making idlabs
+    prOpt = opt.setdefault("prOpt",Struct())
+    prOpt.clOpt = deepcopy(clOpt)
+    prOpt.clOpt.thresh = [-2000.]
+    return opt
+
+
 def makeOptSampler():
     opt = makeOpt()
     opt.db = None
@@ -71,8 +121,9 @@ def makeOptSampler():
 def run_Sampler():
     opt = makeOptSampler()
     #modes = ["shred","split","label"]
-    modes = ["split","label"] # "shred" "split"
-    opt.runMode = "batchDep" #"inproc" #"batchDep"
+    #modes = ["split","label"] # "shred" "split"
+    modes = ["label"] # "shred" "split"
+    opt.runMode = "inproc" #"batchDep"
     opt.MEM = 4000
     jobs = []
     for mode in modes:
@@ -82,15 +133,18 @@ def run_Sampler():
     #return
 
 def run_ParamScanTest():
-    opt = makeOpt()
+    opt = makeOptParamScanTest()
     opt.runMode = "batchDep" #"inproc" #"batchDep"
-    opt.MEM = 6000
+    opt.MEM = 2000
     opt.cwd = pjoin(opt.cwd,opt.rank)
     #modes = ["feat","idlabs"]
     #modes = ["idlabs"]
     #modes = ["feat","idlabs","parscan"]
     #modes = ["parscan"]
+    #modes = ["feat","idlabs","test"]
+    #modes = ["idlabs","test"]
     modes = ["test"]
+    #modes = ["train"]
     jobs = []
     for mode in modes:
         opt.mode = mode
@@ -113,11 +167,13 @@ def run_SeqImportApp():
 
 
 def run_Pred():
-    opt = makeOpt()
-    opt.runMode = "inproc" #"inproc" #"batchDep"
+    opt = makeOptParamScanTest()
+    opt.runMode = "batchDep" #"inproc" #"inproc" #"batchDep"
     opt.cwd = pjoin(opt.cwd,opt.rank)
     optSI = makeOptSeqImportApp()
     opt.sampStorePred = optSI.cwd
+    opt.prOpt.clOpt.thresh = [0.]
+    opt.prOpt.name = "2"
     #modes = ["featPred","predict"]
     modes = ["predict"]
     jobs = []
@@ -127,9 +183,9 @@ def run_Pred():
         jobs = app.run(depend=jobs)
 
 #run_Sampler()
-#run_ParamScanTest()
+run_ParamScanTest()
 #run_SeqImportApp()
-run_Pred()
+#run_Pred()
 sys.exit(0)
 
 nrnd.seed(1)

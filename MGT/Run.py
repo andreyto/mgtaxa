@@ -66,7 +66,7 @@ def backsticks(*popenargs,**kwargs):
         p = Popen(*popenargs, **kw)
         retout = p.communicate()[0]
         if p.returncode != 0:
-            raise CalledProcessError(returncode=returncode,cmd=str(popenargs))
+            raise CalledProcessError(returncode=p.returncode,cmd=str(popenargs))
         return retout
 
 def makedir(path,dryRun=False):

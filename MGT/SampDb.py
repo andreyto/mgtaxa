@@ -168,8 +168,8 @@ def hdfMakeSampIndexConcat(hdfFile,hdfGroup,hdfSeqInd,sampLen):
 
 class HdfSampleReader(MGTOptions):
 
-    def __init__(self,hdfSampFile,sampLen,spacer='N',featType="array"):
-        """@param featType type for output feature, "array" - numpy array('S1'), "string" - Python string"""
+    def __init__(self,hdfSampFile,sampLen,spacer='N',featType="chararray"):
+        """@param featType type for output feature, "array" - numpy.chararray('S1'), "string" - Python string"""
         MGTOptions.__init__(self)
         self.hdfSampFile = hdfSampFile
         self.sampLen = sampLen
@@ -218,7 +218,7 @@ class HdfSampleReader(MGTOptions):
         if nSeq == 1:
             seqInd = hdfSeqInd.read(start=sampInd['indSeq'],stop=sampInd['indSeq']+1)[0]
             #print "DEBUG: 00: ", seqInd
-            return hdfSeq.read(start=seqInd['begin']+sampInd['begin'],stop=seqInd['begin']+sampInd['begin']+sampLen)
+            retVal = hdfSeq.read(start=seqInd['begin']+sampInd['begin'],stop=seqInd['begin']+sampInd['begin']+sampLen)
         elif nSeq > 1:
             seqInds = hdfSeqInd.read(start=sampInd['indSeq'],stop=sampInd['indSeq']+nSeq)
             #print "DEBUG: 10: ", seqInds
@@ -231,7 +231,7 @@ class HdfSampleReader(MGTOptions):
             chunks = [ hdfSeq.read(start=seqInds[i,0],stop=seqInds[i,1]) for i in xrange(nSeq) ]
             for i in xrange(1,2*len(chunks)-1,2):
                 chunks.insert(i,spacer)
-            return numpy.concatenate(chunks)
+            retVal = numpy.concatenate(chunks)
         else:
             # We guess about the max array size for samp, because we do not know in advance
             # the number of spacers
@@ -255,7 +255,8 @@ class HdfSampleReader(MGTOptions):
                 samp[nSampTotal:nSampTotal+lenSpacer] = spacer
                 nSampTotal += lenSpacer
                 sampSeqBegin = 0
-            return samp[:nSampTotal]
+            retVal = samp[:nSampTotal]
+        return retVal.view(n.chararray)
 
 
     def randomSamples(self,taxid,nSamples):

@@ -126,6 +126,20 @@ class npy_array_1d_wrapper {
     bpn::array m_a;
 };
 
+/// C type for labels
+typedef npy_float64 labelCtype;
+/// C type for index in sparse feature
+typedef npy_int32 indCtype;
+/// Numpy dtype enum for index in sparse feature
+const NPY_TYPES indDtype = NPY_INT32;
+/// C type for value in real sparse feature
+typedef npy_float32 valRealCtype;
+/// Numpy dtype enum for value in real sparse feature
+const NPY_TYPES valRealDtype = NPY_FLOAT32;
+/// C type for value in integer sparse feature
+typedef npy_int64 valIntCtype;
+/// Numpy dtype enum for value in integer sparse feature
+const NPY_TYPES valIntDtype =  NPY_INT64;
 
 class KmerCounterPy : public KmerCounter {
 
@@ -152,15 +166,15 @@ public:
 	}
 
     bp::tuple counts(bpn::array counts, bpn::array indices) {
-        return tp_counts<npy_int32>(counts,indices,NPY_INT32,RES_COUNTS);
+        return tp_counts<valIntCtype>(counts,indices,valIntDtype,RES_COUNTS);
     }
 
     bp::tuple bits(bpn::array counts, bpn::array indices) {
-        return tp_counts<npy_int32>(counts,indices,NPY_INT32,RES_BITS);
+        return tp_counts<valIntCtype>(counts,indices,valIntDtype,RES_BITS);
     }
 
     bp::tuple frequences(bpn::array counts, bpn::array indices) {
-        return tp_counts<npy_float32>(counts,indices,NPY_FLOAT32,RES_FREQUENCES);
+        return tp_counts<valRealCtype>(counts,indices,valRealDtype,RES_FREQUENCES);
     }
 
     void setSort(bool doSort) {
@@ -186,7 +200,7 @@ protected:
         npy_intp totalCount = 0;
         npy_intp sizeCounts = 0, sizeIndices = 0, strideCounts = 0, strideIndices = 0;
         char * pCounts = getCData1D<CTypeCounts>(counts,npyTypeCounts,sizeCounts,strideCounts);
-        char * pIndices = getCData1D<npy_int64>(indices,NPY_INT64,sizeIndices,strideIndices);
+        char * pIndices = getCData1D<indCtype>(indices,indDtype,sizeIndices,strideIndices);
         if( m_seqLen >  sizeCounts || m_seqLen > sizeIndices){
             PyErr_SetString(PyExc_ValueError, "The length of output array should be no less than the length of processed sequence");
             bp::throw_error_already_set();
@@ -204,7 +218,7 @@ protected:
                 cnt = cnt > 0? 1 : 0;
             }
             int id = getKmerId();
-            (*reinterpret_cast<npy_int64*>(pIndices+i*strideIndices)) = id;
+            (*reinterpret_cast<indCtype*>(pIndices+i*strideIndices)) = id;
             (*reinterpret_cast<CTypeCounts*>(pCounts+i*strideCounts)) = cnt;
             totalCount += cnt;
         }
@@ -328,22 +342,22 @@ class SvmSparseFeatureWriterTxt : boost::noncopyable {
 
     template<typename CTypeValues>
     void tp_writePy(NPY_TYPES npyTypeValues,
-                    int label, 
+                    labelCtype label, 
                     const bpn::array& values, 
                     const bpn::array& indices) {
         
         npy_intp sizeValues = 0, sizeIndices = 0, strideValues = 0, strideIndices = 0;
         char * pValues = getCData1D<CTypeValues>(values,npyTypeValues,sizeValues,strideValues);
-        char * pIndices = getCData1D<npy_int64>(indices,NPY_INT64,sizeIndices,strideIndices);
+        char * pIndices = getCData1D<indCtype>(indices,indDtype,sizeIndices,strideIndices);
 
         if( sizeValues != sizeIndices){
             PyErr_SetString(PyExc_ValueError, "Expected value and index arrays of equal length");
             bp::throw_error_already_set();
         }
 
-        std::fprintf(m_file,"%i",label);
+        std::fprintf(m_file,"%g",label);
         for(ULong i = 0; i < sizeValues; i++) {
-            npy_int64 id = (*reinterpret_cast<npy_int64*>(pIndices+i*strideIndices));
+            indCtype id = (*reinterpret_cast<indCtype*>(pIndices+i*strideIndices));
             double v = double(*reinterpret_cast<CTypeValues*>(pValues+i*strideValues));
             std::fprintf(m_file," %i:%g",id,v);
         }
@@ -352,7 +366,7 @@ class SvmSparseFeatureWriterTxt : boost::noncopyable {
         m_nOut++;
     }
 
-    void writePy(int label, 
+    void writePy(labelCtype label, 
                  const bpn::array& values, 
                  const bpn::array& indices) {
 
@@ -413,8 +427,11 @@ public:
 	}
 
     void countsPy(bpn::array valObs,bpn::array valExp,bpn::array ind,bpn::array sizes) {
-        typedef npy_array_1d_wrapper<npy_float32> npyw_val;
-        typedef npy_array_1d_wrapper<npy_int64> npyw_ind;
+        /**@todo think if numpy_float32 is big enough to store the absolute counts
+        for genome size sequences and small k-mers, assuming that at the end we are interested
+        in the ratios only...probably fine.**/
+        typedef npy_array_1d_wrapper<valRealCtype> npyw_val;
+        typedef npy_array_1d_wrapper<indCtype> npyw_ind;
         npyw_val valObsW(valObs), valExpW(valExp);
         npyw_ind indW(ind), sizesW(sizes);
         ADT_ALWAYS(sizesW.size()>=numSubFeatures());
@@ -424,8 +441,8 @@ public:
     }
 
     bpn::array maxNumKmersPy(ULong seqLen) const {
-        typedef npy_array_1d_wrapper<npy_int64> npyw_ind;
-        bpn::array sizes = num_util::makeNum(m_kmerLen,NPY_INT64);
+        typedef npy_array_1d_wrapper<indCtype> npyw_ind;
+        bpn::array sizes = num_util::makeNum(m_kmerLen,indDtype);
         maxNumKmers(seqLen,npyw_ind(sizes).begin());
         return sizes;
     }

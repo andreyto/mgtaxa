@@ -10,7 +10,7 @@ import numpy
 class FastaReader(object):
     """Class that supports an input iterator protocol for a FASTA file.
     Example that prints an exact copy of the input file:
-    for rec in FastaReader(open('seq.fsa','r')):
+    for rec in FastaReader(open('seq.fsa','r')).records():
         print rec.header(),
         for line in rec.seqLines():
             print line,
@@ -45,6 +45,7 @@ class FastaReader(object):
                 yield self
     
     def header(self):
+        assert self.hdr.startswith('>')
         return self.hdr
 
     def getNCBI_Id(self):

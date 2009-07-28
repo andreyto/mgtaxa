@@ -117,6 +117,17 @@ class TaxaNode(object):
                 lin.append(node)
         return lin
 
+    def lineageWhile(self,condition):
+        """Return lineage that is cut as soon as an attempt is made to look above the root note or condition(node) returns False.
+        Can possibly return an empty list.
+        Condition is always called with a valid node argument."""
+        node = self
+        lin = []
+        while node is not None and condition(node):
+            lin.append(node)
+            node = node.par
+        return lin
+
     def findRankInLineage(self,rank,topNode=None):
         node = self
         if node.rank == rank:
@@ -359,6 +370,34 @@ class TaxaNode(object):
                           )
                     )
         self.visitDepthBottom(actor)
+
+    def setMaxSubtreeRank(self):
+        """Set an attribute "rank_max" in every node of this subtree that is a highest standard rank of any node in a subtree.
+        unclassRank and noRank nodes are both considered as noRank in comparisons.
+        Thus, if and only if all subtree nodes are unclassRank or noRank, "rank_max" is set to noRank."""
+        dstAttr = "rank_max"
+        #{rank->order index}
+        ranksToInd = dict([ (x[1],x[0]) for x in enumerate((noRank,)+tuple(linnRanks)) ])
+        def extractor(node):
+            """Return rank converted such that everything not found in ranksToInd becomes noRank.
+            That includes unclassRank"""
+            rank = node.rank
+            if rank == unclassRank:
+                return noRank
+            elif rank in ranksToInd:
+                return rank
+            else:
+                return noRank
+        def reduction(rank_max,rank):
+            if ranksToInd[rank_max] >= ranksToInd[rank]:
+                return rank_max
+            else:
+                #because self.rank is supplied as starting value to reduce(),
+                #it is weird if any standard rank for max turns out to be
+                #lower than for a subnode
+                assert self.rank in (noRank,unclassRank)
+                return rank
+        self.setReduction(extractor=extractor,dstAttr=dstAttr,reduction=reduction)
 
     def setAttribute(self,name,value):
         for node in self.iterDepthTop():
@@ -894,18 +933,24 @@ class TaxaLevels:
 
     unclassId = 10
 
-    def __init__(self):
+    def __init__(self,taxaTree=None):
+        """Constructor.
+        @param taxaTree instance of TaxaTree - if not None, will be modified, so that TaxaLevels.lineage() etc work after words; 
+        otherwise TaxaLevels.setLevels(taxaTree) should be called separately.
+        """
         self.levels = list(linnMainRanks)
         self.levelIds = {noRank:0, unclassRank:self.unclassId, "species":20, "genus":30, "family":40,
                          "order":50, "class":60, "phylum":70, "kingdom":80, "superkingdom":90}
         self.levelByTaxid = { "superkingdom" : (viralRootTaxid,) }
-        self.viralLevels = ("superkingdom","family","genus","species","unclassified")
+        self.viralLevels = ("superkingdom","family","genus","species",unclassRank)
         self.levelSet = set(self.levels) | set((unclassRank,))
         #index of a given level name in the list 'levels'
         levelPos = {}
         for (i,level) in zip(range(len(self.levels)),self.levels):
             levelPos[level] = i
         self.levelPos = levelPos
+        if taxaTree is not None:
+            self.setLevels(taxaTree)
 
     def getLevelId(self,name):
         return self.levelIds[name]
@@ -919,6 +964,9 @@ class TaxaLevels:
             return l
         else:
             raise ValueError("Unknown value for 'order': " + str(order))
+
+    def isNodeLevelLessOrEqual(self,node,level):
+        return self.getLevelId(node.level) <= self.getLevelId(level)
 
     def setLevels(self,taxaTree):
         levelSet = self.levelSet
@@ -958,7 +1006,7 @@ class TaxaLevels:
             return [ (levelIds[n.level],n.id) for n in self.lineage(node)]
 
     def lineageFixedList(self,node,null=None):
-        """Return a list of taxids that correspond to the list of level names returned by getLevelNames().
+        """Return a list of taxids that correspond to the list of level names returned by getLevelNames("ascend").
         If a given level is not present in this node's lineage, the corresponding element is 'null'."""
         levelPos = self.levelPos
         ret = [null]*len(self.levels)

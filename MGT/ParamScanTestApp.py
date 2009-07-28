@@ -11,44 +11,11 @@ from MGT.DirStore import *
 class ParamScanTestApp(App):
     """App-derived class for one-stop feature creation - parameter scan - final testing"""
 
-    batchDepModes = ("parscan","test")
+    batchDepModes = ("parscan","test","train")
 
     @classmethod
     def parseCmdLinePost(klass,options,args,parser):
-        opt = options
-        opt.parScanName = "2"
-        opt.featName = "kmer_8" #"kmer_8a" #"kmerlad_4f_nnorm_rndGenGcFixed" #"kmerlad_4f" #"wd_2_10"
-        clOpt = opt.setdefault("clOpt",Struct())
-        psOpt = opt.setdefault("psOpt",Struct())
-        ftOpt = opt.setdefault("ftOpt",Struct())
-        clOpt.thresh = n.arange(-2.,1.01,0.1)
-        clOpt.C = 4.
-        #clOpt.saveConfMatr = True
-        #clOpt.exportConfMatr = True
-        clOpt.method = "svm" #"svm" "knn"
-        clOpt.kernel = "lin" #"rbf"
-        clOpt.knnK = 10
-        ClassifierApp.fillWithDefaultOptions(clOpt)
-        pgen = ParamGridGen()
-        #psOpt.params = pgen.add("C",[1]).grid() #(-10,10,2)(0,1,2)
-        #psOpt.params = pgen.add("C",pgen.p2(6,16,2)).add("rbfWidth",pgen.p2(-4,10,2)).grid()
-        psOpt.params = pgen.add("C",pgen.p2(-8,10,2)).grid() #(-10,10,2)(0,1,2)
-        #psOpt.params = pgen.add("knnK",pgen.lin(1,20,2)).grid()
-        #psOpt.params = pgen.add("knnMaxDist",pgen.lin(0.01,0.1,0.01)).grid()
-        psOpt.clOpt = clOpt
-        #ftOpt.inSeq = "samp.rndGenGcFixed"
-        ftOpt.featType = "kmer" #"wdh" "kmerlad" #"kmer"
-        if ftOpt.featType == "wdh":
-            ftOpt.revCompl = "merge" #"addcol" #"forward"
-        elif ftOpt.featType == "kmerlad":
-            ftOpt.kmerLen = 9
-            ftOpt.revCompl = "addcol" #"forward"
-            ftOpt.norm = NORM_POLICY.EXPECT | NORM_POLICY.EU_ROW
-        elif ftOpt.featType == "kmer":
-            ftOpt.kmerLen = 8
-            ftOpt.revCompl = "merge" #"forward"
-            ftOpt.norm = NORM_POLICY.FREQ | NORM_POLICY.EU_ROW
-        ftOpt.balance = -2 #do not even shuffle (somehow it takes a while) - we do it anyway when making idlabs
+        pass
     
     def init(self):
         self.taxaTree = None #will be lazy-loaded
@@ -58,17 +25,19 @@ class ParamScanTestApp(App):
         self.init()
         opt = self.opt
         if opt.mode == "feat":
-            self.prepFeat()
+            return self.prepFeat(**kw)
         elif opt.mode == "featPred":
-            self.prepFeatPred()
+            return self.prepFeatPred(**kw)
         elif opt.mode == "idlabs":
-            self.makeIdLabs()
+            return self.makeIdLabs(**kw)
         elif opt.mode == "parscan":
-            return self.parScan(parScanName=opt.get("parScanName",1))
+            return self.parScan(parScanName=opt.get("parScanName",1),**kw)
         elif opt.mode == "test":
-            return self.test()
+            return self.test(**kw)
+        elif opt.mode == "train":
+            return self.train(**kw)
         elif opt.mode == "predict":
-            self.predict()
+            return self.predict(**kw)
         else:
             raise ValueError(opt.mode)
 
@@ -81,18 +50,19 @@ class ParamScanTestApp(App):
     def getFeatStore(self,featName):
         return self.store.loadStore(name=featName)
 
-    def prepFeat(self):
+    def prepFeat(self,**kw):
         ftOpt = self.opt.ftOpt
         featStore = self.store.featStore(name=self.opt.featName,opt=ftOpt,mode="w")
-        featStore.fromOther(sampStore=self.store)
+        return featStore.fromOther(sampStore=self.store,**kw)
 
-    def makeIdLabs(self,idLabsName=None):
+    def makeIdLabs(self,idLabsName=None,**kw):
         opt = self.opt
         store = self.store
         nameIL = store.getIdLabsName(idLabsName)
         idLabsSamp = store.loadIdLabs()
         splitSet = idLabsSamp.splitSet()
         idLabsSampCv = idLabsSamp.selBySplits(splitSet-set([opt.splitIdTest,opt.splitIdTrainPred]))
+        idLabsSampCv = idLabsSampCv.renumSplits()
         idLabsSampCv = idLabsSampCv.selAcrossSplits()
         idLabsSampCv = idLabsSampCv.balance(maxCount="median")
         store.saveIdLabs(idLabsSampCv,name=nameIL+'.cv')
@@ -114,57 +84,76 @@ class ParamScanTestApp(App):
         store.saveIdLabs(idLabsSampTest,name=nameIL+'.ts')
         print "idLabsSampTest = ",idLabsSampTest.count()
         idLabsFeat = featStore.makeIdLabs(idLabsSrc=idLabsSampTest,name=nameIL+".ts",action="idfilt")
+        idLabsSampTestDbg = idLabsSampTest.selByLabs(idLabsSampTest.labSet()-idLabsSampCv.labSet())
+        #idLabsSampTestDbg = idLabsSampTest.selByLabs(idLabsSampCv.labSet())
+        store.saveIdLabs(idLabsSampTestDbg,name=nameIL+'.dbg'+'.ts')
+        print "idLabsSampTestDbg = ",idLabsSampTestDbg.count()
+        idLabsFeat = featStore.makeIdLabs(idLabsSrc=idLabsSampTestDbg,name=nameIL+'.dbg'+".ts",action="idfilt")
+        # Make prediction training IdLabels - everything goes to a single split 1 and then balanced
+        idLabsRec = idLabsSamp.getRecords().copy()
+        idLabsRec["split"] = 1
+        idLabsSampTrain = IdLabels(records=idLabsRec)
+        idLabsSampTrain = idLabsSampTrain.balance(maxCount="median")
+        store.saveIdLabs(idLabsSampTrain,name=nameIL+'.tr')
+        print "idLabsSampTrain = ",idLabsSampTrain.count()
+        idLabsFeat = featStore.makeIdLabs(idLabsSrc=idLabsSampTrain,name=nameIL+".tr",action="idfilt")
         #idLabsFeat = featStore.makeIdLabs(idLabsSrc=idLabsFeat,name=nameIL,action="balance")
 
-    def parScan(self,parScanName=None,idLabsName=None):
+    def parScan(self,parScanName=None,idLabsName=None,**kw):
         opt = self.opt
         psOpt = opt.psOpt
         psOpt.runMode = opt.runMode
-        jobs = []
         store = self.store
         nameIL = store.getIdLabsName(idLabsName)+'.cv'
         featStore = self.getFeatStore(opt.featName)
-        jobs.extend(featStore.parScan(opt=psOpt,name=parScanName,idLabsName=nameIL))
-        return jobs
+        return featStore.parScan(opt=psOpt,name=parScanName,idLabsName=nameIL,**kw)
 
 
-    def test(self,testName=None,idLabsName=None):
+    def test(self,testName=None,idLabsName=None,**kw):
         opt = self.opt
-        clOpt = opt.psOpt.clOpt
+        clOpt = opt.tsOpt.clOpt.copy()
         clOpt.runMode = opt.runMode
-        jobs = []
         store = self.store
-        nameIL = store.getIdLabsName(idLabsName)+'.ts'
+        nameIL = store.getIdLabsName(idLabsName)+'.dbg.ts' #TMP:'.dbg.ts'
         featStore = self.getFeatStore(opt.featName)
-        jobs.extend(featStore.test(opt=clOpt,name=testName,idLabsName=nameIL))
-        return jobs
+        return featStore.test(opt=clOpt,name=testName,idLabsName=nameIL,**kw)
 
-
-    def prepFeatPred(self):
+    def train(self,testName=None,idLabsName=None,**kw):
+        """Train on all available samples to use models for prediction of future unknown samples"""
         opt = self.opt
-        ftOpt = self.opt.ftOpt
+        clOpt = opt.prOpt.clOpt
+        clOpt.runMode = opt.runMode
+        store = self.store
+        nameIL = store.getIdLabsName(idLabsName)+'.tr'
+        featStore = self.getFeatStore(opt.featName)
+        return featStore.train(opt=clOpt,name=testName,idLabsName=nameIL,**kw)
+
+    def prepFeatPred(self,**kw):
+        opt = self.opt
+        ftOpt = self.opt.ftOpt.copy()
+        ftOpt.runMode = "inproc"
         sampStorePred = SampStore.open(path=opt.sampStorePred)
         featStore = sampStorePred.featStore(name=self.opt.featName,opt=ftOpt,mode="w")
         featStore.fromOther(sampStore=sampStorePred)
         idLabs = IdLabels.fromIdFile(featFile=featStore.getSampFilePath(),label=0,split=3)
         featStore.saveIdLabs(idLabs)
 
-    def predict(self):
+    def predict(self,**kw):
         from MGT.Taxa import loadTaxaTree
         opt = self.opt
         store = self.store
-        clOpt = opt.psOpt.clOpt
-        clOpt.thresh = [0.] #[-2000]
-        clOpt.runMode = opt.runMode
+        clOpt = opt.prOpt.clOpt.copy()
+        assert len(clOpt.thresh) == 1
+        clOpt.runMode = "inproc" #we would need to split this into two methods for "batchDep"
         featStoreTrain = self.getFeatStore(opt.featName)
-        clOpt.modelRoot = pjoin(featStoreTrain.getPath(),"test/1",clOpt.modelRoot)
+        clOpt.modelRoot = pjoin(featStoreTrain.getPath(),"train/1",clOpt.modelRoot)
         sampStorePred = SampStore.open(path=opt.sampStorePred)
         featStore = sampStorePred.loadStore(name=opt.featName)
-        jobs = []
-        jobs.extend(featStore.predict(opt=clOpt))
+        featStore.predict(opt=clOpt,name=opt.prOpt.name)
         idLab = store.loadIdLabs()
         labToName = idLab.getLabToName()
-        pred = featStore.predictStore().loadObj("pred")
+        predStore = featStore.predictStore(name=opt.prOpt.name)
+        pred = predStore.loadObj("pred")
         idToName = {}
         for id,lab in zip(pred.idPred["id"],pred.labPred[0]):
             idToName[id] = labToName[lab]
@@ -175,13 +164,13 @@ class ParamScanTestApp(App):
                 idToLin[id] = taxaTree.getNode(labn).lineageStr()
             else:
                 idToLin[id] = labn
-        out = open(featStore.predictStore().getFilePath("idlin.csv"),'w')
+        out = open(predStore.getFilePath("idlin.csv"),'w')
         for (id,lin) in sorted(idToLin.items()):
             out.write("%s\t%s\n" % (id,lin))
         out.close()
         linCnt = "\n".join(["%s\t%s" % y for y in sorted(binCount(idToLin.values()).items(),key=lambda x:-x[1])])
-        out = open(featStore.predictStore().getFilePath("lincnt.csv"),'w')
+        out = open(predStore.getFilePath("lincnt.csv"),'w')
         out.write(linCnt)
         out.write("\n")
         out.close()
-        return jobs
+

@@ -7,8 +7,10 @@ from MGT.FastaIO import *
 
 class BlastDb(MGTOptions):
 
-    def __init__(self):
+    def __init__(self,blastDataDir=None):
         MGTOptions.__init__(self)
+        if blastDataDir is not None:
+            self.blastDataDir = blastDataDir
         self.ncbiDbs =  (
                          Struct(id='g',db='refseq_genomic'),
                          Struct(id='o',db='other_genomic'),
@@ -75,7 +77,7 @@ class BlastDb(MGTOptions):
         """Return an open file object that streams database records in FASTA format.
         @param dbName - database name (e.g. 'nt')
         @param giFile - text file with gi ids (one per line)
-        @defLineTargetOnly - switch on '-t' option of fastacmd. Some records have
+        @param defLineTargetOnly - switch on '-t' option of fastacmd. Some records have
         several different deflines pointing to the same sequence (most such records are the result
         of creating RefSeq entries from unmodified GenBank entries, but not all). Without this switch set,
         'fastacmd' will output a defline as in the following example, for either 23455713 or 15183 as a query gi:
@@ -115,4 +117,21 @@ class BlastDb(MGTOptions):
 
     def fastaReader(self,**kw):
         return FastaReader(self.fastaStream(**kw))
+
+def runBlast(dbPath,inpFile,outFile,paramStr,exePath=None):
+    """Execute BLAST locally.
+    This function takes care of changing to the DB directory first.
+    @param dbPath full path to the BLAST db, w/o any db index extensions
+    @param inpFile path to the input file, will be converted to abspath before running BLAST
+    @param outFile path to the output file, will be converted with abspath before running BLAST
+    @param string of other parameters, as accepted by BLAST from the command line
+    @param exePath optional path to the executable, otherwise 'blastall' will be expected to be in the PATH
+    """
+    db = os.path.basename(dbPath)
+    dbDir = os.path.dirname(dbPath)
+    inp = os.path.abspath(inpFile)
+    out = os.path.abspath(outFile)
+    if exePath is None:
+        exePath = "blastall"
+    run("%s -d %s -i %s -o %s %s" % (exePath,db,inp,out,paramStr),shell=True,cwd=dbDir)
 

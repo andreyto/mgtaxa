@@ -63,14 +63,17 @@ class ParamScanApp(App):
         if opt.mode == "scatter":
             jobs = []
             for (param,idParam) in it.izip(opt.params,it.count()):
-                jobs.extend(self.crossVal(param=param,idParam=idParam))
+                jobs.extend(self.crossVal(param=param,idParam=idParam,**kw))
             gtOpt = copy(opt)
             gtOpt.mode = "gather"
             gtApp = self.factory(opt=gtOpt)
-            jobs = gtApp.run(cwd=self.cwd,depend=jobs)
+            kw = kw.copy()
+            kw["cwd"] = self.cwd
+            kw["depend"] = jobs
+            jobs = gtApp.run(**kw)
             return jobs
         elif opt.mode == "gather":
-            self.gather()
+            return self.gather(**kw)
 
     def getCvDirName(self,idParam):
         return pjoin(self.cwd,"cv-%000i" % idParam)
@@ -84,9 +87,10 @@ class ParamScanApp(App):
     def getCvOptFileName(self,idParam):
         return pjoin(self.getCvDirName(idParam),"opt.pkl")
     
-    def crossVal(self,param,idParam):
+    def crossVal(self,param,idParam,**kw):
         opt = self.opt
         cvDir = self.getCvDirName(idParam)
+        rmdir(cvDir)
         makedir(cvDir)
         cvClOpt = copy(self.clOpt)
         for parName in param.dtype.names:
@@ -98,10 +102,11 @@ class ParamScanApp(App):
         cvOpt.mode = "scatter"
         cvOpt.runMode = opt.runMode
         cvApp = CrossValidatorApp(opt=cvOpt)
-        jobs = cvApp.run(cwd=cvDir)
-        return jobs
+        kw = kw.copy()
+        kw["cwd"] = cvDir
+        return cvApp.run(**kw)
 
-    def gather(self):
+    def gather(self,**kw):
         """Collect results from cross-validation jobs and save performance metrics in a single PerfMetricsSet"""
         opt = self.opt
         clOpt = self.clOpt

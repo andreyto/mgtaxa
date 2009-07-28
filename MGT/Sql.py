@@ -15,6 +15,8 @@ class SqlResultAssertionError(StandardError):
     def __str__(self):
         return "SqlResultAssertionError\nReceived:\n%s\n\nExpected:\n%s\n" % (self.receive,self.expect)
 
+
+
 class SqlWatch:
 
     def __init__(self,sql,debug):
@@ -145,6 +147,16 @@ class DbSql(MGTOptions):
         curs.close()
         return ret
 
+    def selectAsNx1Dict(self,sql,**kw):
+        """Execute sql that must return two columns with Nx1 relation and return result as dict(first->second)."""
+        curs = self.execute(sql,**kw)
+        ret = curs.fetchall()
+        assert len(ret) == 0 or len(ret[0]) == 2,"Result set must be two columns"
+        curs.close()
+        dret = dict(ret)
+        assert len(ret) == len(dret),"Result set must be Nx1 relation. Multi-valued keys were found."
+        return dret
+    
     def dropTables(self,names):
        for name in names:
            self.dropTable(name)
@@ -239,14 +251,16 @@ class DbSql(MGTOptions):
             inserter(rec)
         inserter.flush()
 
-    def createTableFromArray(self,name,arr,withData=True,returnInserter=False):
+    def createTableFromArray(self,name,arr,withData=True,returnInserter=False,indices=None):
         """Create a table that reflects the fields of Numpy record array.
-        @ret SqlTable object
+        @return BulkInserter object or None
         @param name The name of the new table
         @param arr Numpy array to use as template
         @param withData if True, also load data from array
-        @param returnInserter if True, return a BulkInserter object. 
+        @param returnInserter if True, return a BulkInserter object; 
         The caller then is resposible for closing the inserter object.
+        @param indices, if not None, should be a dictionary with arguments to createIndices, 
+        except the 'table' argument, which will be taken from 'name'.
         All fields are constrained as NOT NULL, as Numpy does not have NULL values,
         and NOT NULL constraint speeds up queries.
         """
@@ -262,6 +276,9 @@ class DbSql(MGTOptions):
                 inserter(rec)
             if not returnInserter:
                 inserter.close()
+        if len(indices) > 0:
+            self.createIndices(table=name,**indices)
+            self.ddl("analyze table %s" % name,ifDialect="mysql")
         return inserter
 
 
@@ -271,6 +288,12 @@ class DbSql(MGTOptions):
         ret = reader.allAsArray()
         reader.close()
         return ret
+
+    def exportAsCsv(self,sql,out,withHeader=True,sep=','):
+        """Excecute SQL and export the result as CSV file.
+        @todo implement this method by directly saving from result set, w/o the numpy array intermediary."""
+        arr = self.selectAsArray(sql=sql)
+        saveRecArrayAsCsv(arr=arr,out=out,withHeader=withHeader,sep=sep)
 
 def sqlInList(l):
     """Create a string that can be used after SQL 'IN' keyword from a given Python sequence"""
@@ -347,15 +370,15 @@ class DbSqlMy(DbSql):
         self.close()
         self.con = self.dbmod.connect(port=13306,
                                       #unix_socket="/tmp/atovtchi.mysql.sock",
-                                      host="boxer.jcvi.org",
+                                      host=kw.get("host","localhost"),
                                       db=kw.get('db',"mgtaxa"),
                                       user="root",
                                       passwd="OrangeN0",
                                       read_default_file="my.cnf",
-                                      read_default_group="client",
+                                      read_default_group="client")
                                       ## SSCursor fetches results row-by-row from the server,
                                       ## although I did not see any difference in overall speed
-                                      cursorclass=MySQLdb.cursors.SSCursor)
+                                      #cursorclass=MySQLdb.cursors.SSCursor)
 
     def close(self):
         self.commit()
@@ -572,7 +595,8 @@ class BulkInserterFile(object):
                 escaped.append('"%s"' % (x,))
             elif x is None: #NULL
                 escaped.append('\N') #at least this is how MySQL encodes NULL
-            elif isinstance(x,bool):
+            # %s would print bool as True or False, which MySQL will not understand
+            elif isinstance(x,(bool,n.bool_)):
                 escaped.append("%i" % x)
             else:
                 escaped.append(str(x))

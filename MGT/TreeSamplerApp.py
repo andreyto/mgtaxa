@@ -93,7 +93,11 @@ class TreeSamplerApp(MGTOptions,App):
     sampling of taxid chunks w/o replacement and increases the amount of sample data for small
     sequences. It creates chimeric k-mer vectors however (but not chimeric k-mers because we insert
     spacers)."""
-
+    
+    ## Special constant to control splitting - will cause splitting along nodes with directly attached sequence
+    termTopRankSeq = "_sequence"
+    ## Special constant to control splitting - will cause splitting along leaf nodes
+    termTopRankLeaf = "_leaf"
 
     def __init__(self,*l,**kw):
         MGTOptions.__init__(self)
@@ -116,11 +120,11 @@ class TreeSamplerApp(MGTOptions,App):
                 ncbiNamesDumpFile=self.taxaNamesFile)
         self.levels = TaxaLevels()
         if stage == 1:
-            print "DEBUG: Loading the tree from dump file"
+            print "DEBUG: Loading the tree from original dump file"
             self.taxaTree = TaxaTree(storage=self.storeDump)
             self.levels.setLevels(self.taxaTree)
         else:
-            print "DEBUG: Loading the tree from pickle"
+            print "DEBUG: Loading the tree from pickle from previous stage"
             self.taxaTree = TaxaTree(storage=self.storePickle)
         print "DEBUG: tree loaded"
         self.taxaTreeStore = NodeStorageDb(db=self.db,tableSfx=self.taxaTreeTableSfxMain)
@@ -150,7 +154,8 @@ class TreeSamplerApp(MGTOptions,App):
             self.mkDbSampleCounts()
 
         elif opt.mode == "split":
-
+            #for splits sanity checking
+            self.taxaTree.getRootNode().setMaxSubtreeRank()
             print "DEBUG: loadSampleCountsMem()"
             self.loadSampleCountsMem()
             print "DEBUG: setIsUnderUnclassMem()"
@@ -187,7 +192,7 @@ class TreeSamplerApp(MGTOptions,App):
             #trNodes = self.selectAllFamilies()
             trNodes = self.selectMicFamilies()
             sampFile = labelStore.getSampFilePath()
-            svmWriter = SvmStringFeatureWriterTxt(sampFile)
+            svmWriter = SvmStringFeatureWriter(sampFile)
             self.writeTraining(trNodes=trNodes,svmWriter=svmWriter)
             print "DEBUG: writeTesting()"
             self.writeTesting(svmWriter=svmWriter)
@@ -357,6 +362,40 @@ class TreeSamplerApp(MGTOptions,App):
         #samp_n_tot - test check above for every genus
         pass
 
+    def isTestTerm(self,node):
+        """Return True if the node is designated as testing terminal.
+        If True, the node and its subtree can be used only in its entirety either for training or for testing split.
+        Currently the implementation of this methods checks if node's rank is present in self.opt.termTopRanks,
+        with the two special names allowed in self.opt.termTopRanks: 
+        1) when termTopRanks list contains element equal to self.termTopRankSeq constant, we return True for
+        every node that has directly attached sequence.
+        2) when termTopRanks list contains element equal to self.termTopRankLeaf constant, we return True for
+        every leaf node (without children).
+        The typical use to have either actual ranks in self.opt.termTopRanks, or either one of the special
+        constants.
+        Redefine this method in derived classes to use some more complicated splitting criterion.
+        For the default implementation, if for example, we return True for species nodes, then sequences under 
+        species will be never split between training and testing. That ensures proper validation of a claim 
+        that testing accuracy is provided for the dicovery of previously unseen species.
+        @note PhyloPythia 2006 paper used splits as the level of strains (or whatever the leaf sequence
+        taxonomy node was for).
+        @attention It is often the case that a species node will have directly attached sequence, while
+        also having strains under it with their own sequence. Most of the time, the species level sequence
+        is not genome-wide sequencing output, but rather sequences for some specific genes. There examples
+        when it is a full plasmid sequence, e.g. Aeromonas salmonicida taxid 645.
+        If we ignore in sample database construction everything but WGS and full genomes, and drop plasmids,
+        we are probably safe.
+        However, dealing with it in a general case probably makes sense if just pick leaf nodes as testing
+        terminal and ignore any sequence attached to their upper nodes."""
+        opt = self.opt
+        if node.rank in opt.termTopRanks:
+            return True
+        if self.termTopRankSeq in opt.termTopRanks and node.samp_n > 0:
+            assert node.rank_max in ("species",noRank)
+            return True
+        if self.termTopRankLeaf in opt.termTopRanks and node.isLeaf():
+            return True
+
     def selectTestTaxa(self):
         """Select nodes that will be used entirely for testing.
         The method aims to achieve these goals:
@@ -384,6 +423,7 @@ class TreeSamplerApp(MGTOptions,App):
             - has_test - if True, node has enough testing samples, but it is not 'is_test' itself.
             - samp_n_tot_test - number of testing samples for this node
             - samp_n_tot_train - number of training samples for this node.
+            - isTestTerm - split boundaries (entire subtrees can have either True or False)
         Note that the presence of "unclassified" sequence still creates problems:
         selection of even one testing sample excludes from training all unclassified nodes
         which are immediate children of all nodes in testing sample lineage. Thus, any of these nodes
@@ -402,6 +442,11 @@ class TreeSamplerApp(MGTOptions,App):
                 node.samp_n_tot_train = node.samp_n_tot
             else:
                 node.samp_n_tot_train = 0
+            # isTestTerm is assigned False to all nodes here,
+            # then assigned True to some within recursive actor() below,
+            # and finally its True value is propagated to subtrees before
+            # exiting this method
+            node.isTestTerm = False
 
         def actor(node):
             # if a node is not even trainable in testing phase with minimum selection of testing samples, 
@@ -421,7 +466,7 @@ class TreeSamplerApp(MGTOptions,App):
             # training samples).
             # For other subnodes, we call the same function recursively
             for child in children:
-                if child.rank in self.opt.termTopRanks:
+                if self.isTestTerm(child):
                     child.isTestTerm = True
                     child.samp_n_tot_test = 0
                     child.samp_n_tot_train = child.samp_n_tot
@@ -431,7 +476,6 @@ class TreeSamplerApp(MGTOptions,App):
                             "and are not 'testing terminal'. Examples would be some sequence assigned "+\
                             "a family taxid rather than taxid of some species or 'unclassified' "+\
                             "subnode under that family."
-                    child.isTestTerm = False
                     actor(child)
                     # there will be cases when it is not possible to select any testing samples 
                     # from a subnode within provided constrains, and the total number of samples
@@ -532,6 +576,7 @@ class TreeSamplerApp(MGTOptions,App):
 
         #taxaTree.setDebugOnUpdate(debugOnNodeUpdate)
         actor(rootNode)
+        taxaTree.getRootNode().isTestTerm = False
         iter = taxaTree.iterDepthTop()
         iter.next() # skip the root
         # if there is no testing sequence and it's not unclassified or it is unclassified
@@ -543,6 +588,10 @@ class TreeSamplerApp(MGTOptions,App):
                     (node.getParent().samp_n_tot_test == 0 and \
                     node.getParent().samp_n_tot_train != 0)):
                 node.samp_n_tot_train = node.samp_n_tot
+            par = node.getParent()
+            # also finally propagate True value of isTestTerm to subtrees
+            if par.isTestTerm:
+                node.isTestTerm = True
         #taxaTree.unsetDebugOnUpdate()
 
 
@@ -563,8 +612,9 @@ class TreeSamplerApp(MGTOptions,App):
         for node in iter:
             node.is_class = False
             par = node.getParent()
-            # that will exclude every node below genus or species
-            if par.is_class and not par.rank in self.opt.termTopRanks:
+            # subnodes of testing terminal nodes cannot be separately trainable,
+            # and unclassified nodes cannot be as well
+            if par.is_class and not par.isTestTerm:
                 if node.samp_n_tot_train >= node.sampSel.test.train.min and \
                         not node.isUnderUnclass:
                     node.is_class = True
@@ -644,6 +694,7 @@ class TreeSamplerApp(MGTOptions,App):
         fgNodes = []
         bgNodes = []
         micNodes = [ taxaTree.getNode(id) for id in micTaxids ]
+        eukBgNodes = ( taxaTree.getNode(diatomsTaxid), )
         for node in taxaTree.iterDepthTop():
             if node.whichSupernode(micNodes) is not None:
                 if node.rank == opt.rank:
@@ -652,17 +703,33 @@ class TreeSamplerApp(MGTOptions,App):
                             fgNodes.append(node)
                         else:
                             bgNodes.append(node)
-        trainTarg = opt.maxSamplesTrain/len(fgNodes)
+                    elif node.samp_n_tot_train > 0 and not node.isUnderUnclass:
+                        # if has samples but not trainable by itself and not under unclassified, 
+                        # add it to the background
+                        bgNodes.append(node)
+                # the piece below needs re-work when the target counts are assigned,
+                # so that leaf nodes from where do not overwhelm other bg node.
+                # Also, it might not be a good idea anyway because nodes with short lineage
+                # can represent some unfinished taxonomical work (such as species directly under phylum)
+                #elif node.isLeaf():
+                #   rankNode = node.findRankInLineage(opt.rank)
+                #   # leaf and does not have opt.rank in its lineage
+                #   if rankNode is None and not node.isUnderUnclass:
+                #       bgNodes.append(node)
+
+        trainTarg = max(1,opt.maxSamplesTrain/len(fgNodes))
         for node in fgNodes:
             node.samp_n_train_targ = min(max(trainTarg,node.sampSel.test.train.min),
                 node.samp_n_tot_train)
-        bgTrainTarg = trainTarg / 2 / len(bgNodes)
+        bgTotTarg = max(1000,trainTarg)
+        bgTrainTarg = max(1,bgTotTarg / 2 / len(bgNodes))
         for node in bgNodes:
             node.samp_n_train_targ = min(bgTrainTarg,node.samp_n_tot_train)
-        eukBgNodes = ( taxaTree.getNode(diatomsTaxid), )
         for node in eukBgNodes:
-            node.samp_n_train_targ = min(trainTarg/2,node.samp_n_tot_train)
+            node.samp_n_train_targ = min(bgTotTarg/2,node.samp_n_tot_train)
         bgNodes.extend(eukBgNodes)
+        #TMP:
+        bgNodes = []
         return Struct(fgNodes=fgNodes,bgNodes=bgNodes)
 
 
@@ -773,22 +840,26 @@ class TreeSamplerApp(MGTOptions,App):
                             nSamples=taxaSampChild[taxidSamp]):
                         sampNode = taxaTree.getNode(taxidSamp)
                         assert sampNode is child or sampNode.isSubnode(child)
-                        genNode = sampNode.findRankInLineage(opt.splitRank)
-                        # we also had condition not genNode.isUnderUnclass, but
-                        # removed it - if the node is classified as genus or species, it should be
-                        # separate from all other nodes of the same rank, wether they are under
-                        # unclassified tree or not
+                        # each testing terminal node and all its subnodes must be already
+                        # marked as isTestTerm = True, and all others - False.
+                        # We find last node in the lineage of sample that is isTestTerm and
+                        # use it as split node if it exists. It can be the sample node itself.
+                        termLin = sampNode.lineageWhile(lambda node: node.isTestTerm)
+                        if len(termLin) > 0:
+                            splitNode = termLin[-1]
+                        else:
+                            splitNode = None
                         split = opt.splitIdTrainPred
-                        if genNode is not None and not genNode.isUnderUnclass:
+                        if splitNode is not None and not splitNode.isUnderUnclass:
                             try:
-                                splitId = genNode.splitId
+                                splitId = splitNode.splitId
                             except AttributeError:
                                 scnt = child.splitCounts
                                 # among equal minimal counts, add to the randomly picked
                                 splitIdMin = scnt.argmin()
                                 splitIdsMin = numpy.where(scnt==scnt[splitIdMin])[0]
                                 splitId = nrnd.permutation(splitIdsMin)[0]
-                                genNode.splitId = splitId
+                                splitNode.splitId = splitId
                             child.splitCounts[splitId]+=1
                             split = splitId + opt.splitIdTrainCv
                         
@@ -862,14 +933,6 @@ class TreeSamplerApp(MGTOptions,App):
 
     def writeTesting(self,svmWriter):
         """Write testing data set.
-        Currently, we write one dataset and use it on all classifiers.
-        The reason is because we use external executables for prediction,
-        and starting the executable for different models along the tree
-        path for each sample would be too expensive. Instead, we subsample
-        all testing taxa and create a single file. Along the way, we
-        also create an HDF dataset with a lineage of predictors for 
-        each unique taxid among selected samples. We also save the taxid
-        of each sample in an HDF array.
         @pre Nodes have the following attributes: 
         is_class - True for nodes that can serve as classes in SVM
         n_mclass - number of trainable sub-classes
@@ -894,9 +957,10 @@ class TreeSamplerApp(MGTOptions,App):
         idLabRecs = self.idLabRecs
         taxaSampLog = {}
         children = [ n for n in self.taxaTree.iterDepthTop() if hasattr(n,"label") ]
+        children.sort(key=lambda n: n.lnest)
         iChild = 1
         for child in children:
-            print "DEBUG: writing test samples for label node %i out of %i" % (iChild,len(children))
+            print "DEBUG: writing test samples for label %s node %i out of %i" % (child.label,iChild,len(children))
             taxaSampLog[child.id] = {}
             for node in child.iterDepthTop():
                 if node.is_test and node.samp_n > 0:

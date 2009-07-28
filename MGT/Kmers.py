@@ -30,8 +30,8 @@ class KmerSparseFeatures(KmerCounter):
         KmerCounter.__init__(self,kmerLen,rcPolicy)
         self.normPolicy = normPolicy
         self.max_seqLen = sampLen * 2
-        self.result = numpy.zeros(self.max_seqLen,dtype=numpy.dtype([('val','i4'),('ind','i8')]))
-        self.resultF = numpy.zeros(self.max_seqLen,dtype=numpy.dtype([('val','f4'),('ind','i8')]))
+        self.result = numpy.zeros(self.max_seqLen,dtype=MGTSparseIntFeatures.defDtype)
+        self.resultF = numpy.zeros(self.max_seqLen,dtype=MGTSparseRealFeatures.defDtype)
 
     
     def _kmers(self,samp,method,result):
@@ -68,9 +68,10 @@ class KmerLadderSparseFeatures(KmerCounterLadder):
         KmerCounterLadder.__init__(self,kmerLen,rcPolicy)
         self.normPolicy = normPolicy
         maxNumK = self.maxNumKmers(sampLen).sum()
-        self.result = numpy.zeros(maxNumK,dtype=[('val','f4'),('ind','i8')])
-        self.valExp = numpy.zeros(maxNumK,dtype='f4')
-        self.sizes = numpy.zeros(kmerLen,dtype='i8')
+        featDtype = MGTSparseRealFeatures.defDtype
+        self.result = numpy.zeros(maxNumK,dtype=featDtype)
+        self.valExp = numpy.zeros(maxNumK,dtype=featDtype["val"])
+        self.sizes = numpy.zeros(kmerLen,dtype=featDtype["ind"])
 
     def kmerFrequencies(self,samp):
         if self.normPolicy & NORM_POLICY.REVERSE:

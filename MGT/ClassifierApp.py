@@ -44,13 +44,18 @@ def analyzePredGos(pred,dataDir):
 
 class ClassifierApp(App):
     
+    batchDepModes = ("trainScatter",)
+    
     @classmethod
     def makeOptionParserArgs(klass):
         from optparse import make_option
-        optChoicesMode = ("train","test","predict")
+        optChoicesMode = ("trainScatter","train","test","predict")
         option_list = [
             make_option("-i", "--in-feat",
             action="append", type="string",dest="inFeat"),
+            make_option(None, "--in-feat-format",
+            action="store", type="choice",choices=featIOFormats,
+            dest="inFeatFormat",default=defFeatIOFormat),
             make_option("-c", "--svm-penalty",
             action="store", type="float",dest="C",default=1.),
             make_option("-m", "--mode",
@@ -66,8 +71,12 @@ class ClassifierApp(App):
             action="store", type="choice",choices=("lin","rbf"),dest="kernel",default="lin"),
             make_option(None, "--rbf-width",
             action="store", type="float",dest="rbfWidth",default=1.),
-            make_option("-l", "--train-label",
-            action="store", type="string",dest="trainLabel",default="-1"),
+            make_option("-l", "--train-labels",
+            action="store", type="string",dest="trainLabels",default=None,
+            help="Training labels to process here (all by default)"),
+            make_option(None, "--num-train-jobs",
+            action="store", type="int",dest="numTrainJobs",default=1,
+            help="Maximum number of training jobs to run in parallel"),
             make_option("-t", "--predict-thresh",
             action="store", type="string",dest="thresh",default="-2000"),
             make_option("-o", "--model-name",
@@ -75,7 +84,7 @@ class ClassifierApp(App):
             make_option("-p", "--pred-file",
             action="store", type="string",dest="predFile",default=None),
             make_option("-r", "--perf-file",
-            action="store", type="string",dest="perfFile"),
+            action="store", type="string",dest="perfFile",default=None),
             make_option("-a", "--labels",
             action="append", type="string",dest="labels"),
             make_option("-u", "--lab-unclass",
@@ -108,8 +117,16 @@ class ClassifierApp(App):
         else:
             parser.error("--predict-thresh value must be 'start,end,step' or 'value', received %s" % options.thresh)
         options.thresh = thresh
+        if options.trainLabels is not None:
+            options.trainLabels = n.asarray([ int(l) for l in options.trainLabels.split(',') ])
+        if options.mode == "test":
+            if options.perfFile is None:
+                options.perfFile = "perf.pkl"
+        if options.mode == "predict":
+            if options.predFile is None:
+                options.predFile = "pred.pkl"
 
-    def loadFeatures(self):
+    def loadLabels(self):
         opt = self.opt
         labels = opt.labels
         assert not isinstance(labels,str),"Need a sequence of label files"
@@ -119,9 +136,18 @@ class ClassifierApp(App):
         #DEBUG:
         #idLab = idLab.balance(100)
         self.idLab = idLab
+    
+    def loadFeatures(self):
+        opt = self.opt
+        idLab = self.idLab
         assert not isinstance(opt.inFeat,str),"Need a sequence of feature files"
         assert len(opt.inFeat) > 0
-        dataFeat = loadSparseSeqsMany(opt.inFeat,idLab=idLab)
+        if options.debug > 0:
+            timer = Timer()
+            print "Loading features"
+        dataFeat = loadSparseSeqsMany(opt.inFeat,idLab=idLab,format=opt.inFeatFormat)
+        if options.debug > 0:
+            print "Features loaded in %.3f sec" % (timer(),)
         idLabSplits = idLab.getSplits()
         feat = []
         lab = []
@@ -147,12 +173,12 @@ class ClassifierApp(App):
         self.data = data
 
 
-    def processOptions(self):
+    def compute(self):
         feat = self.feat
         lab = self.lab
         opt = self.opt
         
-        trainLabels = [ int(l) for l in opt.trainLabel.split(',') ]
+        trainLabels = opt.trainLabels
 
         thresh = opt.thresh
 
@@ -177,12 +203,6 @@ class ClassifierApp(App):
             if opt.method == "svm":
                 modStore = SvmModFileStore(opt.modelRoot,svmFact=svmFact)
         if opt.mode == "train":
-            trainLabCnt = numpy.bincount(lab[0])
-            trainLabelsPos = numpy.where(trainLabCnt>0)[0]
-            if len(trainLabels) == 1 and trainLabels[0] == -1:
-                trainLabels = trainLabelsPos
-            else:
-                trainLabels = [ trLab for trLab in trainLabels if trLab in trainLabelsPos ]
             if opt.method == "svm":
                 svmMul = SvmOneVsAll(maxLabel=maxLab)
                 svmMul.setLab(lab[0])
@@ -192,7 +212,7 @@ class ClassifierApp(App):
 
         elif opt.mode in ("test","predict"):
             if opt.method == "svm":
-                if len(trainLabels) == 1 and trainLabels[0] == -1:
+                if trainLabels is None:
                     labLoad = None
                     maxLabel = modStore.getMaxLabel()
                 else:
@@ -272,13 +292,43 @@ class ClassifierApp(App):
                 labPred.shape = (1,len(labPred))
                 return Struct(labPred=labPred,param=None)
 
+    def listAllTrainLabels(self):
+        opt = self.opt
+        idLab = self.idLab
+        idLabSplits = idLab.getSplits()
+        idLabTr = idLabSplits[sorted(idLabSplits)[0]]
+        return n.asarray(sorted(idLabTr.getLabToRec()))
+
     def doWork(self,**kw):
         opt = self.opt
         print "Classifier options: \n%s\n" % opt
         assert not (opt.mode == "test" and opt.perfFile is None)
         assert not (opt.mode == "predict" and opt.predFile is None)
+        self.loadLabels()
+        if opt.trainLabels is None:
+            trainLabelsAll = self.listAllTrainLabels()
+            if opt.mode == "trainScatter":
+                # I am a dispatch job - split work into sets of labels and dispatch
+                numJobs = min(opt.numTrainJobs,len(trainLabelsAll))
+                if len(trainLabelsAll) < 3:
+                    numJobs = 1
+                trainLabelsJobs = n.array_split(trainLabelsAll,numJobs)
+                # clean up all old models in this dispatch job -
+                # at this point we know that all models will be built again
+                rmdir(opt.modelRoot)
+                jobs = []
+                for trainLabels in trainLabelsJobs:
+                    clOpt = copy(opt)
+                    clOpt.mode = "train"
+                    clOpt.trainLabels = trainLabels
+                    clApp = ClassifierApp(opt=clOpt)
+                    jobs.extend(clApp.run(**kw))
+                return jobs
+            elif opt.mode == "train":
+                opt.trainLabels = trainLabelsAll
+        # If we got here, we do an actual work
         self.loadFeatures()
-        pred = self.processOptions()
+        pred = self.compute()
         if pred is not None:
             idPred = selFieldsArray(self.data[2],["id","label"])
             assert len(idPred) == len(pred.labPred[0])

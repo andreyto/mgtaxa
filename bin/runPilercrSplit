@@ -1,5 +1,6 @@
 #!/bin/bash
 for inp in $@; do
-    $MGT_HOME/bin/runPilercr $inp ${inp}.piler
+    out=$(basename $inp)
+    $MGT_HOME/bin/runPilercr $inp ${out}.piler
 done
 

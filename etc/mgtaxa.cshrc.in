@@ -2,7 +2,7 @@ setenv MGT_HOME __MGT_HOME__
 setenv MGT_BIN __MGT_BIN__
 setenv MGT_EXEC_BIN __MGT_EXEC_BIN__
 setenv PYTHONPATH __MGT_PY_PATH__:${PYTHONPATH}
-setenv ${PATH}:${MGT_BIN}:${MGT_EXEC_BIN}
+setenv PATH ${PATH}:${MGT_BIN}:${MGT_EXEC_BIN}
 
 #setenv LD_LIBRARY_PATH $INSTMACH/lib
 setenv CA_TOP ${HOME}/work/CA/wgs-assembler

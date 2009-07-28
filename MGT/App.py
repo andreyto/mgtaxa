@@ -28,8 +28,8 @@ class App:
             app.run()
         if calling from Python code:
             construct opt as a Struct() instance, specify only attributes with non-default values, then
-            app = App(opt=opt)
-            app.run()
+            app = App(opt=opt) #that fills yet unset options with defaults
+            app.run() #either runs in the same process, or submits itself or a set of other Apps to batch queue
         """
         optArgs, args = self.parseCmdLine(args=args)
         optArgs.updateOtherMissing(opt)
@@ -43,6 +43,9 @@ class App:
         Dispatches the work execution or batch submission depending on the options.
         @return list of sink BatchJob objects (if executed syncroniously, an empty list)"""
         opt = self.opt
+        kw = kw.copy()
+        if opt.has_key("cwd"):
+            kw.setdefault("cwd",opt.cwd)
         runMode = self.ajustRunMode(**kw)
         if runMode == "batch":
             return self.runBatch(**kw)
@@ -104,7 +107,7 @@ class App:
         The requirement to this method is that it must have a quick running top-level mode suitable
         to call on the login host.
         It can be called from both self.run() when 'batch' option is set, and directly from external code.
-        @ret list of BatchJob objects corresponding to the sinks (final vertices) in the DAG of submitted jobs.
+        @return list of BatchJob objects corresponding to the sinks (final vertices) in the DAG of submitted jobs.
         If kw["runMode"] or global options.app.runMode == "inproc" it will call self.run() instead of submitting a batch job."""
         opt = copy(self.opt)
         if opt.runMode == "batch":
@@ -113,13 +116,18 @@ class App:
         opt.optFile = None
         kw = kw.copy()
         kw.setdefault("scriptName",self.getAppName())
-        dryRun = kw.get("dryRun",False)
+        dryRun = kw.pop("dryRun",False)
         cmd = self.getCmdOptFile(**kw)
         if not dryRun:
             dumpObj(opt,cmd.optFile)
         else:
             print "opt = \n", opt
-        return [ runBatch(cmd.cmd,dryRun=dryRun,**kw) ]
+        bkw = BatchSubmitter.defaultOptions()
+        ## pull only relevant options
+        bkw.updateFromOtherExisting(opt)
+        ## kw options override all
+        bkw.update(kw)
+        return [ runBatch(cmd.cmd,dryRun=dryRun,**bkw.asDict()) ]
 
     @classmethod
     def parseCmdLine(klass,args=None):
@@ -177,7 +185,7 @@ class App:
 
     @classmethod
     def fillWithDefaultOptions(klass,options):
-        """Fill with default values options that are not already set"""
+        """Fill with default values those options that are not already set."""
         optArgs,args = klass.defaultOptions()
         optArgs.updateOtherMissing(options)
     
@@ -210,7 +218,7 @@ class App:
         @param cwd optional directory for the new file (current dir by default)
         @ret Struct(optFile,cmd) where optFile is file name, cmd is command line, 
         such as self.getCmd()+' --opt-file '+optFile."""
-        out,optFile = makeTmpFile(suffix=".opt.pkl",prefix=self.getAppName()+'.',dir=cwd)
+        out,optFile = makeTmpFile(suffix=".opt.pkl",prefix=self.getAppName()+'.',dir=cwd,withTime=True)
         out.close()
         return Struct(optFile=optFile,cmd=self.getCmd() + " --opt-file %s" % optFile)
 

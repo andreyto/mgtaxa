@@ -28,8 +28,14 @@ class SeqFeaturesApp(App):
             dest="mode",default="default"),
             make_option("-i", "--in-seq",
             action="store", type="string",dest="inSeq"),
+            make_option(None, "--in-seq-format",
+            action="store", type="choice",choices=featIOFormats,
+            dest="inSeqFormat",default=defFeatIOFormat),
             make_option("-o", "--out-feat",
             action="store", type="string",dest="outFeat"),
+            make_option(None, "--out-feat-format",
+            action="store", type="choice",choices=featIOFormats,
+            dest="outFeatFormat",default=defFeatIOFormat),
             make_option("-s", "--sigma",
             action="store", type="float",dest="sigma",default=200),
             make_option("-k", "--kmer-len",
@@ -81,7 +87,7 @@ class SeqFeaturesApp(App):
                     sampOffset=opt.shredOffset)
         else:
             loadSeqPreproc = loadSeqPreprocIdent
-        data = loadSeqs(opt.inSeq,preProc=loadSeqPreproc)
+        data = loadSeqs(opt.inSeq,preProc=loadSeqPreproc,format=opt.inSeqFormat)
 
         ##data = otherVsRest(data,2)
         print "Loaded " + showSvmDataCounts(data)
@@ -119,6 +125,7 @@ class SeqFeaturesApp(App):
         if opt.featType == "wdh":
 
             feat_char=StringCharFeatures(shogAlpha)
+            data = applyToFeatData(data,lambda f: f.tostring())
             feat_char.set_string_features(data['feature'].tolist())
 
             feat_whd=WordHistogramFeatures()
@@ -144,9 +151,9 @@ class SeqFeaturesApp(App):
                         kmerLen=opt.kmerLen,
                         rcPolicy=rcPolicyKmer,
                         normPolicy=opt.norm)
-            svmWriter = SvmSparseFeatureWriterTxt(opt.outFeat)
+            svmWriter = SvmSparseFeatureWriter(opt.outFeat,format=opt.outFeatFormat)
             for samp in data:
-                feat = kmerCnt.kmerFrequencies(n.fromstring(samp['feature'],dtype='S1'))
+                feat = kmerCnt.kmerFrequencies(samp['feature'])
                 svmWriter.write(int(samp['label']),feat,samp['id'])
             svmWriter.close()
 

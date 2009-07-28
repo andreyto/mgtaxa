@@ -1,2 +1,7 @@
-$INSTMACH/bin/mysqld_safe &
+##
+## Somehow we need to provide the exact path of the config file,
+## otherwise mysql_safe ignores the './configure --prefix' argument
+## if there is already some mysql directories in the default ('/usr/...')
+## locations.
+$INSTMACH/bin/mysqld_safe --defaults-file=$INST/etc/my.cnf &
 #$INSTMACH/bin/mysqld_safe --defaults-file=my.cnf &
