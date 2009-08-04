@@ -1,3 +1,11 @@
+//### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+//#
+//#   See COPYING file distributed along with the MGTAXA package for the
+//#   copyright and license terms.
+//#
+//### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+//
+//
 #ifndef ARRAY_BOOST_PY_H_
 # define ARRAY_BOOST_PY_H_
 

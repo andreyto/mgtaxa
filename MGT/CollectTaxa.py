@@ -1,3 +1,11 @@
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
 """Select from NCBI BLAST database the identifiers of sequence records with taxonomy assigned to them.
 Create various summary tables with overview of the available data along the way.
 """

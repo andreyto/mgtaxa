@@ -1,4 +1,12 @@
 #!/usr/bin/env python
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
 import sys, os
 #sys.path.append(os.environ['CA_BINDIR'])
 

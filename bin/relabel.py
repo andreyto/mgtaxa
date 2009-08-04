@@ -1,3 +1,11 @@
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
 """Relabel a set of SVMLight (training/testing) with consequitive labels.
 The Numpy array that maps new labels to old labels is saved by pickle."""
 

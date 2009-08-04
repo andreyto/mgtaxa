@@ -1,3 +1,11 @@
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
 inp = open("test.svm",'r')
 out = open("test.svm.1",'w')
 

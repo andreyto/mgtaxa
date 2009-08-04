@@ -1,3 +1,11 @@
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
 """Common definitions used by feature-related modules"""
 from MGT.Common import *
 

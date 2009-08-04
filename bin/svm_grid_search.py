@@ -1,3 +1,11 @@
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
 """Generate c,gamma parameters for RBF kernel grid search.
 Grid is taken from libsvm practical guide"""
 

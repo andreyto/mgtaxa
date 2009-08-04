@@ -1,3 +1,11 @@
+//### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+//#
+//#   See COPYING file distributed along with the MGTAXA package for the
+//#   copyright and license terms.
+//#
+//### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+//
+//
 #include "mgtaxa/kmers.hpp"
 #include "mgtaxa/version.hpp"
 #include <boost/test/minimal.hpp>

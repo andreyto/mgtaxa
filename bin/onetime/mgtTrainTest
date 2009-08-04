@@ -1,4 +1,12 @@
 #!/bin/tcsh
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
 python $MGT_HOME/bin/wdhfeat.py -i ../train.svm -o train.svm -k 3 -d 0
 python $MGT_HOME/bin/wdhfeat.py -i ../test.svm -o test.svm -k 3 -d 0 -b 10
 python $MGT_HOME/bin/onevsall.py -i train.svm -m train -o mod -a ../labelToId.pkl -c 10

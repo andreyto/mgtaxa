@@ -1,3 +1,11 @@
+//### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+//#
+//#   See COPYING file distributed along with the MGTAXA package for the
+//#   copyright and license terms.
+//#
+//### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+//
+//
 #ifndef MGT_KMERS_INC_HPP_
 #define MGT_KMERS_INC_HPP_
 

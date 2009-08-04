@@ -1,3 +1,11 @@
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
 """Classes that assign classification labels to various ranks in the taxonomy of our known sequence.
 We adopt a hierarchical approach to classification in order to place a sequence onto a known
 taxonomic tree. A recursive procedure is applied to each sample: if a node at some rank has

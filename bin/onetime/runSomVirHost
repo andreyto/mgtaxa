@@ -1,4 +1,12 @@
 #!/bin/bash
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
 mkdir wd_2_10
 python $MGT_HOME/bin/wdhfeat.py -i viralHosts.seq -o wd_2_10/all.svm -b -1 -a dna --shred-len=10000
 cd wd_2_10

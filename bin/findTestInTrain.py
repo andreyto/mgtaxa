@@ -1,3 +1,11 @@
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
 tr = open("train.svm",'r').readlines()
 ts = open("test.svm",'r').readlines()
 #trv = [ x.split(None,1)[1] for x in tr ]

@@ -1,3 +1,11 @@
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
 from shogun.Kernel import * #GaussianKernel, WeightedDegreeStringKernel, WeightedCommWordStringKernel
 from shogun.Features import *
 from shogun.Classifier import *

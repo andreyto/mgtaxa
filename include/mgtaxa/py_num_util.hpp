@@ -1,3 +1,11 @@
+//### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+//#
+//#   See COPYING file distributed along with the MGTAXA package for the
+//#   copyright and license terms.
+//#
+//### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+//
+//
 #ifndef NUM_UTIL_H__
 #define NUM_UTIL_H__
 

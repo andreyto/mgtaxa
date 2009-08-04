@@ -1,3 +1,11 @@
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
 cd NCBIVM
 #'--max-samp-seq 20' will dumpen mimivirus. there species that have >1 seq per taxid in refseq though
 ##python $MGT_HOME/bin/pull_ncbi_fasta.py -i /home/atovtchi/work/mgtdata/check/ncbi-vir/microbial.genomic.fna.cl -i /home/atovtchi/work/mgtdata/check/ncbi-vir/viral.genomic.fna.cl -o inp.samp -s 1 -m 50 -l 5000 -a dna --max-samp-seq 20

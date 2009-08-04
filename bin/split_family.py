@@ -1,3 +1,11 @@
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
 """Pull sequence for a given set of taxa directly from PANDA fasta file.
 Created to test the correctness of MGTAXA own sequence/sample database.
 The current implementation collects everything in memory."""

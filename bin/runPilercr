@@ -1,4 +1,12 @@
 #!/bin/bash
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
 mem=2000
 #even Piler compiled on x86_64 cannot break a 2G input size limit - it uses int indices all around
 runLinux -c "/home/atovtchi/work/distros/CRISPR/PILERCR/src/pilercr -minrepeat 22 -in $1 -out $2 -outtab $2.csv" --memory $mem --system Linux64 --project 600005 --length medium --nowait

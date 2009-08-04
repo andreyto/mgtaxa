@@ -1,3 +1,11 @@
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
 """This was intended to check random sampling w/o replacement with unequal probabilities within SQL.
 However, it became obvious that there is no magic in MySQL - select * from tbl order by rand() limit 1
 still selects and sorts all records, which is unacceptable for large tables."""

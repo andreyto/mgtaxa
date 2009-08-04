@@ -1,3 +1,11 @@
+//### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+//#
+//#   See COPYING file distributed along with the MGTAXA package for the
+//#   copyright and license terms.
+//#
+//### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+//
+//
 // Copyright 2006  Phil Austin (http://www.eos.ubc.ca/personal/paustin)
 // Distributed under the Boost Software License, Version 1.0. (See
 // accompanying file LICENSE_1_0.txt or copy at

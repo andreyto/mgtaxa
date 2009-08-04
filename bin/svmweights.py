@@ -1,3 +1,11 @@
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
 """Prepare a string of class weights for SVMLIB/LIBLINEAR training.
 Quoting from LIBLINEAR Readme:
 > train -c 10 -w1 2 -w2 5 -w3 2 four_class_data_file

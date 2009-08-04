@@ -1,3 +1,11 @@
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
 """Interface to GHSOM Hierarchical self-organizing maps program.
 A Rauber, D Merkl, M Dittenbach - Neural Networks, IEEE Transactions on, 2002
 The growing hierarchical self-organizing map: exploratory analysis of high-dimensional data.

@@ -1,9 +1,16 @@
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
 ## Installation directories.
 ## We support a "home" type installation,
 ## where everything for our application is installed under
 ## application's own subdirectory 
 ## (or possibly two - one for arch dependent and another for arch independent files).
-## This makes it easier making test installs as opposed to
+## This makes it easier to create test installs as opposed to
 ## "prefix" type installation (where executables for all applications go
 ## into a single common prefix/bin etc). The installation variables
 ## are still called 'prefix' and such, and are low case.
