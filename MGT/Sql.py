@@ -297,11 +297,25 @@ class DbSql(MGTOptions):
         reader.close()
         return ret
 
-    def exportAsCsv(self,sql,out,withHeader=True,sep=','):
+    def exportAsCsv(self,sql,out,withHeader=True):
         """Excecute SQL and export the result as CSV file.
         @todo implement this method by directly saving from result set, w/o the numpy array intermediary."""
-        arr = self.selectAsArray(sql=sql)
-        saveRecArrayAsCsv(arr=arr,out=out,withHeader=withHeader,sep=sep)
+        import csv
+        reader = self.makeBulkReader(sql=sql,format="list")
+        rows = reader.allAsArray()
+        names = reader.fieldNames()
+        reader.close()
+        if isinstance(out,str):
+            out = openCompressed(out,'w')
+            doClose=True
+        else:
+            doClose=False
+        w = csv.writer(out,delimiter="\t")
+        if withHeader:
+            w.writerow(names)
+        w.writerows(rows)
+        if doClose:
+            out.close()
 
 def sqlInList(l):
     """Create a string that can be used after SQL 'IN' keyword from a given Python sequence"""
@@ -803,9 +817,9 @@ class SqlNumpyTypeMap:
 
 
 class BulkReader:
-    """Class that executes SQL statement and provides an iterator to read results back in chunks as NumPy record arrays."""
+    """Class that executes SQL statement and provides an iterator to read results back in chunks as NumPy record arrays or nested lists."""
 
-    def __init__(self,db,sql,bufLen=None):
+    def __init__(self,db,sql,bufLen=None,format="array"):
         self.db = db
         self.sql = sql
         curs = db.execute(sql=sql)
@@ -815,7 +829,11 @@ class BulkReader:
         else:
             bufLen = curs.arraysize
         self.bufLen = bufLen
-        self.dt = db.getNumpyTypeMap().dtype(curs.description)
+        self.format = format
+        if self.format == "array":
+            self.dt = db.getNumpyTypeMap().dtype(curs.description)
+        else:
+            self.dt = None
         #print "descr = ", curs.description
         #print "dt = ", self.dt
         self.nrows_fetched = 0
@@ -833,20 +851,32 @@ class BulkReader:
         return self.nrows_fetched
 
     def chunks(self):
-        """Iterate through result rows in chunks (as numpy arrays), each of length limited by 'bufLen' argument supplied to the __init__()."""
+        """Iterate through result rows in chunks (as numpy arrays or nested lists). 
+        Each chunk is of length limited by 'bufLen' argument supplied to the __init__()."""
         curs = self.curs
         dt = self.dt
+        format = self.format
         while True:
             rows = curs.fetchmany()
             if not rows:
                 break
             #print rows
             self.nrows_fetched += len(rows)
-            yield numpy.rec.fromrecords(list(rows),dtype=dt)
+            if format == "array":
+                yield numpy.rec.fromrecords(list(rows),dtype=dt)
+            else:
+                yield rows
 
     def allAsArray(self):
-        """Return all (remaining) records as one numpy record array."""
-        return numpy.rec.fromrecords(list(self.curs.fetchall()),dtype=self.dt)
+        """Return all (remaining) records as one numpy record array or nested list."""
+        rows = self.curs.fetchall()
+        if self.format == "array":
+            return numpy.rec.fromrecords(list(rows),dtype=self.dt)
+        else:
+            return rows
+
+    def fieldNames(self):
+        return [ fld[0] for fld in self.curs.description ]
 
     def close(self):
         self.curs.close()

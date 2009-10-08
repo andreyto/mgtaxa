@@ -15,7 +15,7 @@ from MGT.FastaIO import FastaReader
 
 
 
-def getProgOptions():
+def getProgOptions(args):
     from optparse import OptionParser, make_option
     option_list = [
         make_option("-i", "--in-seq",
@@ -36,16 +36,13 @@ def getProgOptions():
         action="store", type="int",dest="fastaLineLen",default=1000),
     ]
     parser = OptionParser(usage = "usage: %prog [options]",option_list=option_list)
-    (options, args) = parser.parse_args()
+    (options, args) = parser.parse_args(args=args)
 
     return options,args
 
 
-opt,args = getProgOptions()
-
-assert opt.inSeq is not None, "Need at least --in-seq option"
-
 def fastaToSvm(inFileFasta,outName,opt):
+    assert not isSamePath(inFileFasta,outName)
     if opt.outFormat == "svm":
         svmWriter = SvmStringFeatureWriterTxt(outName)
     elif opt.outFormat == "fasta":
@@ -124,7 +121,8 @@ def caToSvm(inpSeq,svmWriter,symCompr,opt):
     meta = Struct(samp=sampMeta)
     return meta,allLen
 
-#/usr/local/projects/GOSII/ANNOTATION/GSIOVIR110-I-01-3-4KB/GSIOVIR110-I-01-3-4KB.fasta
-assert not isSamePath(opt.inSeq,opt.outSeq)
-fastaToSvm(inFileFasta=opt.inSeq,outName=opt.outSeq,opt=opt)
+if __name__ == "__main__":
+    opt,args = getProgOptions(args=None)
+    assert opt.inSeq is not None, "Need at least --in-seq option"
+    fastaToSvm(inFileFasta=opt.inSeq,outName=opt.outSeq,opt=opt)
 

@@ -8,7 +8,8 @@
 
 from types import *
 import re
-import string, os
+import string, os, sys
+pjoin = os.path.join
 from time import sleep
 import time
 from copy import copy, deepcopy
@@ -129,14 +130,14 @@ def currTimeAsFileName():
 
 def makeTmpFile(*l,**kw):
     """Create and open a temporary file that will exist after this program closes it.
-    Return a tuple (file object,file name).
+    @return a tuple (file object,file name).
     It does the same as tempfile.NamedTemporaryFile but the file is not automatically
     deleted after being closed. Because it works through calls to mkstemp and os.fdopen,
     the returned file object does not have a file name in its 'name' attribute.
     @param createParents - if True (default) - create parent directories (require 'dir' option)
     @param dir - create file in this directory
     @param mode (default 'w') - open file in this mode
-    @param bufsize - open with his buffer size"""
+    @param bufsize - open with this buffer size"""
     
     opts1 = {}
     opts1.update(kw)
@@ -145,8 +146,9 @@ def makeTmpFile(*l,**kw):
         try:
             dirName = opts1["dir"]
         except KeyError:
-            raise ValueError("makeTmpFile: 'dir' keyword must be used with 'createParents' keyword")
-        makedir(dirName)
+            pass
+        else:
+            makedir(dirName)
     l2 = []
     opts1.setdefault("mode","w")
     for k in ("mode","bufsize"):
@@ -183,16 +185,21 @@ def stripSfx(s,sep='.'):
 def stripPathSfx(s,sep='.'):
     """Same as stripSfx but looks only inside the os.path.basename(s)"""
     (head,tail) = os.path.split(s)
-    return os.path.join(head,stripSfx(s,sep=sep))
+    return os.path.join(head,stripSfx(tail,sep=sep))
 
 def strFilter(s,allowed):
     allowed = set(allowed)
     return ''.join(( x for x in s if x in allowed ))
 
-_osNameFilter_allowedDef = set(string.ascii_letters + string.digits)
+_osNameFilter_allowedDef = set(string.ascii_letters + string.digits + '-_+#$~^.,')
 
-def osNameFilter(s,allowed=_osNameFilter_allowedDef):
-    return strFilter(s,allowed=allowed)
+def osNameFilter(s,allowed=_osNameFilter_allowedDef,remove=''):
+    return strFilter(s,allowed=allowed-set(remove))
+
+def strToFileName(s,remove=''):
+    """Rough conversion of artbitrary string with spaces into a file name w/o spaces.
+    Possibly a many-to-one operation."""
+    return osNameFilter(s.replace(' ','_'),remove=remove)
 
 class SymbolRunsCompressor:
 
@@ -235,6 +242,36 @@ def openGzip(filename,mode,compresslevel=6):
     else:
         raise ValueError("'openGzip()' - Unsupported 'mode': " + mode)
 
+_ioFilterCodeTpl = """import sys
+%s
+_iofilter_code=%s
+for line in sys.stdin:
+    sys.stdout.write(_iofilter_code(line))
+"""
+
+def ioFilter(inp,code,mode="stream",lineInitCode=""):
+    """Pipe input stream through Python code and return in the output stream.
+    @param inp Input file object
+    @param code Python code (possibly as multi-line) string that will be executed under a separate Python instance,
+    it should read from standard input and write to standard output
+    @param mode if "line", then code accepts one line and returns one or more lines, e.g. "lambda x: x.replace(',','\n')";
+    if "stream", then code reads from standard input and writes to standard output.
+    @return Input file object connected to the standard output of the filter
+    @param lineInitCode if mode == "line", code will be passed to eval() to prepare a callable object, and thus must conform
+    to eval()'s restrictions (the main in this context would be inability to use 'import'). Therefore, and optional 
+    argument lineInitCode will be inserted before the main loop and can contain module imports or method definitions.
+    """
+    assert mode in ("stream","line"),"Unknown stream parameter value: %s" % (mode,)
+    codeS,codeFileName = makeTmpFile(prefix="iofilt",withTime=True)
+    if mode == "stream":
+        codeS.write(code)
+    elif mode == "line":
+        codeS.write(_ioFilterCodeTpl % (lineInitCode,code))
+    codeS.close()
+    out = Popen([sys.executable,codeFileName],env=os.environ, bufsize=2**16, stdin=inp, stdout=PIPE, close_fds=True).stdout
+    #os.remove(codeFileName)
+    #print codeFileName
+    return out
 
 def strAttributes(o,exclude=tuple(),delim=' | '):
     """Return a string with all attributes names and value for an object 'o'."""
@@ -460,6 +497,7 @@ def fromWhereItems(whItems,defVal=0):
     return a
 
 def logicalAnd(*arrays):
+    """Does the same as numpy.logical_and(), but works on a list of arrays of arbitrary length"""
     res = n.logical_and(arrays[0],arrays[1])
     if len(arrays) == 2:
         return res
@@ -603,13 +641,31 @@ def groupRecArray(arr,keyField):
     @postcondition Grouping is stable - the original order of records within each group is preserved."""
     m = defdict(list)
     for rec in arr:
-        #recarray records are compared by address in dict, for some reason, hence .item()
+        #dereferenced recarray field scalars are compared by address in dict (because they are mutable?), 
+        #hence .item() to get immutable Python scalar
         m[rec[keyField].item()].append(rec)
     for key in m:
         m[key] = n.asarray(m[key],dtype=arr.dtype)
     # important to convert to regular dictionary otherwise we get
     # silent insertion of default elements on access to non-existing keys
     return dict(m)
+
+def indexRecArray(arr,keyField):
+    """Create a dict(key->record of array) out of record array.
+    Similar to creating a unique database index. 
+    A reference to a single array record is stored as a value field in each item of the index.
+    A ValueError exception will be raised if records are not unique.
+    @param arr Numpy record array
+    @param keyField name of field to create the key from
+    @return dict that for each unique value of keyField contains a rerefernce to a single numpy record."""
+    m = {}
+    for rec in arr:
+        #dereferenced recarray field scalars are compared by address in dict (because they are mutable?), 
+        #hence .item() to get immutable Python scalar
+        m[rec[keyField].item()] = rec
+    if len(m) < len(arr):
+        raise ValueError("Non-unique items in input array")
+    return m
 
 def countRecArray(arr,keyFields,format="dict"):
     return binCount(selFieldsArray(arr,fields=keyFields),format=format)

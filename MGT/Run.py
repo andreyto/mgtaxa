@@ -28,10 +28,7 @@ if defineCalledProcessError:
 def run(*popenargs, **kwargs):
     kw = {}
     kw.update(kwargs)
-    dryRun = False
-    if 'dryRun' in kw:
-        dryRun = kw['dryRun']
-        del kw['dryRun']
+    dryRun = kw.pop('dryRun',False)
     if dryRun:
         print popenargs
     else:
@@ -39,10 +36,11 @@ def run(*popenargs, **kwargs):
         if isinstance(popenargs[0],str) and len(popenargs[0].split()) > 1:
             kw.setdefault("shell",True)
         try:
-            if options.debug > 0:
-                print popenargs
+            _gdebug = options.debug
         except:
-            pass
+            _gdebug = 0
+        if kw.pop('debug',_gdebug) > 0:
+            print popenargs
         returncode = call(*popenargs,**kw)
         if returncode != 0:
             raise CalledProcessError(returncode=returncode,cmd=str(popenargs))
@@ -53,14 +51,8 @@ def backsticks(*popenargs,**kwargs):
     to return from this function."""
     kw = {}
     kw.update(kwargs)
-    dryRun = False
-    if 'dryRun' in kw:
-        dryRun = kw['dryRun']
-        del kw['dryRun']
-    dryRet = None
-    if 'dryRet' in kw:
-        dryRet = kw['dryRet']
-        del kw['dryRet']
+    dryRun = kw.pop('dryRun',False)
+    dryRet = kw.pop('dryRet',None)
     if dryRun:
         print popenargs
         return dryRet

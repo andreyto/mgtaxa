@@ -215,11 +215,11 @@ class App:
         modname = inspect.getmodule(self).__name__
         if modname == "__main__":
             #executed as script, module name is not available but we can execute the same way again
-            return "python " + sys.argv[0]
+            return sys.executable + " " + sys.argv[0]
         else:
             #modname must have a full import path and we can use python -c '...'
             klassname = self.__class__.__name__
-            return "python -c 'import %s; %s.%s(args=None).run()'" % (modname,modname,klassname)
+            return sys.executable + " -c 'import %s; %s.%s(args=None).run()'" % (modname,modname,klassname)
 
     def getCmdOptFile(self,cwd=os.getcwd(),**kw):
         """Generate unique file name for a new options pickle file and build full command line with it.
