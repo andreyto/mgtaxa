@@ -221,8 +221,6 @@ class CrisprApp(App):
             return self.loadAnnot()
         elif opt.mode == "loadmic":
             return self.loadMic()
-        elif opt.mode == "loadmicprot":
-            return self.loadMicProtHitsSql()
         elif opt.mode == "annotmic":
             return self.annotMicCrispr()
         elif opt.mode == "stats":
@@ -274,13 +272,13 @@ class CrisprApp(App):
             blOpt.ARCH = "lx*64"
             blApp = self.factory(opt=blOpt)
             print blApp.opt
-            jobs.append(blApp.run(**kw))
+            jobs.extend(blApp.run(**kw))
         return jobs
 
     def blastCrOne(self,**kw):
         """One job launched by blastCr()"""
         opt = self.opt
-        #runBlast(dbPath=opt.blDbPath,inpFile=opt.blInpFile,outFile=opt.blOutFile,paramStr="-p blastn -e 100 -W 7 -F F -m 7 -U F")
+        runBlast(dbPath=opt.blDbPath,inpFile=opt.blInpFile,outFile=opt.blOutFile,paramStr="-p blastn -e 100 -W 7 -F F -m 7 -U F")
         # Now parse with relaxed cutoffs and save as numpy record array for faster loading later
         recs = self.parseArrayBlast(inFile=opt.blOutFile,minAlignLen=10,minBitScore=10,maxEvalue=100,maxMism=100,out=None,debug=False)
         dumpObj(recs,opt.blOutFileBin)
@@ -300,7 +298,7 @@ class CrisprApp(App):
             jOpt.ARCH = "lx*64"
             jApp = self.factory(opt=jOpt)
             print jApp.opt
-            jobs.append(jApp.run(**kw))
+            jobs.extend(jApp.run(**kw))
         return jobs
 
     def pilerCrOne(self,**kw):
@@ -1514,13 +1512,15 @@ class CrisprApp(App):
 
 def run_Crispr():
     opt = Struct()
-    opt.runMode = "inproc" #"batchDep"
-    #modes = [ "loadcr","exportcr" ] 
-    modes = [ "stats" ] #"annotmic" "loadmicprot" "annotmic" "pilercr" "loadcr" "exportcr" "loadmic" "loadannot" "exportaclame" "exportmgt" "blastcr" "loadbl" "blastdb" "exportcr" "loadcr"
+    opt.runMode = "batchDep" #"inproc" #"batchDep"
+    modes = [ "blastcr","loadbl","annotmic","stats" ] 
+    #modes = [ "loadmic","blastdb","pilercr","loadcr","exportcr","blastcr","loadbl","annotmic","stats" ] 
+    #modes = [ "stats" ] #"annotmic" "loadmicprot" "annotmic" "pilercr" "loadcr" "exportcr" "loadmic" "loadannot" "exportaclame" "exportmgt" "blastcr" "loadbl" "blastdb"
     jobs = []
     for mode in modes:
         opt.mode = mode
         app = CrisprApp(opt=opt)
+        print "Running mode %s" % mode
         jobs = app.run(depend=jobs)
 
 if __name__ == "__main__":

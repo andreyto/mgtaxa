@@ -90,7 +90,15 @@ class BatchSubmitter(object):
             qsubCmd = ["qsub", "-b","n","-S","/bin/tcsh"]
             #construct dependency argument if needed
             if len(depend) > 0:
-                depids = [ str(dep.jobId) if isinstance(dep,BatchJob) else str(dep) for dep in depend ]
+                depids = []
+                for dep in depend:
+                    if isinstance(dep,BatchJob):
+                        depid = dep.jobId
+                    elif isinstance(dep,str):
+                        depid = dep
+                    else:
+                        raise ValueError("'depend' should be a flat list of scalar types. Perhaps you used jobs.append(app.run()) instead of jobs.extend(app.run()) when build the jobs list")
+                    depids.append(depid)
                 qsubCmd.extend(["-hold_jid",','.join(depids)])
             qsubCmd.append(scriptName)
             outp = backsticks(qsubCmd,dryRun=dryRun,dryRet="your job 0 ")

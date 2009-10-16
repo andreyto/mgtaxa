@@ -22,6 +22,7 @@ from random import sample as sampleWOR #Random sampling w/o replacement
 import os, sys, atexit, re, gzip
 pjoin = os.path.join
 from glob import iglob
+import glob
 import itertools
 it = itertools
 import operator

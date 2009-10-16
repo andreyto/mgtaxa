@@ -17,8 +17,8 @@ def makeSangerReads():
         gosToSvm.fastaToSvm(inFileFasta=inpFasta,outName=outFasta,opt=opt)
 
 def listReadFiles():
-    return glob(pjoin(GOS_VIR_454_DIR,"*.fasta.seq")) + \
-            glob(pjoin(GOS_VIR_SANG_DIR,"*.fasta"))
+    return glob.glob(pjoin(GOS_VIR_454_DIR,"*.fasta.seq")) + \
+            glob.glob(pjoin(GOS_VIR_SANG_DIR,"*.fasta"))
 
 if __name__ == "__main__":
     makeSangerReads()
