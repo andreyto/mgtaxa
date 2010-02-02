@@ -98,6 +98,7 @@ TEST_DIR := $(PROJ_DIR)/test
 TEST_SRC_DIR := $(TEST_DIR)/cpp
 TEST_PY_DIR := $(TEST_DIR)/py
 DOC_DIR := $(PROJ_DIR)/doc
+BIN_PY_DIR := $(PROJ_DIR)/bin
 
 DEP_DIR := $(BUILD_DIR)/.deps
 
@@ -163,7 +164,8 @@ $(info $(PY_INC_DIR))
 all: build doc
 
 .PHONY: build
-build: $(PROGRAMS) $(PROGRAMS_TEST) $(LIBRARIES) $(PYEXT) $(PYEXT_TEST) mgtaxa.cshrc mgtaxa.insrc.cshrc
+build: $(PROGRAMS) $(PROGRAMS_TEST) $(LIBRARIES) $(PYEXT) $(PYEXT_TEST) mgtaxa.cshrc mgtaxa.insrc.cshrc mgtaxa.shrc mgtaxa.insrc.shrc
+
 
 .PHONY: doc
 doc: $(DOC_DIR)/html
@@ -195,10 +197,11 @@ install: all
 	install -d $(docdir)
 	install -d $(sysconfdir)
 	$(CPR) $(PY_DIR) $(prefix)
-	install -t $(extdir) $(PYEXT)
+	install -t $(extdir) $(PYEXT) MGTX/__init__.py
 	$(CPR) $(DOC_DIR)/html $(docdir)
-	install -t $(sysconfdir) mgtaxa.cshrc
+	install -t $(sysconfdir) mgtaxa.cshrc mgtaxa.shrc
 	install -t $(exec_bindir) $(PROGRAMS)
+	$(CPR) $(BIN_PY_DIR)/* $(bindir)
 
 .PHONY: clean
 clean:		
@@ -220,6 +223,21 @@ mgtaxa.insrc.cshrc: $(PROJ_DIR)/etc/mgtaxa.cshrc.in
 	    -e 's|__MGT_PY_PATH__|$(PROJ_DIR):$(BUILD_DIR)|' \
 	    $(PROJ_DIR)/etc/mgtaxa.cshrc.in > $@ || rm $@
 
+mgtaxa.shrc: $(PROJ_DIR)/etc/mgtaxa.shrc.in
+	sed -e 's|__MGT_HOME__|$(prefix)|' \
+	    -e 's|__MGT_BIN__|$(bindir)|' \
+	    -e 's|__MGT_EXEC_BIN__|$(exec_bindir)|' \
+	    -e 's|__MGT_PY_PATH__|$(prefix):$(libdir)|' \
+	    -e 's|__MGT_RC__|$(sysconfdir)/mgtaxa.shrc|' \
+	    $(PROJ_DIR)/etc/mgtaxa.shrc.in > $@ || rm $@
+
+mgtaxa.insrc.shrc: $(PROJ_DIR)/etc/mgtaxa.shrc.in
+	sed -e 's|__MGT_HOME__|$(PROJ_DIR)|' \
+	    -e 's|__MGT_BIN__|$(BUILD_DIR)|' \
+	    -e 's|__MGT_EXEC_BIN__|$(BUILD_DIR)|' \
+	    -e 's|__MGT_PY_PATH__|$(PROJ_DIR):$(BUILD_DIR)|' \
+	    -e 's|__MGT_RC__|$(BUILD_DIR)/mgtaxa.insrc.shrc|' \
+	    $(PROJ_DIR)/etc/mgtaxa.shrc.in > $@ || rm $@
 
 ############################ Compilation Rules #############################
 

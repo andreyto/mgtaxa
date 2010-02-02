@@ -39,6 +39,8 @@ class App:
             app = App(opt=opt) #that fills yet unset options with defaults
             app.run() #either runs in the same process, or submits itself or a set of other Apps to batch queue
         """
+        self._instanceOptionsPostBase(opt)
+        self.instanceOptionsPost(opt)
         optArgs, args = self.parseCmdLine(args=args)
         optArgs.updateOtherMissing(opt)
         if opt.optFile is not None:
@@ -51,20 +53,17 @@ class App:
         Dispatches the work execution or batch submission depending on the options.
         @return list of sink BatchJob objects (if executed syncroniously, an empty list)"""
         opt = self.opt
-        kw = kw.copy()
-        if opt.has_key("cwd"):
-            kw.setdefault("cwd",opt.cwd)
         runMode = self.ajustRunMode(**kw)
         if runMode == "batch":
             return self.runBatch(**kw)
         elif runMode in ("inproc","batchDep"):
             curdir = os.getcwd()
             try:
-                if "cwd" in kw:
-                    os.chdir(kw["cwd"])
+                if "cwd" in opt:
+                    os.chdir(opt["cwd"])
                 ret = self.doWork(**kw)
             finally:
-                if "cwd" in kw:
+                if "cwd" in opt:
                     os.chdir(curdir)
             if ret is None:
                 ret = []
@@ -196,6 +195,22 @@ class App:
         """Fill with default values those options that are not already set."""
         optArgs,args = klass.defaultOptions()
         optArgs.updateOtherMissing(options)
+
+    def _instanceOptionsPostBase(self,opt):
+        """Set (in place) instance-specific options.
+        This is called from __init__() and has access to the execution context (such as current dir).
+        This method should not be redefined in derived classes. Redefine instanceOptionsPost, which
+        is called right after this one."""
+        opt.setdefault("cwd",os.getcwd())
+        #set current data directory to cwd if not set already
+        opt.setdefault("cdd",opt.cwd)
+        
+    
+    def instanceOptionsPost(self,opt):
+        """Set (in place) instance-specific options.
+        This is called from __init__() and has access to the execution context (such as current dir)."""
+        pass
+
     
     def getAppName(self):
         """Return mnemonic name for this application to use for example as a prefix of batch script name"""

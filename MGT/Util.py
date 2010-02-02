@@ -202,14 +202,27 @@ def strToFileName(s,remove=''):
     return osNameFilter(s.replace(' ','_'),remove=remove)
 
 class SymbolRunsCompressor:
-
+    """Compress all consequitive runs of identical symbol sym that are longer than minLen into minLen."""
     def __init__(self,sym,minLen):
         assert len(sym) == 1
         self.rex = re.compile('%s{%i,}'%(sym,minLen+1))
         self.rep = sym*minLen
 
     def __call__(self,s):
-        return re.sub(self.rex,self.rep,s)
+        """Compress the sequence.
+        @param s string or numpy character array
+        """
+        if isinstance(s,str):
+            return re.sub(self.rex,self.rep,s)
+        else: #numpy array
+            return n.fromstring(re.sub(self.rex,self.rep,s.tostring()),dtype="S1")
+
+class ArrStr:
+    """A collection of string methods on numpy string_ arrays to insulate the code from changes in numpy interfaces.
+    @todo For newer numpy versions, it should just redirect to numpy.char free functions"""
+    @staticmethod
+    def upper(s):
+        return n.fromstring(s.tostring().upper(),dtype='S1')
 
 def isSamePath(path1,path2):
     paths = [ os.path.abspath(os.path.realpath(p)) for p in (path1,path2) ]

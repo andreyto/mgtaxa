@@ -16,37 +16,11 @@ from MGT.ParamScanTestApp import *
 from MGT.SeqImportApp import *
 from MGT.Svm import *
 
-#dbSql = createDbSql()
-#
-#txcol = TaxaCollector(dbSql=dbSql)
-#txcol.tmp_loadSeqHdr()
-#txcol.rebuild()
-#txcol.loadTaxLevelsSql()
-#sys.exit(0)
-#txcol.delDuplicateGiFromSeq()
-#txcol.selectSeqIds()
-#txcol.loadGiTaxNumpy()
-#txcol.loadSeq()
-#txcol.loadTaxNames()
-#txcol.loadTaxLevels()
-#txcol.loadTaxNodes()
-#txcol.loadTaxCategories()
-#txcol.loadRefseqAcc()
-#txcol.selectTaxSet()
-#txcol.loadTaxCategories()
-#txcol.loadTaxNodes()
-#txcol.loadTaxNodesMem()
-#txcol.makeBlastAlias()
-#txcol.mergeSelWithSeq(skipSeq=False)
-#txcol.loadGiTaxSql()
-#txcol.loadGiTaxNumpy()
-#txcol.loadSeqToHdf()
-#txcol.indexHdfSeq()
 
 def makeOpt():
     opt = Struct()
     opt.sampLen = 5000
-    opt.cwd = os.path.abspath("samp_%s" % opt.sampLen)
+    opt.cwd = pjoin(options.dataDir,"samp_%s" % opt.sampLen)
     opt.runMode = "inproc" #"inproc" #"batchDep"
     opt.rank = "genus"
     ## Subtrees starting at these nodes are considered "testing terminal" -
@@ -73,35 +47,40 @@ def makeOpt():
 
 def makeOptParamScanTest():
     opt = makeOpt()
-    opt.parScanName = "2"
     opt.featName = "kmer_8" #"kmer_8a" #"kmerlad_4f_nnorm_rndGenGcFixed" #"kmerlad_4f" #"wd_2_10"
     clOpt = opt.setdefault("clOpt",Struct())
     psOpt = opt.setdefault("psOpt",Struct())
     tsOpt = opt.setdefault("tsOpt",Struct())
     ftOpt = opt.setdefault("ftOpt",Struct())
     #TMP:
+    #clOpt.balanceTrainCounts = 100 #DBG
     clOpt.thresh = [-2000] #n.arange(-2.,1.01,0.1)
     clOpt.C = 1.
+    clOpt.smlrConvergenceTol = 0.01 #faster, lower accuracy
+    clOpt.smlrLm = 0.1
     clOpt.numTrainJobs = 100
-    clOpt.MEM = 8000
+    clOpt.MEM = 4000
     clOpt.saveConfMatr = True
     clOpt.exportConfMatr = True
-    clOpt.method = "svm" #"svm" "knn"
+    clOpt.method = "svm" #"svm" "knn" "smlr"
     clOpt.kernel = "lin" #"rbf"
     clOpt.knnK = 10
     ClassifierApp.fillWithDefaultOptions(clOpt)
     tsOpt.clOpt = deepcopy(clOpt)
     tsOpt.clOpt.MEM = 6000
     tsOpt.clOpt.numTrainJobs = 100
+    tsOpt.runName = "%s-1" % clOpt.method
     pgen = ParamGridGen()
     #psOpt.params = pgen.add("C",[1]).grid() #(-10,10,2)(0,1,2)
     #psOpt.params = pgen.add("C",pgen.p2(6,16,2)).add("rbfWidth",pgen.p2(-4,10,2)).grid()
     psOpt.params = pgen.add("C",pgen.p2(-8,10,2)).grid() #(-10,10,2)(0,1,2)
+    #psOpt.params = pgen.add("smlrLm",pgen.p2(-10,1,2)).grid() #(-10,10,2)(0,1,2)
     #psOpt.params = pgen.add("knnK",pgen.lin(1,20,2)).grid()
     #psOpt.params = pgen.add("knnMaxDist",pgen.lin(0.01,0.1,0.01)).grid()
     psOpt.clOpt = deepcopy(clOpt)
     psOpt.clOpt.MEM = 4000
     psOpt.clOpt.numTrainJobs = 10
+    psOpt.runName = "%s-1" % clOpt.method
     #ftOpt.inSeq = "samp.rndGenGcFixed"
     ftOpt.featType = "kmer" #"wdh" "kmerlad" #"kmer"
     if ftOpt.featType == "wdh":
@@ -114,10 +93,12 @@ def makeOptParamScanTest():
         ftOpt.kmerLen = 8
         ftOpt.revCompl = "merge" #"forward"
         ftOpt.norm = NORM_POLICY.FREQ | NORM_POLICY.EU_ROW
-    ftOpt.balance = -2 #do not even shuffle (somehow it takes a while) - we do it anyway when making idlabs
+    ftOpt.balance = -2 #-2 #do not even shuffle (somehow it takes a while) - we do it anyway when making idlabs
     prOpt = opt.setdefault("prOpt",Struct())
     prOpt.clOpt = deepcopy(clOpt)
+    prOpt.clOpt.MEM = 6000
     prOpt.clOpt.thresh = [-2000.]
+    prOpt.runName = "1"
     return opt
 
 
@@ -148,10 +129,10 @@ def run_ParamScanTest():
     #modes = ["feat","idlabs"]
     #modes = ["idlabs"]
     #modes = ["feat","idlabs","parscan"]
-    #modes = ["parscan"]
+    modes = ["parscan"]
     #modes = ["feat","idlabs","test"]
     #modes = ["idlabs","test"]
-    modes = ["test"]
+    #modes = ["test"]
     #modes = ["train"]
     jobs = []
     for mode in modes:
@@ -163,7 +144,7 @@ def makeOptSeqImportApp():
     opt = makeOpt()
     opt.runMode = "inproc" #"inproc" #"batchDep"
     opt.cwd = pjoin(opt.cwd,opt.rank,"pred","asm11_Mar06")
-    opt.inSeq = ["/usr/local/projects/GOSII/jmiller/asms/asm11_Mar06/9-terminator/gosII.scf.fasta"]
+    opt.inSeq = ["/usr/local/projects/GOSII/jmiller/asms/asm11_Mar06/gosII.scf.fasta.gz"]
     opt.minSampLen = 5000
     opt.inFormat = "ca"
     return opt
@@ -190,49 +171,77 @@ def run_Pred():
         app = ParamScanTestApp(opt=opt)
         jobs = app.run(depend=jobs)
 
-#run_Sampler()
-run_ParamScanTest()
-#run_SeqImportApp()
-#run_Pred()
-sys.exit(0)
 
-nrnd.seed(1)
-taxaSampler = TaxaSampler()
-#taxaSampler.extractViralKmers()
-#taxaSampler.extractViralSequence()
-#taxaSampler.extractNonViralSequence()
-#taxaSampler.makeSampleKmers()
-#taxaSampler.makeViralVsNonViralSvm()
-#taxaSampler.makeViralSvm()                     
-#taxaSampler.writeViralFamilyLabels()
-#updateKmerBinHeaderVersion(taxaSampler.kmerPathNonVir)
-#kmers = KmerBinReader(taxaSampler.kmerPathNonVir)
-#mergeKmerBin([taxaSampler.kmerPathVir,taxaSampler.kmerPathNonVir],taxaSampler.kmerPathVirNonVir)
-#kmers = KmerBinReader(taxaSampler.kmerPath)
-#ind = kmers.readIndTaxid()
-#print numpy.sum(ind==0), len(ind)
-#oldcnt = kmers.readCounts(update=True)
-#newcnt = numpy.bincount(ind)
-#assert numpy.all(oldcnt == newcnt)
-#sys.exit(0)
-#taxaSampler.subSampleKmersNonViral()
-#taxaSampler.writeViralVsNonViralTrainingSet()
-#taxaSampler.assignNodeCounts()
-#sys.exit(0)
-#trainSetPath = taxaSampler.trainSetPathVirFamily
-#testSetPath = taxaSampler.testSetPathVirFamily
-#kmerBalancedSample(inpPath=trainSetPath,outPath='tmp',medianRatio=0.2)
-#kmerBinToSvmTxt(trainSetPath,trainSetPath+'.txt')
-predRoot="lake_need_june"
-predSeqPath = predRoot+".fas.gz"
-#taxaSampler.sampleTestByPredictLength(predSeqPath)
-#taxaSampler.sampleTestByPredictLengthSvm(predSeqPath)
-#kmerBinToSvmTxt(taxaSampler.testSimPathVirFamily,taxaSampler.testSvmSimPathVirFamily+'.vnv',indLabelTaxid=numpy.ones(1000000,int))
-#taxaSampler.makePredictSvm(predRoot)
-taxaSampler.predictViral(predSeqPath,predRoot+'.6mers.vnv.svm.out',predRoot+'.7mers.v_f-tr.svm.out')
-#trainSetPath = taxaSampler.trainSetPathVirNonVir
-#kmerBinToSvmTxt(trainSetPath,trainSetPath+'.txt')
+if __name__ == "__main__":
+    #dbSql = createDbSql()
+    #
+    #txcol = TaxaCollector(dbSql=dbSql)
+    #txcol.tmp_loadSeqHdr()
+    #txcol.rebuild()
+    #txcol.loadTaxLevelsSql()
+    #sys.exit(0)
+    #txcol.delDuplicateGiFromSeq()
+    #txcol.selectSeqIds()
+    #txcol.loadGiTaxNumpy()
+    #txcol.loadSeq()
+    #txcol.loadTaxNames()
+    #txcol.loadTaxLevels()
+    #txcol.loadTaxNodes()
+    #txcol.loadTaxCategories()
+    #txcol.loadRefseqAcc()
+    #txcol.selectTaxSet()
+    #txcol.loadTaxCategories()
+    #txcol.loadTaxNodes()
+    #txcol.loadTaxNodesMem()
+    #txcol.makeBlastAlias()
+    #txcol.mergeSelWithSeq(skipSeq=False)
+    #txcol.loadGiTaxSql()
+    #txcol.loadGiTaxNumpy()
+    #txcol.loadSeqToHdf()
+    #txcol.indexHdfSeq()
+    #run_Sampler()
+    run_ParamScanTest()
+    #run_SeqImportApp()
+    #run_Pred()
+    sys.exit(0)
 
-#svm = SVMMulticlass()
-#svm = SVMLib()
-#svm.train(trainSetPath,testMode=True,testRecNum=50000)
+    nrnd.seed(1)
+    taxaSampler = TaxaSampler()
+    #taxaSampler.extractViralKmers()
+    #taxaSampler.extractViralSequence()
+    #taxaSampler.extractNonViralSequence()
+    #taxaSampler.makeSampleKmers()
+    #taxaSampler.makeViralVsNonViralSvm()
+    #taxaSampler.makeViralSvm()                     
+    #taxaSampler.writeViralFamilyLabels()
+    #updateKmerBinHeaderVersion(taxaSampler.kmerPathNonVir)
+    #kmers = KmerBinReader(taxaSampler.kmerPathNonVir)
+    #mergeKmerBin([taxaSampler.kmerPathVir,taxaSampler.kmerPathNonVir],taxaSampler.kmerPathVirNonVir)
+    #kmers = KmerBinReader(taxaSampler.kmerPath)
+    #ind = kmers.readIndTaxid()
+    #print numpy.sum(ind==0), len(ind)
+    #oldcnt = kmers.readCounts(update=True)
+    #newcnt = numpy.bincount(ind)
+    #assert numpy.all(oldcnt == newcnt)
+    #sys.exit(0)
+    #taxaSampler.subSampleKmersNonViral()
+    #taxaSampler.writeViralVsNonViralTrainingSet()
+    #taxaSampler.assignNodeCounts()
+    #sys.exit(0)
+    #trainSetPath = taxaSampler.trainSetPathVirFamily
+    #testSetPath = taxaSampler.testSetPathVirFamily
+    #kmerBalancedSample(inpPath=trainSetPath,outPath='tmp',medianRatio=0.2)
+    #kmerBinToSvmTxt(trainSetPath,trainSetPath+'.txt')
+    predRoot="lake_need_june"
+    predSeqPath = predRoot+".fas.gz"
+    #taxaSampler.sampleTestByPredictLength(predSeqPath)
+    #taxaSampler.sampleTestByPredictLengthSvm(predSeqPath)
+    #kmerBinToSvmTxt(taxaSampler.testSimPathVirFamily,taxaSampler.testSvmSimPathVirFamily+'.vnv',indLabelTaxid=numpy.ones(1000000,int))
+    #taxaSampler.makePredictSvm(predRoot)
+    taxaSampler.predictViral(predSeqPath,predRoot+'.6mers.vnv.svm.out',predRoot+'.7mers.v_f-tr.svm.out')
+    #trainSetPath = taxaSampler.trainSetPathVirNonVir
+    #kmerBinToSvmTxt(trainSetPath,trainSetPath+'.txt')
+
+    #svm = SVMMulticlass()
+    #svm = SVMLib()
+    #svm.train(trainSetPath,testMode=True,testRecNum=50000)

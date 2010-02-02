@@ -31,8 +31,11 @@ class MGTOptions:
         self.srcDir = "/home/atovtchi/work/mgtaxa"
         def _pdata(dir):
             return pjoin(self.dataDir,dir)
-        self.instDir = self.srcDir
+        self.homeDir = os.environ["MGT_HOME"]
+        self.instDir = self.homeDir
         self.binDir = pjoin(self.instDir,"bin")
+        self.confDir = pjoin(self.instDir,"etc")
+        self.envRc = os.environ["MGT_RC"]
         self.testDataDir = os.path.join(self.srcDir,"test_data")
         self.refSeqDataDir = _pdata("refseq")
         # Max length to store for a full header. It is stored in a separate table,
@@ -110,9 +113,14 @@ class MGTOptions:
                 MEM = 2000,
                 ARCH = "lx*64",
                 maxQueued = 50,
-                LENGTH = "medium") #"fast"
+                LENGTH = "medium", #fast
+                ENVRC = self.envRc)
         self.app = Options(
                 runMode = "default"#override App.opt.runMode value if not "default" here. Other choices are "inproc"
+                )
+        self.genomeTools = Options(
+                exe=pjoin(os.environ["INSTMACH"],"app/gt/gt"),
+                sketchConf=pjoin(self.confDir,"gt.sketch.default.style")
                 )
 
     def _setTaxaFileNames(self,topDir,sfx=""):

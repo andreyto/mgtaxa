@@ -27,7 +27,7 @@ class ParamScanTestApp(App):
     
     def init(self):
         self.taxaTree = None #will be lazy-loaded
-        self.store = SampStore.open(path=self.opt.get("cwd",os.getcwd()))
+        self.store = SampStore.open(path=self.opt.cdd)
     
     def doWork(self,**kw):
         self.init()
@@ -39,7 +39,7 @@ class ParamScanTestApp(App):
         elif opt.mode == "idlabs":
             return self.makeIdLabs(**kw)
         elif opt.mode == "parscan":
-            return self.parScan(parScanName=opt.get("parScanName",1),**kw)
+            return self.parScan(**kw)
         elif opt.mode == "test":
             return self.test(**kw)
         elif opt.mode == "train":
@@ -107,34 +107,36 @@ class ParamScanTestApp(App):
         idLabsFeat = featStore.makeIdLabs(idLabsSrc=idLabsSampTrain,name=nameIL+".tr",action="idfilt")
         #idLabsFeat = featStore.makeIdLabs(idLabsSrc=idLabsFeat,name=nameIL,action="balance")
 
-    def parScan(self,parScanName=None,idLabsName=None,**kw):
+    def parScan(self,idLabsName=None,**kw):
         opt = self.opt
         psOpt = opt.psOpt
         psOpt.runMode = opt.runMode
         store = self.store
         nameIL = store.getIdLabsName(idLabsName)+'.cv'
         featStore = self.getFeatStore(opt.featName)
-        return featStore.parScan(opt=psOpt,name=parScanName,idLabsName=nameIL,**kw)
+        return featStore.parScan(opt=psOpt,name=psOpt.runName,idLabsName=nameIL,**kw)
 
 
-    def test(self,testName=None,idLabsName=None,**kw):
+    def test(self,idLabsName=None,**kw):
         opt = self.opt
-        clOpt = opt.tsOpt.clOpt.copy()
+        tsOpt = opt.tsOpt
+        clOpt = tsOpt.clOpt.copy()
         clOpt.runMode = opt.runMode
         store = self.store
-        nameIL = store.getIdLabsName(idLabsName)+'.dbg.ts' #TMP:'.dbg.ts'
+        nameIL = store.getIdLabsName(idLabsName)+'.ts' #TMP:'.dbg.ts'
         featStore = self.getFeatStore(opt.featName)
-        return featStore.test(opt=clOpt,name=testName,idLabsName=nameIL,**kw)
+        return featStore.test(opt=clOpt,name=tsOpt.runName,idLabsName=nameIL,**kw)
 
-    def train(self,testName=None,idLabsName=None,**kw):
+    def train(self,idLabsName=None,**kw):
         """Train on all available samples to use models for prediction of future unknown samples"""
         opt = self.opt
-        clOpt = opt.prOpt.clOpt
+        trOpt = opt.prOpt # training options are prediction options
+        clOpt = trOpt.clOpt.copy()
         clOpt.runMode = opt.runMode
         store = self.store
         nameIL = store.getIdLabsName(idLabsName)+'.tr'
         featStore = self.getFeatStore(opt.featName)
-        return featStore.train(opt=clOpt,name=testName,idLabsName=nameIL,**kw)
+        return featStore.train(opt=clOpt,name=trOpt.runName,idLabsName=nameIL,**kw)
 
     def prepFeatPred(self,**kw):
         opt = self.opt
@@ -149,19 +151,26 @@ class ParamScanTestApp(App):
     def predict(self,**kw):
         from MGT.Taxa import loadTaxaTree
         opt = self.opt
+        prOpt = opt.prOpt
         store = self.store
-        clOpt = opt.prOpt.clOpt.copy()
+        clOpt = prOpt.clOpt.copy()
         assert len(clOpt.thresh) == 1
         clOpt.runMode = "inproc" #we would need to split this into two methods for "batchDep"
         featStoreTrain = self.getFeatStore(opt.featName)
         clOpt.modelRoot = pjoin(featStoreTrain.getPath(),"train/1",clOpt.modelRoot)
         sampStorePred = SampStore.open(path=opt.sampStorePred)
         featStore = sampStorePred.loadStore(name=opt.featName)
-        featStore.predict(opt=clOpt,name=opt.prOpt.name)
-        idLab = store.loadIdLabs()
+        featStore.predict(opt=clOpt,name=prOpt.runName)
+        #nameIL = store.getIdLabsName()+'.tr'
+        nameIL = None
+        idLab = store.loadIdLabs(name=nameIL)
         labToName = idLab.getLabToName()
-        predStore = featStore.predictStore(name=opt.prOpt.name)
+        predStore = featStore.predictStore(name=prOpt.runName)
         pred = predStore.loadObj("pred")
+        if prOpt.get("outExportDir",None) is not None:
+            outStore = DirStore.open(path=prOpt.outExportDir,mode="w") #"c" can zap cwd of the user
+        else:
+            outStore = predStore
         idToName = {}
         for id,lab in zip(pred.idPred["id"],pred.labPred[0]):
             idToName[id] = labToName[lab]
@@ -172,12 +181,12 @@ class ParamScanTestApp(App):
                 idToLin[id] = taxaTree.getNode(labn).lineageStr()
             else:
                 idToLin[id] = labn
-        out = open(predStore.getFilePath("idlin.csv"),'w')
+        out = open(outStore.getFilePath("idlin.csv"),'w')
         for (id,lin) in sorted(idToLin.items()):
             out.write("%s\t%s\n" % (id,lin))
         out.close()
         linCnt = "\n".join(["%s\t%s" % y for y in sorted(binCount(idToLin.values()).items(),key=lambda x:-x[1])])
-        out = open(predStore.getFilePath("lincnt.csv"),'w')
+        out = open(outStore.getFilePath("lincnt.csv"),'w')
         out.write(linCnt)
         out.write("\n")
         out.close()

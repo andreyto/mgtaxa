@@ -7,11 +7,20 @@ class GFF3Header(object):
         return "##gff-version 3\n"
 
 
+from urllib import quote as _url_quote
+
 class GFF3Attributes(dict):
     """Represents GFF3 attributes."""
+    
+    _non_quote="/ .?!^~\'\"()[]"
+    
+    @classmethod
+    def quote_val(klass,val):
+        return _url_quote(str(val),safe=klass._non_quote)
+
     def __str__(self):
-        return ';'.join(( "%s=%s" % (tag, value if isinstance(value,str) or \
-                not hasattr(value,"__len__") else ','.join( ("%s" % x for x in value) )) for \
+        return ';'.join(( "%s=%s" % (tag, self.quote_val(value) if isinstance(value,str) or \
+                not hasattr(value,"__len__") else ','.join( (self.quote_val(x) for x in value) )) for \
                 (tag,value) in sorted(self.items())))
 
 GFF3At = GFF3Attributes
@@ -57,6 +66,8 @@ class GFF3Record(object):
         self.start = feat.location.nofuzzy_start
         self.end = feat.location.nofuzzy_end
         self.strand = '+' if feat.strand > 0 else '-' if feat.strand < 0 else '.'
+        # no attributes should be automatically carried forward from the previous values:
+        self.attribs = GFF3Attributes()
         ats = self.attribs
         quals = feat.qualifiers
         ret = [ self ]
@@ -88,6 +99,8 @@ class GFF3Record(object):
                     del rec_ats["Name"], rec_ats["ID"]
                     rec_ats["Parent"] = ats["ID"]
                     ret.append(rec)
+        #if ats["ID"] == "ACJ74823.1":
+        #    pdb.set_trace()
         return ret
                     
 

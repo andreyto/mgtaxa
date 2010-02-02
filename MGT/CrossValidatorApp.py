@@ -60,6 +60,7 @@ class CrossValidatorApp(App):
         spClOpt.perfFile = pjoin(spDir,"perf.pkl")
         spClOpt.mode = "trainScatter"
         spClOpt.runMode = self.opt.runMode
+        spClOpt.cwd = spDir
         spOptFile = self.getSplitOptFileName(testSplit)
         spApp = ClassifierApp(opt=spClOpt)
         spClOpt = spApp.getOpt() #get the missing options filled with defaults
@@ -67,7 +68,6 @@ class CrossValidatorApp(App):
         #submits a batch job (unique and slightly modified)
         dumpObj(spClOpt,spOptFile)
         kw = kw.copy()
-        kw["cwd"] = spDir
         jobs = spApp.run(**kw)
         spClOpt.mode = "test"
         spApp = ClassifierApp(opt=spClOpt)

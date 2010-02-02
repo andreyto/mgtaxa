@@ -27,7 +27,7 @@ def transDegen(seq):
     if not checkSaneAlphaHist(seq,nonDegenSymb=abet,minNonDegenRatio=0.9):
         print "Apparently, wrong alphabet for sequence: " + seq.tostring()
     nAbet = len(abet)
-    s = seq.upper()
+    s = ArrStr.upper(seq)
     for i in xrange(len(s)):
         if s[i] not in abet:
             #print i,s[i],"->",
@@ -56,12 +56,19 @@ def checkSaneAlphaHistOld(seq,nonDegenSymb,minNonDegenRatio=0.9):
     nNonD = sum([ h[c] for c in nonDegenSymb if c in h ])
     return float(nNonD)/len(seq) >= minNonDegenRatio
 
-def balance(data,maxCount=0,labTargets={}):
+def balance(data,maxCount=0,labTargets={},rndSeed=None):
     """Balance sample counts by to data['label'] and randomly shuffle entire set.
     @param data samples, must have data['label'] field
     @param maxCount if 0 - balance to the min class count, if <0 - only shuffle, else - to this count, 
     if "median" - to median count
     @param labTargets dict with optional per label maxCount values with the same semantics"""
+    # we want to use the global random module-level generator if a seed has not been provided to
+    # this function, so that the globally set seed (if any) can still be in effect
+    if rndSeed is not None:
+        rngen = random.Random() #class instance
+        rngen.seed(rndSeed)
+    else:
+        rngen = random #module, interface is same as class Random
     cnt = n.bincount(data['label'].astype('i4'))
     if isinstance(maxCount,str):
         if maxCount == "median":
@@ -85,11 +92,20 @@ def balance(data,maxCount=0,labTargets={}):
                 tcnt = cnt[lab]
             if tcnt > 0:
                 dataLab = data[data['label'].astype('i4') == lab]
-                dataLab = dataLab[random.sample(xrange(len(dataLab)),tcnt)]
+                dataLab = dataLab[rngen.sample(xrange(len(dataLab)),tcnt)]
                 dataSel.append(dataLab)
     dataSel = n.concatenate(dataSel)
-    #numpy permutation or shuffle do not work on arrays with 'O' datatypes
-    dataSel = dataSel[nrnd.permutation(n.arange(len(dataSel),dtype=int))]
+    #we use already seeded generator from 'random' instead of possibly more efficient numpy.random
+    ind = n.arange(len(dataSel),dtype=int)
+    rngen.shuffle(ind)
+    ###if we just used random.shuffle(dataSel), we would get dataSel sliently screwed up (some rows doubled, some gone) -
+    ### seems to be a problem with swapping the numpy recarray rows in random.shuffl implementation.
+    #rngen.shuffle(dataSel)
+    dataSel = dataSel[ind]
+    #this will have to be commented out if we ever use on the data array rather than IdLabels object.
+    assert len(dataSel) == len(set(dataSel["id"]))
+    ###numpy permutation or shuffle do not work on arrays with 'O' datatypes
+    #dataSel = dataSel[nrnd.permutation(n.arange(len(dataSel),dtype=int))]
     return dataSel
 
 def addRevComplRows(data):
@@ -321,7 +337,7 @@ class IdLabels:
         for rec in data:
             rec["label"] = idToRec[rec["id"]]["label"]
 
-    def balance(self,maxCount=0,targets={}):
+    def balance(self,maxCount=0,targets={},rndSeed=None):
         """Return a new Idlabels object that has id counts balanced within each split across labels.
         @param maxCount default maximum count value for each (split,label) combination, @see balance() 
         at the module level for the meaning of zero and negative values.
@@ -334,7 +350,7 @@ class IdLabels:
             spTargets = targets.get(split,{})
             spMaxCount = spTargets.get("maxCount",maxCount)
             spLabTargets = spTargets.get("labTargets",{})
-            spRecsBal.append(balance(data=spRecs[split],maxCount=spMaxCount,labTargets=spLabTargets))
+            spRecsBal.append(balance(data=spRecs[split],maxCount=spMaxCount,labTargets=spLabTargets,rndSeed=rndSeed))
         return self.__class__(records=n.concatenate(spRecsBal))
 
     def selAcrossSplits(self):

@@ -47,7 +47,7 @@ class SeqImportApp(App):
         outFeat = self.store.getFilePath(opt.outFeat)
         for inFile in opt.inSeq:
             assert not isSamePath(inFile,outFeat)
-        svmWriter = SvmStringFeatureWriterTxt(outFeat)
+        svmWriter = SvmStringFeatureWriter(outFeat)
         for inFile in opt.inSeq:
             self.fastaToSvm(inFileFasta=inFile,svmWriter=svmWriter,opt=opt)
         svmWriter.close()
@@ -82,7 +82,7 @@ class SeqImportApp(App):
             pairs = [ (pair[0].split('/')[1],pair[1]) for pair in 
                     ( part.split('=') for part in parts[1:] ) ]
             pairs = dict(pairs)
-            seq = symCompr(rec.sequence()[int(pairs["clr_range_begin"]):int(pairs["clr_range_end"])])
+            seq = symCompr(rec.sequence(format="array")[int(pairs["clr_range_begin"]):int(pairs["clr_range_end"])])
             lenSeq = len(seq)
             if lenSeq >= opt.minSampLen:
                 library_id = pairs["library_id"].split("JCVI_LIB_")[1]
@@ -113,7 +113,7 @@ class SeqImportApp(App):
         for rec in inpSeq.records():
             hdr = rec.header()
             id = int(hdr.split(">scf")[1])
-            seq = symCompr(rec.sequence())
+            seq = symCompr(rec.sequence(format="array"))
             lenSeq = len(seq)
             if lenSeq >= opt.minSampLen:
                 svmWriter.write(0,seq,id)

@@ -1131,9 +1131,9 @@ class CrisprApp(App):
         """)
     
     def annotMicCrispr(self):
-        self.loadMicProtHitsSql()
-        self.loadMicProtAnnotCrisprSql()
-        self.annotMicCrisprGb()
+        #self.loadMicProtHitsSql()
+        #self.loadMicProtAnnotCrisprSql()
+        #self.annotMicCrisprGb()
         self.plotCrispr()
 
     def loadMicProtAnnotCrisprSql(self):
@@ -1361,6 +1361,7 @@ class CrisprApp(App):
     def plotCrispr(self):
         """Use Bio.Graphics.GenomeDiagram to generate pictures of CRISPR genes and arrays from pre-processed Genbank files"""
         opt = self.opt
+        rmdir(opt.crGraphDir)
         makedir(opt.crGraphDir)
         inpGbs = glob.glob(pjoin(opt.crAnnotDir,"*.gb"))
         for inpGb in inpGbs:
@@ -1378,10 +1379,13 @@ class CrisprApp(App):
         out.close()
     
     def plotCrisprOneGff(self,seqRec,outGraphFileRoot):
-        """Generate GFF files of CRISPR genes and arrays from one SeqRecord from a pre-processed Genbank file"""
+        """Generate GFF files and graphics for CRISPR genes and arrays from one SeqRecord from a pre-processed Genbank file"""
 
         from MGT.GFF import GFF3Record, GFF3Header
-        out = open(outGraphFileRoot+(".%s."%(seqRec.id,))+".gff3","w")
+        from MGT.GFFTools import GFF3Graphics
+        outFileRt = outGraphFileRoot+(".%s"%(seqRec.id,))
+        gffFile = outFileRt + ".gff3"
+        out = open(gffFile,"w")
         out.write(str(GFF3Header()))
         orec = GFF3Record(seqid=seqRec.id)
         for feat in seqRec.features:
@@ -1389,6 +1393,9 @@ class CrisprApp(App):
                 for o in orec.fromSeqFeat(feat):
                     out.write(str(o))
         out.close()
+        grFile = outFileRt + ".pdf"
+        gr = GFF3Graphics(outFormat="pdf",width=max(len(seqRec)/10,800))
+        gr(gffFile,grFile)
     
     def plotCrisprOneBioGd(self,seqRec,outGraphFileRoot):
         """Use Bio.Graphics.GenomeDiagram to generate pictures of CRISPR genes and arrays from one SeqRecord from a pre-processed Genbank file"""
@@ -1417,7 +1424,7 @@ class CrisprApp(App):
                 gd_feature_set.add_feature(feat,
                                            color=color, label=True,
                                            label_size = 14, label_angle=30,
-                                           name=feat.qualifiers["note"][0])
+                                           name=feat.qualifiers.get("note",("repeat",))[0])
                 
         #gd_diagram.draw(format="linear", pagesize='A4', fragments=4,
         #                start=0, end=len(seqRec))
@@ -1512,8 +1519,9 @@ class CrisprApp(App):
 
 def run_Crispr():
     opt = Struct()
-    opt.runMode = "batchDep" #"inproc" #"batchDep"
-    modes = [ "blastcr","loadbl","annotmic","stats" ] 
+    opt.runMode = "inproc" #"batchDep"
+    #modes = [ "blastcr","loadbl","annotmic","stats" ] 
+    modes = [ "annotmic" ]
     #modes = [ "loadmic","blastdb","pilercr","loadcr","exportcr","blastcr","loadbl","annotmic","stats" ] 
     #modes = [ "stats" ] #"annotmic" "loadmicprot" "annotmic" "pilercr" "loadcr" "exportcr" "loadmic" "loadannot" "exportaclame" "exportmgt" "blastcr" "loadbl" "blastdb"
     jobs = []

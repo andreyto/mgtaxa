@@ -11,8 +11,9 @@ from MGT.ClassifierApp import ClassifierApp
 
 def makeClOpt(testDataDir):
     o,a = ClassifierApp.defaultOptions()
-    o.C = 0.03
-    o.kernel = "lin" #"rbf"
+    o.method = "svm" #"svm" #"smlr"
+    o.C = 0.001
+    o.kernel = "rbf" #"rbf" "lin"
     o.inFeatFormat = "pkl" #"txt" #"pkl"
     if o.inFeatFormat == "txt":
         ext = ".libsvm"
@@ -24,6 +25,7 @@ def makeClOpt(testDataDir):
     o.inFeat = origFeat
     #o.inFeat = [pjoin(testDataDir,"usps.libsvm.pca")]
     o.labels = [ lf+".idlab" for lf in origFeat ]
+    o.balanceTrainCounts=-1
     return o
 
 testDataDir = pjoin(options.testDataDir,"usps")
@@ -34,11 +36,11 @@ makedir(workDir)
 os.chdir(workDir)
 
 clOpt = makeClOpt(testDataDir)
-clOpt.numTrainJobs = 6
+clOpt.numTrainJobs = 1 #6
 clOpt.MEM = 500
 clOpt.LENGTH = "fast"
 clOpt.mode = "trainScatter"
-clOpt.runMode = "inproc" #"batchDep"
+clOpt.runMode = "inproc" #"inproc" #"batchDep"
 print clOpt
 app = ClassifierApp(opt=clOpt)
 jobs = app.run(dryRun=False)

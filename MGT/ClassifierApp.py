@@ -66,11 +66,17 @@ class ClassifierApp(App):
             dest="inFeatFormat",default=defFeatIOFormat),
             make_option("-c", "--svm-penalty",
             action="store", type="float",dest="C",default=1.),
+            make_option(None, "--smlr-lm",
+            action="store", type="float",dest="smlrLm",default=0.01,
+            help="SMLR Lambda penalty - higher values lead to more sparse solutions"),
+            make_option(None, "--smlr-convergence-tol",
+            action="store", type="float",dest="smlrConvergenceTol",default=0.001,
+            help="SMLR convergence tolerance - a value of 0.01 can speed up training considerably at the expense of ~2% accuracy loss"),
             make_option("-m", "--mode",
             action="store", type="choice",choices=optChoicesMode,
             dest="mode",default="train",help=("What to do, choice of %s, default is %%default" % (optChoicesMode,))),
             make_option("-e", "--method",
-            action="store", type="choice",choices=("svm","knn","knn-svm"),dest="method",default="svm"),
+            action="store", type="choice",choices=("svm","knn","knn-svm","smlr"),dest="method",default="svm"),
             make_option("-k", "--knn-k",
             action="store", type="int",dest="knnK",default=5,help="Number of nearest neighbours in KNN algorithm"),
             make_option("-d", "--knn-max-dist",
@@ -82,6 +88,15 @@ class ClassifierApp(App):
             make_option("-l", "--train-labels",
             action="store", type="string",dest="trainLabels",default=None,
             help="Training labels to process here (all by default)"),
+            make_option(None, "--balance-train-counts",
+            action="store", type="int",dest="balanceTrainCounts",default=-2,
+            help="Balance training samples to a given count by random subsampling. "+\
+                    "if 0 - balance to the min class count, if -1 - only shuffle, if <-1 - do nothing, "+\
+                    "else - to this count, if 'median' - to median count"),
+            make_option(None, "--balance-random-seed",
+            action="store", type="int",dest="balanceRndSeed",default=76576,
+            help="Random seed to use if training set balancing is requested. This is needed because some methods (kernel svm) "+\
+                    "store references to the training phase samples in the final model. This seed must be the same in the prediction/testing phase."),
             make_option(None, "--num-train-jobs",
             action="store", type="int",dest="numTrainJobs",default=1,
             help="Maximum number of training jobs to run in parallel"),
@@ -160,13 +175,20 @@ class ClassifierApp(App):
         feat = []
         lab = []
         data = []
+        iSplit = 0
         for split in sorted(idLabSplits):
             idl = idLabSplits[split]
+            if iSplit == 0: #training set only
+                if opt.balanceTrainCounts >= -1:
+                    assert opt.balanceRndSeed is not None, "Random seed has to be set when balancing the training data"
+                    idl = idl.balance(maxCount=opt.balanceTrainCounts,rndSeed=opt.balanceRndSeed)
             splitData = idl.selData(dataFeat)
             splitFeat = convSparseToShog(data=splitData,delFeature=True)
             data.append(splitData)
             feat.append(splitFeat)
             lab.append(splitData["label"].astype('i4'))
+            print "DEBUG: len(data[%s] = %s, len(feat[%s]) = %s, len(lab[%s]) = %s" % (iSplit,len(data[iSplit]),iSplit,feat[iSplit].get_num_vectors(),iSplit,len(lab[iSplit]))
+            iSplit += 1
         # repeat the last split if less than 3
         if len(feat) < 3:
             iLast = len(feat) - 1
@@ -217,6 +239,14 @@ class ClassifierApp(App):
                 svmMul.setFeat(feat[0])
                 svmMul.setSvmStore(modStore)
                 svmMul.trainMany(trainLabels=trainLabels)
+            elif opt.method == "smlr":
+                import mvpa.datasets
+                from mvpa.clfs.smlr import SMLR
+                mv_data = mvpa.datasets.Dataset(samples=feat[0].get_full_feature_matrix().transpose(),labels=lab[0])
+                clf = SMLR(lm=opt.smlrLm,convergence_tol=opt.smlrConvergenceTol)
+                clf.train(mv_data)
+                makedir(opt.modelRoot)
+                dumpObj(clf,pjoin(opt.modelRoot,"smlr"))
 
         elif opt.mode in ("test","predict"):
             if opt.method == "svm":
@@ -248,6 +278,11 @@ class ClassifierApp(App):
                     labPred[iThresh] = svmMul.classify(thresh=t,useSrm=opt.useSrm)
                     print "Threshold %.3f" % t
                 return Struct(labPred=labPred,param=n.rec.fromarrays([thresh],names="thresh"))
+            elif opt.method == "smlr":
+                clf = loadObj(pjoin(opt.modelRoot,"smlr"))
+                labPred = n.asarray(clf.predict(feat[2].get_full_feature_matrix().transpose()),dtype='i4')
+                labPred.shape = (1,len(labPred))
+                return Struct(labPred=labPred,param=n.rec.fromarrays([thresh[0:1]],names="thresh"))
             elif opt.method == "knn":
                 dist = SparseEuclidianDistance(feat[0],feat[1])
                 mod = KNN(opt.knnK,dist,Labels(lab[0].astype('f8')))
@@ -315,6 +350,12 @@ class ClassifierApp(App):
         self.loadLabels()
         if opt.trainLabels is None:
             trainLabelsAll = self.listAllTrainLabels()
+            # If the method training phase has not been parallelized,
+            # just train immediately in a single process
+            ## @todo Parallelize test/predict modes by splitting the dataset
+            if opt.method not in ["svm"]:
+                if opt.mode == "trainScatter":
+                    opt.numTrainJobs = 1
             if opt.mode == "trainScatter":
                 # I am a dispatch job - split work into sets of labels and dispatch
                 numJobs = min(opt.numTrainJobs,len(trainLabelsAll))

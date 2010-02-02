@@ -14,7 +14,7 @@ class BatchJob(Struct):
     """Description of submitted job"""
     pass
 
-_BatchJobTemplate = \
+_BatchJobTemplateTcsh = \
 """#!/bin/tcsh
 #$$ -hard -P $PROJECT_CODE
 #$$ -l memory=${MEM}M $LLENGTH -l arch="$ARCH"
@@ -23,7 +23,7 @@ _BatchJobTemplate = \
 ## Submit as 'qsub -b n -S /bin/tcsh script_name'. Apparently admins changed the default value of -b to 'y'
 ## and by default qstat now thinks of script_name as a binary file and does not parse it for
 ## embedded options (09/14/07).  Shell NEEDS to be correctly specified both at the top and (?) 
-## in qstat options for the user environment to be correctly sourced.
+## in qsub options for the user environment to be correctly sourced.
 ## echo "Initial environment begin"
 ## printenv | sort
 ## echo "Initial environment end"
@@ -37,6 +37,35 @@ date
 top -b -n 1 | head -n 15
 ####
 """
+
+_BatchJobTemplateBash = \
+"""#!/bin/bash
+#$$ -hard -P $PROJECT_CODE
+#$$ -l memory=${MEM}M $LLENGTH -l arch="$ARCH"
+#$$ -cwd
+#$$ -r n
+## Submit as 'qsub -b n -S /bin/bash script_name'. Apparently admins changed the default value of -b to 'y'
+## and by default qstat now thinks of script_name as a binary file and does not parse it for
+## embedded options (09/14/07).  Shell NEEDS to be correctly specified both at the top and (?) 
+## in qsub options for the user environment to be correctly sourced.
+echo "######### Initial environment begin"
+printenv | sort
+echo "######### Initial environment end"
+## pstree
+## Sourcing .bashrc is not enough - only .profile creates MACHTYPE, on which .environ depends
+source ~/.profile
+${LENVRC}
+echo "########## Execution environment begin"
+printenv | sort
+echo "########## Execution environment end"
+hostname
+uname -a
+pwd
+date
+top -b -n 1 | head -n 15
+####
+"""
+_BatchJobTemplate = _BatchJobTemplateBash
 
 class BatchSubmitter(object):
     
@@ -61,6 +90,12 @@ class BatchSubmitter(object):
         else:
             length = "-l %s" % (length,)
         opts.LLENGTH = length
+        envrc = opts.pop("ENVRC")
+        if envrc is None:
+            envrc = ""
+        else:
+            envrc = "source %s" % (envrc,)
+        opts.LENVRC = envrc
         self.header = varsub(_BatchJobTemplate,**opts.asDict())
         
     def submit(self,cmd,scriptName=None,cwd=None,sleepTime=0,depend=[],dryRun=False):
@@ -87,7 +122,7 @@ class BatchSubmitter(object):
             outScr.close()
             script = self.header + cmd + '\n'
             strToFile(script,scriptName,dryRun=dryRun)
-            qsubCmd = ["qsub", "-b","n","-S","/bin/tcsh"]
+            qsubCmd = ["qsub", "-b","n","-S","/bin/bash"]
             #construct dependency argument if needed
             if len(depend) > 0:
                 depids = []

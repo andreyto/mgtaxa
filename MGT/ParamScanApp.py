@@ -109,9 +109,11 @@ class ParamScanApp(App):
         cvOpt.perfFile = pjoin(cvDir,"perf.pkl")
         cvOpt.mode = "scatter"
         cvOpt.runMode = opt.runMode
+        cvOpt.cwd = cvDir
+        #that just saves a copy for us - App will create its own when it 
+        #submits a batch job (unique and slightly modified)
+        dumpObj(cvOpt,self.getCvOptFileName(idParam))
         cvApp = CrossValidatorApp(opt=cvOpt)
-        kw = kw.copy()
-        kw["cwd"] = cvDir
         return cvApp.run(**kw)
 
     def gather(self,**kw):
