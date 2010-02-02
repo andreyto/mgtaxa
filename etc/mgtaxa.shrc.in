@@ -1,0 +1,14 @@
+export MGT_HOME=__MGT_HOME__
+export MGT_BIN=__MGT_BIN__
+export MGT_EXEC_BIN=__MGT_EXEC_BIN__
+export PYTHONPATH=__MGT_PY_PATH__:${PYTHONPATH}
+export PATH=${PATH}:${MGT_BIN}:${MGT_EXEC_BIN}
+
+#export LD_LIBRARY_PATH=$INSTMACH/lib
+export CA_TOP=${HOME}/work/CA/wgs-assembler
+export CA_BINDIR=${CA_TOP}/Linux-amd64/bin
+export SCM_SRC=${CA_TOP}/src/AS_SCM
+export SVM_TOP=$INSTMACH/svm
+export SVM_LIBLINEAR_BIN=$SVM_TOP/liblinear
+export SVM_LIBSVM_BIN=$SVM_TOP/libsvm
+
