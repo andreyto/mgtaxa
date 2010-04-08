@@ -138,27 +138,6 @@ def applyToFeatData(data,func):
 def isUniqueId(data):
     return len(n.unique1d(data["id"])) == len(data["id"])
 
-class IdMap:
-    """Map of old IDs to new IDs created as a result of e.g. sequence shredding"""
-
-    def __init__(self,records):
-        """Constructor.
-        @param records numpy recarray mapping "oldId" to "id" field, 1-to-N, so that "id" is unique"""
-        self.records = records
-
-    def getRecords(self):
-        return self.records
-
-    def getIdToRec(self):
-        return dict( (rec["id"],rec) for rec in self.records )
-
-    def selByOldId(self,ids):
-        """Return a new IdMap object that contains only records within a given old ids sequence"""
-        ids = set(ids)
-        recs = self.getRecords()
-        ind = n.asarray([ ind for (ind,id) in it.izip(it.count(),recs["oldId"]) if id in ids ],dtype=int)
-        return self.__class__(records=recs[ind])
-
 
 class IdLabels:
     """Maps unique sample IDs into classification labels (many-to-one relationship) and their splits"""
@@ -167,12 +146,14 @@ class IdLabels:
 
     def __init__(self,records=None,fileName=None,initMaps=True):
         """Ctor.
-        @param records Numpy record array with fields id,label,split.
+        @param records Numpy record array with fields id,label,split. Conversion to recarray will be attempted if necessary.
         @param fileName file created by save() call
         @pre Either records or fileName must be None. id field is unique, e.g. obtained with UUID module"""
         assert records is None or fileName is None
         self.data = Struct()
         if records is not None:
+            if not isinstance(records,n.ndarray):
+                records = n.asarray(records,self.defRecDtype())
             self.data.records = n.unique1d(records)
             if initMaps:
                 self.initMaps()

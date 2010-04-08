@@ -6,7 +6,7 @@
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
 
-"""Application interface to creation of features based on k-mer frequences out of biological sequences."""
+"""Application interface to creation of features based on randomization of biological sequences."""
 
 from MGT.Shogun.Util import *
 from shogun.Features import *

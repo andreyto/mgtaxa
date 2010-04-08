@@ -54,7 +54,9 @@ def loadSeqPreprocParseSparse2(lab,seq,id):
 
 class SvmFastaFeatureWriterTxt:
     
-    def __init__(self,out,lineLen=1000):
+    def __init__(self,out,lineLen=None):
+        if lineLen is None:
+            lineLen = 1000
         if not hasattr(out,'write'):
             out = open(out,'w', buffering=1024*1024)
         self.out = out

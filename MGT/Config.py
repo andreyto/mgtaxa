@@ -26,9 +26,9 @@ class MGTOptions:
         self.debugFakeSequence = False
         self.toolName = "MGT"
         self.toolEmail = "atovtchi@jcvi.org"
-        self.tmpDir = "/usr/local/scratch/atovtchi"
-        self.dataDir = "/home/atovtchi/work/mgtdata"
-        self.srcDir = "/home/atovtchi/work/mgtaxa"
+        self.tmpDir = os.environ["MGT_TMP"]
+        self.dataDir = os.environ["MGT_DATA"]
+        self.srcDir = os.environ["MGT_HOME"]
         def _pdata(dir):
             return pjoin(self.dataDir,dir)
         self.homeDir = os.environ["MGT_HOME"]
@@ -122,6 +122,11 @@ class MGTOptions:
                 exe=pjoin(os.environ["INSTMACH"],"app/gt/gt"),
                 sketchConf=pjoin(self.confDir,"gt.sketch.default.style")
                 )
+        self.glimmer3 = Options(
+                topDir="/usr/local/projects/GOSII/atovtchi/phymm/.scripts/.icmCode"
+                )
+        self.glimmer3.immBuildExe=pjoin(self.glimmer3.topDir,"bin","build-icm")
+        self.glimmer3.immScoreExe=pjoin(self.glimmer3.topDir,"bin","simple-score")
 
     def _setTaxaFileNames(self,topDir,sfx=""):
         setattr(self,'taxaDataDir'+sfx,topDir)

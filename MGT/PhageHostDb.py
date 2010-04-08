@@ -6,11 +6,15 @@
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
 
-"""Phage specific taxonomic operations. 
-Mainly searching for the host TaxaTree node based on phage name."""
+"""Classes and methods to build a database of known pairs of bacteriophages and their microbial hosts. 
+This is done by first parsing the available 'host' assignments from NCBI GenBank records, and for the remaining 
+unassigned phages - by extracting the microbial names from the phage names."""
+
+__all__ = ["VirHostParser","PhageHostSeqPicker","loadHosts"]
 
 from MGT.TaxaTree import *
 from Bio import SeqIO
+from Svm import IdLabels
 
 def splitNameToHosts(name):
     """Take a full name, and return a list of diminishing prefixes before 'phage' or 'virus'.
@@ -74,6 +78,8 @@ def splitNamesToHosts(names):
     return sorted(set(candNames))
 
 class VirHostParser:
+    """Class that find phage-host pairs based on GenBank annotation as well as from phage and microbe names alone.
+    The main entry point is assignHostsAndSave()"""
 
     def __init__(self,taxaTree):
         self.taxaTree = taxaTree
@@ -165,7 +171,7 @@ class VirHostParser:
 
     def assignHostsByGbFeat(self,gbFile):
         taxaTree = self.taxaTree
-        inGb = open(gbFile,'r')
+        inGb = openCompressed(gbFile,'r')
         iRec = 0
         iHostRec = 0
         iFoundRec = 0
@@ -273,8 +279,12 @@ def _pickHostPhageSeqs(node,maxSeq=1):
         node.seqPick = random.sample([ s.gi for s in node.seq ],min(maxSeq,len(node.seq)))
 
 class PhageHostSeqPicker:
-    """This class has two modes of operation. First one selects host/virus sequence pairs and can save them.
-    Second one can loads saved pairs for future use."""
+    """From all known known phage-host associations, pick a a stratified set of pairs.
+    Currently, we pick one phage-host pair per microbial genus, wherever available.
+    This is done to have a reasonable hope that a given phage has only a single true microbial host in the resulting set.
+    Thus, all assignments by whatever classification algorithm to a different host can be considered as false positives.
+    This class has two modes of operation. First one selects host/virus sequence pairs and can save them.
+    Second one can load saved pairs into memory."""
 
     def __init__(self,taxaTree):
         """Constructor.
@@ -453,14 +463,34 @@ class PhageHostSeqPicker:
         self.picks = picks
         self.seqHosts = self.seqHostPairsToMap(pairs=pairs)
 
-    def saveSeqIds(self,out,maxMicLen=500000,maxVirLen=-1):
+    def saveSeqIds(self,out):
+        """Save a set of all (microbial and viral) sequence IDs (GIs) selected by pickPairs().
+        This is for pulling all relevant sequences into internal representation."""
         picks = self.picks
         mics = set( ( x[0] for x in picks ) )
         virs = set( ( x[1] for x in picks ) )
+        nodes = mics + virs
         seqIds = []
-        for (pickSet,maxLen) in zip((mics,virs),(maxMicLen,maxVirLen)):
-            for node in pickSet:
-                for gi in node.seqPick:
-                    seqIds.append(Struct(gi=gi,maxLen=maxLen,id=node.id))
-        dumpObj(seqIds,out)
+        for node in nodes:
+            seqIds += node.seqPick
+        dumpObj(set(seqIds),out)
+
+    def makeIdLabsPicks(self,div="all"):
+        """Return IdLables(gi->taxid) object for microbial, viral or all sequences selected by pickPairs()"""
+        picks = self.picks
+        mics = set( ( x[0] for x in picks ) )
+        virs = set( ( x[1] for x in picks ) )
+        if div == "mic":
+            nodes = mics
+        elif div == "vir":
+            nodes = virs
+        elif div == "all":
+            nodes = mics | virs
+        else:
+            raise ValueError(div)
+        idToTaxid = []
+        for node in nodes:
+            idToTaxid += [ (idSeq,node.id,0) for idSeq in node.seqPick ]
+        return IdLabels(records=idToTaxid)
+
 

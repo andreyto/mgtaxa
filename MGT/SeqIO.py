@@ -11,6 +11,7 @@ from MGT.Util import *
 from MGT.Svm import *
 
 def pullNCBISeqIds(inSeqs,seqIds,outSeq):
+    """Depricated: use SeqImportApp"""
     writer = SvmStringFeatureWriterTxt(outSeq)
     for seqId in seqIds:
         seqId.seqFound = False

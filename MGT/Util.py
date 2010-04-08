@@ -163,12 +163,18 @@ def makeTmpFile(*l,**kw):
 
 def strToFile(s,fileName,mode="w",dryRun=False):
     if not dryRun:
-        out = open(fileName,mode)
+        out = openCompressed(fileName,mode)
         out.write(s)
         out.close()
     else:
         print "Write to file %s mode %s:" % (fileName,mode)
         print s
+
+def fileToStr(fileName):
+    inp = openCompressed(fileName,"r")
+    s = inp.read()
+    inp.close()
+    return s
 
 def fileSync(f):
     """Flush both user and kernel buffers of an open file object.

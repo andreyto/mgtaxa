@@ -103,6 +103,13 @@ class Struct(object):
             if key in o:
                 s[key] = o[key]
 
+    def setIfUndef(self,key,val):
+        """Set key to val if the current value is None or no key exists"""
+        if self.get(key,None) is None:
+            self[key] = val
+        return self[key]
+
+
     def asDict(self):
         return self.__dict__
 

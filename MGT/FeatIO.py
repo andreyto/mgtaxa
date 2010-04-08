@@ -17,11 +17,13 @@ def SvmSparseFeatureWriter(out,outId=None,format=defFeatIOFormat):
     else:
         raise ValueError(format)
 
-def SvmStringFeatureWriter(out,outId=None,format=defFeatIOFormat):
+def SvmStringFeatureWriter(out,outId=None,format=defFeatIOFormat,lineLen=None):
     if format == "txt":
         return SvmStringFeatureWriterTxt(out=out,outId=outId)
     elif format == "pkl":
-        return  SvmFeatureWriterPkl(out=out,outId=outId)
+        return SvmFeatureWriterPkl(out=out,outId=outId)
+    elif format == "fasta":
+        return SvmFastaFeatureWriterTxt(out=out,lineLen=lineLen)
     else:
         raise ValueError(format)
 
@@ -40,6 +42,27 @@ class LoadSeqPreprocIdFilter:
         else:
             return None
     
+class IdMap:
+    """Map of old IDs to new IDs created as a result of e.g. sequence shredding"""
+
+    def __init__(self,records):
+        """Constructor.
+        @param records numpy recarray mapping "oldId" to "id" field, 1-to-N, so that "id" is unique"""
+        self.records = records
+
+    def getRecords(self):
+        return self.records
+
+    def getIdToRec(self):
+        return dict( (rec["id"],rec) for rec in self.records )
+
+    def selByOldId(self,ids):
+        """Return a new IdMap object that contains only records within a given old ids sequence"""
+        ids = set(ids)
+        recs = self.getRecords()
+        ind = n.asarray([ ind for (ind,id) in it.izip(it.count(),recs["oldId"]) if id in ids ],dtype=int)
+        return self.__class__(records=recs[ind])
+
 class LoadSeqPreprocShred:
 
     def __init__(self,sampLen,sampNum=0,sampOffset=0,makeUniqueId=False):
@@ -123,10 +146,17 @@ def loadSeqs(inpFile,preProc=loadSeqPreprocIdent,inpFileId=None,genMissingId=Fal
             seqs.extend(rec[1])
             ids.extend(rec[2])
         iLine += 1
-    label = n.asarray(labs,dtype=labelDtype)
-    feature = n.asarray(seqs,dtype='O')
-    id = n.asarray(ids,dtype=idDtype)
-    data = n.rec.fromarrays((label,feature,id),names='label,feature,id')
+    dtype=[('label',labelDtype),('feature','O'),('id',idDtype)]
+    data = n.empty(len(labs),dtype=dtype)
+    data["label"] = labs
+    data["feature"] = seqs
+    data["id"] = ids
+    # The following code did not work because 'feature' was promoted by 'asarray()' to 2D type 'O' array every time
+    # when each record of 'seqs' has equal size.
+    #label = n.asarray(labs,dtype=labelDtype)
+    #feature = n.asarray(seqs,dtype='O')
+    #id = n.asarray(ids,dtype=idDtype)
+    #data = n.rec.fromarrays((label,feature,id),) #names='label,feature,id')
     return data
 
 def convFeat(data,preProc):
@@ -229,8 +259,8 @@ def convSeqsToSparseInPlace(data):
 def loadSparseSeqsAsDense(inpFile,inpFileId=None):
     return sparseToDenseSeqs(loadSparseSeqs(inpFile,inpFileId))
 
-def saveSeqs(data,outFile,outFileId=None,format=defFeatIOFormat):
-    writer = SvmStringFeatureWriter(out=outFile,outFileId=outId,format=format)
+def saveSeqs(data,outFile,outFileId=None,format=defFeatIOFormat,lineLen=None):
+    writer = SvmStringFeatureWriter(out=outFile,outId=outFileId,format=format,lineLen=lineLen)
     for rec in data:
         writer.write(label=rec["label"],feature=rec["feature"],id=rec["id"])
     if isinstance(outFile,str):

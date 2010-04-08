@@ -9,7 +9,8 @@
 """Convenience methods to make it easier to run external programs"""
 
 from subprocess import Popen, call, PIPE
-import os
+import os,glob
+import shlex
 
 defineCalledProcessError = False
 try:
@@ -33,7 +34,7 @@ def run(*popenargs, **kwargs):
         print popenargs
     else:
         # convert something like run("ls -l") into run("ls -l",shell=True)
-        if isinstance(popenargs[0],str) and len(popenargs[0].split()) > 1:
+        if isinstance(popenargs[0],str) and len(shlex.split(popenargs[0])) > 1:
             kw.setdefault("shell",True)
         try:
             _gdebug = options.debug
@@ -85,10 +86,11 @@ def rmdir(path,dryRun=False):
 rmrf = rmdir
 
 def rmf(path,dryRun=False):
-    try:
-        os.remove(path)
-    except OSError:
-        pass
+    for f in glob.iglob(path):
+        try:
+            os.remove(f)
+        except OSError:
+            pass
 
 def chmod(path,mode,opts='',dryRun=False):
     if isinstance(path,basestring):

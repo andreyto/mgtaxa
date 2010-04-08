@@ -128,7 +128,7 @@ class CrisprApp(App):
         opt.minSpacerLen = 20
         opt.maxSpacerLen = 60
         opt.minSpacerNum = 3
-        workDir = os.environ["GOS_WORK"]
+        workDir = options.dataDir #os.environ["GOS_WORK"]
         opt.topWorkDir = workDir
         opt.crArrSeqDir = pjoin(workDir,"scaf-crispr")
         opt.crArrDir = pjoin(workDir,"scaf-piler")

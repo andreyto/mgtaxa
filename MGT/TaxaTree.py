@@ -532,6 +532,9 @@ class TaxaTree(object):
     def setReduction(self,extractor,dstAttr,reduction=None,condition=None):
         self.getRootNode().setReduction(extractor,dstAttr,reduction,condition)
 
+    def setMaxSubtreeRank(self):
+        self.getRootNode().setMaxSubtreeRank()
+
     def getNode(self,id):
         return self.nodes[id]
 
@@ -630,6 +633,7 @@ class TaxaTree(object):
 
 
     def makeNameIndex(self):
+        """Build a map(name->node)"""
         nameInd = {}
         namesInd = {}
         for node in self.iterDepthTop():
@@ -650,14 +654,31 @@ class TaxaTree(object):
         self.emptyList = []
 
     def searchName(self,name):
+        """Lookup a node by its official name.
+        @return list of nodes with a given name (can be a reference to internal empty list if nothing was found)
+        @post Can lazy-build the names index the first time its called"""
         try:
-            return self.nameInd[name.lower()]
+            nameInd = self.nameInd
+        except AttributeError:
+            self.makeNameIndex()
+            nameInd = self.nameInd
+        try:
+            return nameInd[name.lower()]
         except KeyError:
             return self.emptyList
 
     def searchNames(self,name):
+        """Lookup a node by its official or any of the alternative names.
+        @return list of nodes with a given name (can be a reference to internal empty list if nothing was found)
+        @pre TaxaTree was loaded with all names.
+        @post Can lazy-build the names index the first time its called"""
         try:
-            return self.namesInd[name.lower()]
+            namesInd = self.namesInd
+        except AttributeError:
+            self.makeNameIndex()
+            namesInd = self.namesInd
+        try:
+            return namesInd[name.lower()]
         except KeyError:
             return self.emptyList
 

@@ -192,7 +192,8 @@ class SampStore(DirStore):
     def fromPreProc(self,inpSamp,preProc):
         data = loadSeqs(inpFile=inpSamp,preProc=preProc)
         saveSeqs(data,self.getSampFilePath())
-        self.saveObj(preProc.getIdMap(),self.idMapName)
+        if hasattr(preProc,"getIdMap"):
+            self.saveObj(preProc.getIdMap(),self.idMapName)
 
     def loadIdMap(self):
         return self.loadObj(self.idMapName)
@@ -203,6 +204,18 @@ class SampStore(DirStore):
     def featStore(self,name,**kw):
         return self.subStore(name=name,klass=FeatStore,**kw)
 
+    def makeShredStore(self,name,shredOpt={},**kw):
+        store = self.subStore(name=name,mode="c",**kw)
+        shredOpt["makeUniqueId"] = True
+        store.fromPreProc(inpSamp=self.getSampFilePath(),
+                preProc=LoadSeqPreprocShred(**shredOpt))
+        store.makeIdLabs(idLabsSrc=self.loadIdLabs(),action="idmap")
+        return store
+
+    def exportFasta(self,name,lineLen=None):
+        data = loadSeqs(self.getSampFilePath())
+        saveSeqs(data,outFile=self.getFilePath(name),format="fasta",lineLen=lineLen)
+    
     def featStores(self,pattern="*"):
         for x in self.stores(pattern=pattern,klass=FeatStore):
             yield x

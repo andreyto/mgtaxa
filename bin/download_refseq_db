@@ -16,8 +16,8 @@ mkdir -p $dldir
 
 topUrl=ftp://ftp.ncbi.nlm.nih.gov/refseq/release
 
-#orgGroups="microbial protozoa viral"
-orgGroups="protozoa viral"
+orgGroups="microbial protozoa viral"
+#orgGroups="protozoa viral"
 
 for name in $orgGroups; do
 	cd $dldir && \

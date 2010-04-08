@@ -26,6 +26,8 @@ class SeqImportApp(App):
             dest="mode",default="default"),
             make_option("-i", "--in-seq",
             action="append", type="string",dest="inSeq"),
+            make_option("-g", "--in-seq-ids",
+            action="store", type="string",dest="inSeqIds",help="Only load sequences with IDs from this file"),
             make_option("-o", "--out-feat",
             action="store", type="string",dest="outFeat",default="samp"),
             make_option("-l", "--min-len",
@@ -47,22 +49,29 @@ class SeqImportApp(App):
         outFeat = self.store.getFilePath(opt.outFeat)
         for inFile in opt.inSeq:
             assert not isSamePath(inFile,outFeat)
+        inpSeqIds = opt.inSeqIds
+        if inpSeqIds is not None:
+            inpSeqIds = set(loadObj(inpSeqIds))
         svmWriter = SvmStringFeatureWriter(outFeat)
         for inFile in opt.inSeq:
-            self.fastaToSvm(inFileFasta=inFile,svmWriter=svmWriter,opt=opt)
+            self.fastaToSvm(inFileFasta=inFile,svmWriter=svmWriter,inpSeqIds=inpSeqIds,opt=opt)
         svmWriter.close()
 
 
-    def fastaToSvm(self,inFileFasta,svmWriter,opt):
+    def fastaToSvm(self,inFileFasta,svmWriter,inpSeqIds,opt):
         inpSeq = FastaReader(inFileFasta)
         if opt.degenLen >= 0:
             symCompr = SymbolRunsCompressor('N',opt.degenLen)
         else:
             symCompr = lambda s: s
         if opt.inFormat == "gos":
-            meta, allLen = self.gosToSvm(inpSeq,svmWriter,symCompr,opt)
+            meta, allLen = self.gosToSvm(inpSeq,svmWriter,symCompr,inpSeqIds,opt)
         elif opt.inFormat == "ca":
-            meta, allLen = self.caToSvm(inpSeq,svmWriter,symCompr,opt)
+            meta, allLen = self.caToSvm(inpSeq,svmWriter,symCompr,inpSeqIds,opt)
+        elif opt.inFormat == "ncbi":
+            meta, allLen = self.ncbiToSvm(inpSeq,svmWriter,symCompr,inpSeqIds,opt)
+        else:
+            raise ValueError(opt.inFormat)
         inpSeq.close()
         print "Saved %i samples out of %i total from file %s" % (len(meta.samp),len(allLen),inFileFasta)
         lenHist = numpy.histogram(allLen,bins=numpy.arange(0,allLen.max()+100,100,dtype='f8'))
@@ -70,7 +79,7 @@ class SeqImportApp(App):
         ## @todo move saving of meta outside of loop or make file name unique
         #self.store.saveObj(meta,opt.outFeat+".meta")
 
-    def gosToSvm(self,inpSeq,svmWriter,symCompr,opt):
+    def gosToSvm(self,inpSeq,svmWriter,symCompr,inpSeqIds,opt):
         fldDtype=[("id","i8"),("id_mate","i8"),("forward",bool),("len_lib","i4"),("len_samp","i4"),("library_id","S40")]
         fldValues = []
         allLen = []
@@ -82,21 +91,24 @@ class SeqImportApp(App):
             pairs = [ (pair[0].split('/')[1],pair[1]) for pair in 
                     ( part.split('=') for part in parts[1:] ) ]
             pairs = dict(pairs)
-            seq = symCompr(rec.sequence(format="array")[int(pairs["clr_range_begin"]):int(pairs["clr_range_end"])])
-            lenSeq = len(seq)
-            if lenSeq >= opt.minSampLen:
-                library_id = pairs["library_id"].split("JCVI_LIB_")[1]
-                metaRec = ( id_read,
-                            int(pairs["mate"]),
-                            pairs["sequencing_direction"] == "forward",
-                            int(pairs["library_id"].split("-")[-1].split("KB")[0])*1000,
-                            lenSeq,
-                            library_id )
-                fldValues.append(metaRec)
-                if opt.prefixId:
-                    id_read = "%s_%s" % (library_id,id_read)
-                svmWriter.write(0,seq,id_read)
-            allLen.append(lenSeq)
+            if opt.prefixId:
+                id = "%s_%s" % (library_id,id_read)
+            else:
+                id = id_read
+            if inpSeqIds is None or id in inpSeqIds:
+                seq = symCompr(rec.sequence(format="array")[int(pairs["clr_range_begin"]):int(pairs["clr_range_end"])])
+                lenSeq = len(seq)
+                if lenSeq >= opt.minSampLen:
+                    library_id = pairs["library_id"].split("JCVI_LIB_")[1]
+                    metaRec = ( id_read,
+                                int(pairs["mate"]),
+                                pairs["sequencing_direction"] == "forward",
+                                int(pairs["library_id"].split("-")[-1].split("KB")[0])*1000,
+                                lenSeq,
+                                library_id )
+                    fldValues.append(metaRec)
+                    svmWriter.write(0,seq,id)
+                allLen.append(lenSeq)
             if iRec % 1000 == 0:
                 print "Processed %i records" % iRec
             iRec += 1
@@ -105,7 +117,7 @@ class SeqImportApp(App):
         meta = Struct(samp=sampMeta)
         return meta,allLen
 
-    def caToSvm(self,inpSeq,svmWriter,symCompr,opt):
+    def caToSvm(self,inpSeq,svmWriter,symCompr,inpSeqIds,opt):
         fldDtype=[("id","i8"),("len_samp","i4")]
         fldValues = []
         allLen = []
@@ -113,13 +125,14 @@ class SeqImportApp(App):
         for rec in inpSeq.records():
             hdr = rec.header()
             id = int(hdr.split(">scf")[1])
-            seq = symCompr(rec.sequence(format="array"))
-            lenSeq = len(seq)
-            if lenSeq >= opt.minSampLen:
-                svmWriter.write(0,seq,id)
-                fldValues.append((id,
-                            lenSeq))
-            allLen.append(lenSeq)
+            if inpSeqIds is None or id in inpSeqIds:
+                seq = symCompr(rec.sequence(format="array"))
+                lenSeq = len(seq)
+                if lenSeq >= opt.minSampLen:
+                    svmWriter.write(0,seq,id)
+                    fldValues.append((id,
+                                lenSeq))
+                allLen.append(lenSeq)
             if iRec % 1000 == 0:
                 print "Processed %i records" % iRec
             iRec += 1
@@ -128,6 +141,28 @@ class SeqImportApp(App):
         meta = Struct(samp=sampMeta)
         return meta,allLen
 
+    def ncbiToSvm(self,inpSeq,svmWriter,symCompr,inpSeqIds,opt):
+        fldDtype=[("id","i8"),("len_samp","i4")]
+        fldValues = []
+        allLen = []
+        iRec = 0
+        for rec in inpSeq.records():
+            id = rec.getNCBI_GI()
+            if inpSeqIds is None or id in inpSeqIds:
+                seq = symCompr(rec.sequence(format="array"))
+                lenSeq = len(seq)
+                if lenSeq >= opt.minSampLen:
+                    svmWriter.write(0,seq,id)
+                    fldValues.append((id,
+                                lenSeq))
+                allLen.append(lenSeq)
+            if iRec % 1000 == 0:
+                print "Processed %i records" % iRec
+            iRec += 1
+        sampMeta = numpy.asarray(fldValues,dtype=fldDtype)
+        allLen = numpy.asarray(allLen,dtype='i4')
+        meta = Struct(samp=sampMeta)
+        return meta,allLen
 
 if __name__ == "__main__":
     #Allow to call this as script

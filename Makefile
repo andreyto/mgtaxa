@@ -6,17 +6,27 @@
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
 ## Installation directories.
+
 ## We support a "home" type installation,
 ## where everything for our application is installed under
-## application's own subdirectory 
+## application's own subdirectory, except for the 'datadir'.
 ## (or possibly two - one for arch dependent and another for arch independent files).
 ## This makes it easier to create test installs as opposed to
 ## "prefix" type installation (where executables for all applications go
 ## into a single common prefix/bin etc). The installation variables
 ## are still called 'prefix' and such, and are low case.
 
+# Software will be installed here
 prefix := $(INST)/mgtaxa
+
+# Data files will be stored here
+datadir := $(GOSII_WORK)
+
+# Temporary files will be stored here
+tmpdir := /usr/local/scratch/$(USER)/mgtaxa
+
 exec_prefix := $(INSTMACH)/mgtaxa
+
 ## Scripts go here
 bindir := $(prefix)/bin
 ## Binary executables go here
@@ -45,7 +55,8 @@ MAKE := make
 AR := $(shell which ar)
 ARFLAGS := -rvs
 DOXYGEN := $(INST)/x86_32/bin/doxygen
-CPR := cp -dR
+#CPR := cp -dR
+CPR := $(shell which rsync) -av
 MKDIRP := mkdir -p
 RMRF := rm -rf
 MAKEDEPEND = $(MKDIRP) $(DEP_DIR); $(CXX) $(CXXFLAGS) $(EXTRA_CXXFLAGS) -MM -o $(DEP_DIR)/$*.d $<
@@ -209,23 +220,11 @@ clean:
 	$(RMRF) $(DOC_DIR)/html $(DOC_DIR)/tex
 
 
-mgtaxa.cshrc: $(PROJ_DIR)/etc/mgtaxa.cshrc.in
-	sed -e 's|__MGT_HOME__|$(prefix)|' \
-	    -e 's|__MGT_BIN__|$(bindir)|' \
-	    -e 's|__MGT_EXEC_BIN__|$(exec_bindir)|' \
-	    -e 's|__MGT_PY_PATH__|$(prefix):$(libdir)|' \
-	    $(PROJ_DIR)/etc/mgtaxa.cshrc.in > $@ || rm $@
-
-mgtaxa.insrc.cshrc: $(PROJ_DIR)/etc/mgtaxa.cshrc.in
-	sed -e 's|__MGT_HOME__|$(PROJ_DIR)|' \
-	    -e 's|__MGT_BIN__|$(BUILD_DIR)|' \
-	    -e 's|__MGT_EXEC_BIN__|$(BUILD_DIR)|' \
-	    -e 's|__MGT_PY_PATH__|$(PROJ_DIR):$(BUILD_DIR)|' \
-	    $(PROJ_DIR)/etc/mgtaxa.cshrc.in > $@ || rm $@
-
 mgtaxa.shrc: $(PROJ_DIR)/etc/mgtaxa.shrc.in
 	sed -e 's|__MGT_HOME__|$(prefix)|' \
 	    -e 's|__MGT_BIN__|$(bindir)|' \
+	    -e 's|__MGT_DATA__|$(datadir)|' \
+	    -e 's|__MGT_TMP__|$(tmpdir)|' \
 	    -e 's|__MGT_EXEC_BIN__|$(exec_bindir)|' \
 	    -e 's|__MGT_PY_PATH__|$(prefix):$(libdir)|' \
 	    -e 's|__MGT_RC__|$(sysconfdir)/mgtaxa.shrc|' \
@@ -234,6 +233,8 @@ mgtaxa.shrc: $(PROJ_DIR)/etc/mgtaxa.shrc.in
 mgtaxa.insrc.shrc: $(PROJ_DIR)/etc/mgtaxa.shrc.in
 	sed -e 's|__MGT_HOME__|$(PROJ_DIR)|' \
 	    -e 's|__MGT_BIN__|$(BUILD_DIR)|' \
+	    -e 's|__MGT_DATA__|$(datadir)|' \
+	    -e 's|__MGT_TMP__|$(tmpdir)|' \
 	    -e 's|__MGT_EXEC_BIN__|$(BUILD_DIR)|' \
 	    -e 's|__MGT_PY_PATH__|$(PROJ_DIR):$(BUILD_DIR)|' \
 	    -e 's|__MGT_RC__|$(BUILD_DIR)/mgtaxa.insrc.shrc|' \

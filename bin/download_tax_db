@@ -6,7 +6,7 @@
 #
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
-
+# makegitax.py needs 4G+ RAM, or it will thrash and take forever
 
 curdir=`pwd`
 
@@ -29,6 +29,7 @@ wget -v "$ftpdir/gi_taxid_prot.dmp.gz" && \
 wget -v "$ftpdir/taxcat.tar.gz" && \
 tar -zxf taxcat.tar.gz && \
 rm taxcat.tar.gz && \
+python $MGT_HOME/bin/makegitax.py -i gi_taxid_* -o gi_taxid.pkl.gz && \
 cd $curdir && \
 rm -rf $bakdir && \
 mv $dbdir $bakdir && \
