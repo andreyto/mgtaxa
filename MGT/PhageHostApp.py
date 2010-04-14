@@ -66,9 +66,6 @@ class PhageHostApp(App):
         opt = self.opt
         self.taxaTree = None #will be lazy-loaded
         self.store = SampStore.open(path=self.opt.get("cwd",os.getcwd()))
-        self.tmpDir = self.store.getFilePath("tmp")
-        makedir(self.tmpDir)
-   
 
     def doWork(self,**kw):
         self.init()

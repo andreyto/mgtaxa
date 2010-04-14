@@ -254,8 +254,12 @@ def openCompressed(filename,mode,compressFormat=None,**kw):
 
 def openGzip(filename,mode,compresslevel=6):
     compresslevel = int(compresslevel)
-    if mode in ("w","wb"):
-        return Popen("gzip -%s > %s" % (compresslevel,filename), shell=True, env=os.environ, bufsize=2**16, stdin=PIPE, close_fds=True).stdin
+    if mode in ("w","wb","a","ab"):
+        if mode in ("w","wb"):
+            redir = ">"
+        elif mode in ("a","ab"):
+            redir = ">>"
+        return Popen("gzip -%s %s %s" % (compresslevel,redir,filename), shell=True, env=os.environ, bufsize=2**16, stdin=PIPE, close_fds=True).stdin
     elif mode in ("r","rb"):
         return Popen(("gzip -cd %s" % (filename,)).split(),env=os.environ, bufsize=2**16, stdout=PIPE, close_fds=True).stdout
     else:

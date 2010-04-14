@@ -130,8 +130,15 @@ class DirStore:
 
     def objNames(self,pattern="*"):
         for path in glob.iglob(self.getFilePath(pattern+self.objExt)):
-            yield os.path.basename(path)
+            yield stripSfx(os.path.basename(path),self.objExt)
 
+    def fileNames(self,pattern="*",sfxStrip=None):
+        for path in glob.iglob(self.getFilePath(pattern)):
+            f = os.path.basename(path)
+            if sfxStrip is not None:
+                f = stripSfx(f,sfxStrip)
+            yield f
+    
     def storeNames(self,pattern="*"):
         for path in glob.iglob(self.getFilePath(pattern)):
             if self.isStore(path):

@@ -28,7 +28,7 @@ class MGTOptions:
         self.toolEmail = "atovtchi@jcvi.org"
         self.tmpDir = os.environ["MGT_TMP"]
         self.dataDir = os.environ["MGT_DATA"]
-        self.srcDir = os.environ["MGT_HOME"]
+        self.srcDir = "/home/atovtchi/work/mgtaxa"
         def _pdata(dir):
             return pjoin(self.dataDir,dir)
         self.homeDir = os.environ["MGT_HOME"]

@@ -6,81 +6,48 @@
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
 
-"""Application for building collections of IMMs/ICMs"""
+"""Application for building collections of IMMs/ICMs and scoring against them"""
 
 from MGT.Imm import *
 from MGT.Taxa import *
 from MGT.Svm import *
 from MGT.App import *
 from MGT.DirStore import *
+from MGT.SeqDbFasta import *
 import UUID
-from MGT.SeqImportApp import *
 
 class ImmApp(App):
-    """App-derived class for building collections of IMMs/ICMs"""
+    """App-derived class for building collections of IMMs/ICMs and scoring against them"""
 
-    #batchDepModes = ("blastcr","pilercr")
+    batchDepModes = ("score","train")
 
     maxSeqIdLen = UUID.maxIdLen
     maxSeqPartIdLen = UUID.maxIdLen
 
-    @classmethod
-    def makeOptionParserArgs(klass):
-        from optparse import make_option
-        optChoicesMode = ("build-db-ph","sel-db-ph-pairs","shred-vir-test","predict")
-        option_list = [
-            make_option("-m", "--mode",
-            action="store", type="choice",choices=optChoicesMode,
-            dest="mode",default="predict",help=("What to do, choice of %s, default is %%default" % (optChoicesMode,))),
-            make_option(None, "--db-gb-inp",
-            action="store", type="string",dest="dbGbInp",help="Input viral GenBank file for phage-host DB construction"),
-            make_option(None, "--db-ph",
-            action="store", type="string",default="ph",dest="dbPh",help="DB of known phage-host pairs created and used here"),
-            make_option(None, "--db-seq",
-            action="append", type="string",dest="dbSeqInp",help="Input DB (e.g. RefSeq) FASTA sequence files for both microbes "+\
-                    "and viruses referenced by phage-host pairs DB. It can be a subset of superset of p-h DB."),
-            make_option(None, "--db-ph-pairs",
-            action="store", type="string",default="ph-pairs",dest="dbPhPairs",help="Stratified phage-host pairs from DB phage-host"),
-            make_option(None, "--db-ph-pairs-seq-ids",
-            action="store", type="string",default="ph-pairs-seq-ids",dest="dbPhPairsSeqIds",help="Sequence IDs for db-ph-pairs - "+\
-                    "intermediate file used to pull all sequences from the original FASTA files into db-ph-pairs-seq"),
-            make_option(None, "--db-ph-pairs-seq",
-            action="store", type="string",default="ph-pairs-seq",dest="dbPhPairsSeq",help="Sequences for db-ph-pairs in our "+\
-                    "internal format"),
-            make_option(None, "--shred-size-vir-test",
-            action="store", type="int",default=400,dest="shredSizeVirTest",help="Shred DB viral samples into this size for testing"),
-        ]
-        return Struct(usage = "Build phage-host association database, classifiers, and perform training, validation and de novo classification.\n"+\
-                "%prog [options]",option_list=option_list)
+    immSfx = ".imm"
+    scoreSfx = ".score.pkl.gz"
 
-    
-    @classmethod
-    def parseCmdLinePost(klass,options,args,parser):
-        opt = options
-        refSeqDir = globals()["options"].refSeqDataDir
-        opt.setIfUndef("dbGbInp",pjoin(refSeqDir,"viral.genomic.gbff.gz"))
-        opt.setIfUndef("dbSeqInp",[ pjoin(refSeqDir,div+".genomic.fna.gz") for div in ("microbial","viral")])
-   
 
     def init(self):
         opt = self.opt
         self.taxaTree = None #will be lazy-loaded
+        self.seqDb = None #will be lazy-loaded
         self.store = SampStore.open(path=self.opt.get("cwd",os.getcwd()))
-        self.tmpDir = self.store.getFilePath("tmp")
-        makedir(self.tmpDir)
    
 
     def doWork(self,**kw):
         self.init()
         opt = self.opt
-        if opt.mode == "build-db-ph":
-            return self.buildDbPhageHost()
-        elif opt.mode == "sel-db-ph-pairs":
-            return self.selectPhageHostPairs()
-        elif opt.mode == "shred-vir-test":
-            return self.shredVirTest()
-        elif opt.mode == "predict":
-            return self.predict()
+        if opt.mode == "train":
+            return self.trainMany(**kw)
+        elif opt.mode == "train-one":
+            return self.trainOne(**kw)
+        elif opt.mode == "score":
+            return self.scoreMany(**kw)
+        elif opt.mode == "score-one":
+            return self.scoreOne(**kw)
+        elif opt.mode == "combine-scores":
+            return self.combineScores(**kw)
         else:
             raise ValueError("Unknown opt.mode value: %s" % (opt.mode,))
 
@@ -88,6 +55,12 @@ class ImmApp(App):
         if self.taxaTree is None:
             self.taxaTree = loadTaxaTree()
         return self.taxaTree
+
+    def getSeqDb(self):
+        opt = self.opt
+        if self.seqDb is None:
+            self.seqDb = SeqDbFasta.open(opt.seqDb) #"r"
+            return self.seqDb
 
     def trainOne(self,**kw):
         """Train and save one IMM.
@@ -100,7 +73,7 @@ class ImmApp(App):
         immSeqIds = opt.immSeqIds
         store = self.store
         seqDb = self.getSeqDb()
-        imm = Imm(path=store.getFilePath("%s.imm" % immId))
+        imm = Imm(path=store.getFilePath("%s%s" % (immId,self.immSfx)))
         inp = imm.train()
         seqDb.writeFasta(ids=immSeqIds,out=inp)
         inp.close()
@@ -113,13 +86,13 @@ class ImmApp(App):
         """
         opt = self.opt
         jobs = []
-        for (immId,immSeqIds) in sorted(opt.immIdToSeqIds.items()):
+        for (immId,immSeqIds) in sorted(loadObj(opt.immIdToSeqIds).items()):
             immOpt = copy(opt)
             immOpt.mode = "train-one"
             immOpt.immId = immId
             immOpt.immSeqIds = immSeqIds
             immApp = ImmApp(opt=immOpt)
-            jobs.append(immApp.run(**kw))
+            jobs += immApp.run(**kw)
         return jobs
 
     def scoreOne(self,**kw):
@@ -134,7 +107,7 @@ class ImmApp(App):
         inpFastaFile = opt.inpSeq
         outScoreFile = opt.outScore
         store = self.store
-        imm = Imm(path=store.getFilePath("%s.imm" % immId))
+        imm = Imm(path=store.getFilePath("%s%s" % (immId,self.immSfx)))
         scores = imm.score(inp=inpFastaFile)
         dumpObj(scores,outScoreFile)
         imm.flush()
@@ -145,19 +118,50 @@ class ImmApp(App):
         @param immIds List of IMM IDs to score with
         @param inpSeq Name of the input multi-FASTA file to score
         @param outDir Directory name for output score files
+        @param outScoreComb name for output file with combined scores
         """
         opt = self.opt
         makedir(opt.outDir)
-        rmf(pjoin(opt.outDir,"*.score.gz"))
+        rmf(pjoin(opt.outDir,"*"+self.scoreSfx))
         jobs = []
         for immId in opt.immIds:
             immOpt = copy(opt)
             immOpt.mode = "score-one"
             immOpt.immId = immId
-            immOpt.outScore = pjoin(opt.outDir,"%s.score.gz" % immId)
+            immOpt.outScore = pjoin(opt.outDir,"%s%s" % (immId,self.scoreSfx))
             immApp = ImmApp(opt=immOpt)
-            jobs.append(immApp.run(**kw))
+            jobs += immApp.run(**kw)
+        coOpt = copy(opt)
+        coOpt.mode = "combine-scores"
+        coApp = self.factory(opt=coOpt)
+        kw = kw.copy()
+        kw["depend"] = jobs
+        jobs = coApp.run(**kw)
         return jobs
+
+    def combineScores(self,**kw):
+        """Combine scores as a final stage of scoreMany().
+        Parameters are taken from self.opt
+        @param immIds List of IMM IDs to score with
+        @param outDir Directory name for output score files
+        @param outScoreComb name for output file with combined scores
+        """
+        opt = self.opt
+        scores = None
+        idScores = None
+        for (iImm,immId) in enumerate(opt.immIds):
+            inpScoreFile = pjoin(opt.outDir,"%s%s" % (immId,self.scoreSfx))
+            score = loadObj(inpScoreFile)
+            if scores is None:
+                scores = n.resize(score["score"],(len(score),len(opt.immIds)))
+                idScores = score["id"].copy()
+            else:
+                assert n.all(idScores == score["id"])
+            scores[:,iImm] = score["score"]
+        dumpObj(ImmScores(idImms=opt.immIds,idScores=idScores,scores=scores),opt.outScoreComb)
+    
+    def listImmIds(self):
+        return list(self.store.fileNames(pattern="*"+self.immSfx,sfxStrip=self.immSfx))
 
 if __name__ == "__main__":
     #Allow to call this as script

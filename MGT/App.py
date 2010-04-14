@@ -53,7 +53,7 @@ class App:
         Dispatches the work execution or batch submission depending on the options.
         @return list of sink BatchJob objects (if executed syncroniously, an empty list)"""
         opt = self.opt
-        runMode = self.ajustRunMode(**kw)
+        runMode = self._ajustRunMode(**kw)
         if runMode == "batch":
             return self.runBatch(**kw)
         elif runMode in ("inproc","batchDep"):
@@ -71,14 +71,14 @@ class App:
         else:
             raise ValueError(runMode)
 
-    def ajustRunMode(self,**kw):
+    def _ajustRunMode(self,**kw):
         opt = self.opt
         runMode = opt.runMode
         runMode = kw.get("runMode",runMode) #keyword overrides just for this instance
         if options.app.runMode not in ("default","batch","batchDep"):
             #we get infinite loop with any "batch*"
             runMode = options.app.runMode
-        depend = kw.get("depend",None)
+        depend = self._ajustDepend(**kw)
         if depend is not None and len(depend) > 0:
             #we can only run as "batch" or "batchDep" if we need to wait for dependency jobs
             #@todo make the current process to poll qstat at this location
@@ -92,6 +92,11 @@ class App:
             opt.batchResume = False
         return runMode
 
+    def _ajustDepend(self,**kw):
+        """squash all None is 'depend' list. "None" can come from other run() calls when runMode=="inproc"."""
+        depend = [ d for d in kw.get("depend",[None]) if d is not None ]
+        return depend
+        
 
     def doWork(self,**kw):
         """Do the actual work.
@@ -134,6 +139,7 @@ class App:
         bkw.updateFromOtherExisting(opt)
         ## kw options override all
         bkw.update(kw)
+        bkw["depend"] = self._ajustDepend(**bkw.asDict())
         return [ runBatch(cmd.cmd,dryRun=dryRun,**bkw.asDict()) ]
 
     @classmethod

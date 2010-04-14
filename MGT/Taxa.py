@@ -85,6 +85,10 @@ def ncbiFastaRecordsWithTaxa(fastaReader,taxaTree,giToTaxa,errorCounter):
 def mapFastaRecordsToTaxaTree(inSeqs,taxaTree,giToTaxa,
         storeHeader=False,storeSeq=False,storeSeqLen=False):
     from MGT.FastaIO import FastaReader
+    if taxaTree is None:
+        taxaTree = loadTaxaTree()
+    if giToTaxa is None:
+        giToTaxa = loadGiTaxBin()
     taxMis = Struct()
     for inSeq in inSeqs:
         inpSeq = FastaReader(inSeq)
@@ -108,5 +112,35 @@ def mapFastaRecordsToTaxaTree(inSeqs,taxaTree,giToTaxa,
                 seqRec.seqLen = seqLen
             node.seq.append(seqRec)
         inpSeq.close()
+    return taxMis
+
+def splitFastaFilesByTaxa(inSeqs,taxaTree,giToTaxa,outDir):
+    from MGT.FastaIO import FastaReader
+    if taxaTree is None:
+        taxaTree = loadTaxaTree()
+    if giToTaxa is None:
+        giToTaxa = loadGiTaxBin()
+    taxMis = Struct()
+    lastTaxid = None
+    out = None
+    for inSeq in inSeqs:
+        inpSeq = FastaReader(inSeq)
+        for rec in ncbiFastaRecordsWithTaxa(fastaReader=inpSeq,
+                taxaTree=taxaTree,
+                giToTaxa=giToTaxa,
+                errorCounter=taxMis):
+            node = rec.node
+            seq = rec.seq
+            taxid = node.id
+            if lastTaxid is None or lastTaxid != taxid:
+                if out is not None:
+                    out.close()
+                out = openCompressed(pjoin(outDir,"%s.fasta.gz" % taxid),"a")
+            out.write(seq.header())
+            for line in seq.seqLines():
+                out.write(line)
+        inpSeq.close()
+    if out is not None:
+        out.close()
     return taxMis
 
