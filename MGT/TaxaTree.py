@@ -349,19 +349,30 @@ class TaxaNode(object):
         self.visitDepthBottom(actor)
 
 
-    def setReduction(self,extractor,dstAttr,reduction=None,condition=None):
+    def setReduction(self,extractor,dstAttr,reduction=None,condition=None,childExtractor=None):
         """Assign to 'dstAttr' attribute the result of applying 'reduce(func,...)' to this node and its children.
         Example: setTotal() that sums only for non "unclassified" children could be implemented as:
         setReduction(lambda node: getattr(node,srcAttr),dstAttr,operator.add,lambda node: not node.isUnclassified()).
         Note: extractor(node) is called unconditionally; condition is only applied when the computed values of
         'dstAttr' attribute are accumulated for reduction.
         @param extractor - unary function object that is applied to each node to extract the value that is accumulated.
+        The result is passed as a third argument to 'reduce' built-in.
         As a convenient exception, if 'extractor' is a string, it is considered to be a node attribute name.
         @param dstAttr - name of destination attribute to set in each node with accumulated result
         @param reduction - binary function object that is passed as a first argument to 'reduce' built-in, defaults
         to operator.add
         @param condition - apply this condition to each child node to decide if it should contribute to the 'dstAttr'
-        of the parent."""
+        of the parent.
+        @param childExtractor - unary function object that is applied to each child node of a given node to extract the 
+        value that is accumulated. The list of results is passed as a second argument to 'reduce' built-in.
+        As a convenient exception, if 'chilExtractor' is a string, it is considered to be a node attribute name.
+        Alternatively, if it is None (default), the value of 'dstAttr' of the child node will be extracted
+        """
+        if childExtractor is None:
+            childExtractor=lambda child: getattr(child,dstAttr)
+        elif isinstance(childExtractor,StringTypes):
+            childExtrAttr = childExtractor
+            childExtractor=lambda child: getattr(child,childExtrAttr)
         if isinstance(extractor,StringTypes):
             srcAttr = extractor
             extractor = lambda node: getattr(node,srcAttr)
@@ -373,7 +384,7 @@ class TaxaNode(object):
             setattr(node,
                     dstAttr,
                     reduce(reduction,
-                           (getattr(child,dstAttr) for child in node.children if condition(node)),
+                           (childExtractor(child) for child in node.children if condition(child)),
                            extractor(node)
                           )
                     )
@@ -407,9 +418,19 @@ class TaxaNode(object):
                 return rank
         self.setReduction(extractor=extractor,dstAttr=dstAttr,reduction=reduction)
 
-    def setAttribute(self,name,value):
-        for node in self.iterDepthTop():
-            setattr(node,name,value)
+    def setAttribute(self,name,value,doCopy=False):
+        """Assign an attribute to every node in a subtree.
+        @param name Name of attribute
+        @param value Value, the same for every node
+        @param doCopy If True, assign copy.copy(value) to every node - 
+        in case we assigning an empty list that we later want to modify independently for every node"""
+        if not doCopy:
+            for node in self.iterDepthTop():
+                setattr(node,name,value)
+        else:
+            for node in self.iterDepthTop():
+                setattr(node,name,copy.copy(value))
+
 
     def delAttribute(self,name):
         for node in self.iterDepthTop():
@@ -567,12 +588,12 @@ class TaxaTree(object):
     def getRootNode(self):
         return self.rootNode
 
-    def setAttribute(self,name,value,id=None):
+    def setAttribute(self,name,value,doCopy=False,id=None):
         if id is None:
             top = self.getRootNode()
         else:
             top = self.getNode(id)
-        top.setAttribute(name,value)
+        top.setAttribute(name,value,doCopy=doCopy)
 
     def delAttribute(self,name,id=None):
         if id is None:
