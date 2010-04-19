@@ -48,6 +48,9 @@ class Timer(object):
         self.start = finish
         return lap
 
+    def msg(self,s):
+        return "%s. Elapsed: %s" % (s,self())
+
 def dumpObj(obj,fileName,**kw):
     out = openCompressed(fileName,'w',**kw)
     dump(obj,out,-1)
@@ -252,16 +255,48 @@ def openCompressed(filename,mode,compressFormat=None,**kw):
     else:
         raise ValueError(compressFormat)
 
+class PopenStdinProxy(object):
+    """Proxy class to use in place of Popen.stdin - it makes sure than after stdin.close(), .wait() is called on the subprocess.
+    When Python exits, it apparently terminates still running subprocesses (maybe SGE does it - I only observed the issue in
+    batch execution. In particular, when we call .close() on a pipe to gzip subprocess writer, it takes some time for gzip
+    to finish writing. It our application exits immediately, gzip is killed leaving unfinished output file.
+    This proxy class holds a reference to the Popen instance and delegates all attribute lookups to Popen's stdin file object,
+    except for the .close() method, in which it first closes the stream, and then waits for the child process to finish.
+    This is not ideal solution because Popen.stdin is a real built-in file object, and this proxy class is not. Thus, some
+    code that e.g. uses Python C Api can choke on it. Another alternative would be to keep a global list of all Popen
+    objects and wait on them in atexit() handler.
+    """
+
+    def __init__(self,p):
+        self.p = p
+
+    def __getattribute__(self,x):
+        if x == "close":
+            return object.__getattribute__(self,"close")
+        else:
+            return getattr(object.__getattribute__(self,"p").stdin,x)
+
+    def close(self):
+        object.__getattribute__(self,"p").stdin.close()
+        object.__getattribute__(self,"p").wait()
+
+    def __del__(self):
+        self.close()
+
 def openGzip(filename,mode,compresslevel=6):
     compresslevel = int(compresslevel)
+
     if mode in ("w","wb","a","ab"):
         if mode in ("w","wb"):
             redir = ">"
         elif mode in ("a","ab"):
             redir = ">>"
-        return Popen("gzip -%s %s %s" % (compresslevel,redir,filename), shell=True, env=os.environ, bufsize=2**16, stdin=PIPE, close_fds=True).stdin
+        p = Popen("gzip -%s %s %s" % (compresslevel,redir,filename), shell=True, env=os.environ, bufsize=2**16, stdin=PIPE, close_fds=True)
+        return PopenStdinProxy(p)
+
     elif mode in ("r","rb"):
         return Popen(("gzip -cd %s" % (filename,)).split(),env=os.environ, bufsize=2**16, stdout=PIPE, close_fds=True).stdout
+    
     else:
         raise ValueError("'openGzip()' - Unsupported 'mode': " + mode)
 
