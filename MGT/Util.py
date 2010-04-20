@@ -277,8 +277,11 @@ class PopenStdinProxy(object):
             return getattr(object.__getattribute__(self,"p").stdin,x)
 
     def close(self):
-        object.__getattribute__(self,"p").stdin.close()
-        object.__getattribute__(self,"p").wait()
+        p = object.__getattribute__(self,"p")
+        p.stdin.close()
+        p.wait()
+        if p.returncode:
+            raise CalledProcessError("",p.returncode)
 
     def __del__(self):
         self.close()

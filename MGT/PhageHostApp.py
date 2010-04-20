@@ -15,11 +15,19 @@ from MGT.App import *
 from MGT.DirStore import *
 import UUID
 from MGT.SeqImportApp import *
+from MGT.ImmClassifierApp import *
+from MGT.ImmApp import *
+
+class TaxaPred:
+    """Class to represent taxonomic predictions - one taxid per sample"""
+    def __init__(self,idSamp,pred):
+        self.idSamp = idSamp
+        self.pred = pred
 
 class PhageHostApp(App):
     """App-derived class for phage-host assignment"""
 
-    #batchDepModes = ("blastcr","pilercr")
+    batchDepModes = ("predict","train")
 
     maxSeqIdLen = UUID.maxIdLen
     maxSeqPartIdLen = UUID.maxIdLen
@@ -49,6 +57,15 @@ class PhageHostApp(App):
                     "internal format"),
             make_option(None, "--shred-size-vir-test",
             action="store", type="int",default=400,dest="shredSizeVirTest",help="Shred DB viral samples into this size for testing"),
+            make_option(None, "--db-imm",
+            action="store", type="string",default="imm",dest="immDb",help="Path to a collection of IMMs"),
+            make_option(None, "--pred-seq",
+            action="store", type="string",dest="predSeq",help="Path to a FASTA file with sequences to classify"),
+            make_option(None, "--pred-out-dir",
+            action="store", type="string",default="results",dest="predOutDir",help="Output directory for classification results"),
+            make_option(None, "--pred-out-taxa",
+            action="store", type="string",dest="predOutTaxa",help="Output file with predicted taxa; default is pred-taxa inside "+\
+                    "--pred-out-dir"),
         ]
         return Struct(usage = "Build phage-host association database, classifiers, and perform training, validation and de novo classification.\n"+\
                 "%prog [options]",option_list=option_list)
@@ -57,27 +74,35 @@ class PhageHostApp(App):
     @classmethod
     def parseCmdLinePost(klass,options,args,parser):
         opt = options
-        refSeqDir = globals()["options"].refSeqDataDir
+        globOpt = globals()["options"]
+        refSeqDir = globOpt.refSeqDataDir
         opt.setIfUndef("dbGbInp",pjoin(refSeqDir,"viral.genomic.gbff.gz"))
         opt.setIfUndef("dbSeqInp",[ pjoin(refSeqDir,div+".genomic.fna.gz") for div in ("microbial","viral")])
+        opt.setIfUndef("predOutTaxa",pjoin(opt.predOutDir,"pred-taxa"))
+        opt.setIfUndef("outScoreComb",klass._outScoreCombPath(opt))
    
 
     def init(self):
         opt = self.opt
         self.taxaTree = None #will be lazy-loaded
+        self.taxaLevels = None #will be lazy-loaded
         self.store = SampStore.open(path=self.opt.get("cwd",os.getcwd()))
 
     def doWork(self,**kw):
         self.init()
         opt = self.opt
         if opt.mode == "build-db-ph":
-            return self.buildDbPhageHost()
+            return self.buildDbPhageHost(**kw)
         elif opt.mode == "sel-db-ph-pairs":
-            return self.selectPhageHostPairs()
+            return self.selectPhageHostPairs(**kw)
         elif opt.mode == "shred-vir-test":
-            return self.shredVirTest()
+            return self.shredVirTest(**kw)
         elif opt.mode == "predict":
-            return self.predict()
+            return self.predict(**kw)
+        elif opt.mode == "proc-scores":
+            return self.processImmScores(**kw)
+        elif opt.mode == "perf":
+            return self.performance(**kw)
         else:
             raise ValueError("Unknown opt.mode value: %s" % (opt.mode,))
 
@@ -86,6 +111,11 @@ class PhageHostApp(App):
             self.taxaTree = loadTaxaTree()
         return self.taxaTree
 
+    def getTaxaLevels(self):
+        if self.taxaLevels is None:
+            #that assigns "level" and "idlevel" attributes to TaxaTree nodes
+            self.taxaLevels = TaxaLevels(self.getTaxaTree())
+        return self.taxaLevels
 
     def loadPhageHostDb(self):
         """Load and map Phage-Host DB into the taxaTree"""
@@ -179,7 +209,122 @@ class PhageHostApp(App):
         opt = self.opt
         self.exportVirSamplesShreds(shredSize=opt.shredSizeVirTest)
 
-    def predict(self):
+    @classmethod
+    def _outScoreCombPath(klass,opt):
+        o = Struct(outDir=opt.predOutDir)
+        ImmClassifierApp.fillWithDefaultOptions(o)
+        return o.outScoreComb
+
+    def predict(self,**kw):
+        """Predict host taxonomy for viral sequences.
+        Parameters are taken from self.opt.
+        @param predSeq Name of FASTA sequence file to classify
+        @param immDb Path to directory with IMMs
+        @param predOutDir Output directory for predictions
+        """
+        sopt = self.opt
+
+        opt = copy(sopt)
+
+        opt.mode = "predict"
+        opt.inpSeq = sopt.predSeq
+        opt.outDir = sopt.predOutDir
+        immStore = ImmStore(opt.immDb)
+        immIds = immStore.listImmIds()
+        immIdsPath = pjoin(opt.outDir,"imm-ids.pkl")
+        makedir(opt.outDir)
+        dumpObj(immIds,immIdsPath)
+        opt.immIds = immIdsPath
+        imm = ImmClassifierApp(opt=opt)
+        jobs = imm.run(**kw)
+        return jobs
+
+    def _maskScoresNonSubtrees(self,taxaTree,immScores,posRoots):
+        """Set to a negative infinity (numpy.NINF) all columns in score matrix that point to NOT subtrees of posRoots nodes.
+        This is used to mask all scores pointing to other than bacteria or archaea when we are assigning hosts to viruses"""
+        scores = immScores.scores
+        idImms = immScores.idImms
+        for (iCol,idImm) in enumerate(idImms):
+            #assume here that idImm is a taxid
+            node = taxaTree.getNode(idImm)
+            if not (node.isSubnodeAny(posRoots) or node in posRoots):
+                scores[:,iCol] = n.NINF
+
+
+
+    def processImmScores(self,**kw):
+        """Process raw IMM scores to predict host taxonomy for viral sequences.
+        Parameters are taken from self.opt.
+        @param outScoreComb File with ImmScores object
+        @param predOutTaxa Output file with predicted taxa
+        """
+        opt = self.opt
+        sc = loadObj(opt.outScoreComb)
+        #assume idImms are str(taxids):
+        sc.idImms = n.asarray(sc.idImms,dtype=int)
+        taxaTree = self.getTaxaTree()
+        scores = sc.scores
+        idImms = sc.idImms
+        micRoots = tuple([ taxaTree.getNode(taxid) for taxid in micTaxids ])
+        self._maskScoresNonSubtrees(taxaTree,immScores=sc,posRoots=micRoots)
+        predTaxids = idImms[scores.argmax(1)]
+        pred = TaxaPred(idSamp=sc.idScores,pred=predTaxids)
+        dumpObj(pred,opt.predOutTaxa)
+
+    def performance(self,**kw):
+        """Evaluate the performance of predicting host taxonomy on the DB of known pairs.
+        Parameters are taken from self.opt.
+        @param predOutTaxa File with predicted taxa
+        @param perfOutTaxa Output file with performance metrics
+        @param predIdLab IdLabels file for the samples
+        """
+        opt = self.opt
+        taxaTree = self.getTaxaTree()
+        taxaTree.setMaxSubtreeRank()
+        taxaLevels = self.getTaxaLevels()
+        pr = loadObj(opt.predOutTaxa)
+        idLab = loadObj(opt.predIdLab)
+        idSamp = pr.idSamp
+        predTaxids = pr.pred
+        idToLab = idLab.getIdToLab()
+        virToHost = self.getVirToHostPicked()
+        lcs_lev = []
+        lcs_idlev = []
+        for predTaxid,idS in it.izip(predTaxids,idSamp):
+            predHostNode = taxaTree.getNode(predTaxid)
+            virTaxid = int(idToLab[idS])
+            virNode = taxaTree.getNode(virTaxid)
+            testHostNode = virToHost[virNode][0]
+            lcsNode = testHostNode.lcsNode(predHostNode)
+            lcs_lev.append(lcsNode.linn_level)
+            lcs_idlev.append(taxaLevels.getLevelId(lcsNode.linn_level))
+            print "lcsPredTest: ",lcsNode.linn_level,lcsNode.rank_max,lcsNode.name,"  ****  ",\
+                    "predHost: ",predHostNode.name, predHostNode.rank_max,"  ****  ",\
+                    "testHost: ",testHostNode.name,"  ****  ",\
+                    "testVir: ",virNode.name
+        print binCount(lcs_lev,format="list")
+        lcs_ilev_cnt = binCount(lcs_idlev,format="list")
+        lcs_lc = n.asarray([ (taxaLevels.getLevel(x[0]),x[1]) for x in lcs_ilev_cnt ],dtype=[("lev","O"),("cnt",int)])
+        lcs_lc_linn = lcs_lc[lcs_lc["lev"] != "no_rank"]
+        lcs_lc_linn = lcs_lc.copy()
+        lcs_lc_linn[:-1] = lcs_lc[lcs_lc["lev"] != "no_rank"]
+        lcs_lc_linn[-1:] = lcs_lc[lcs_lc["lev"] == "no_rank"]
+        lcs_lc_cum = lcs_lc_linn.copy()
+        lcs_lc_cum["cnt"] = lcs_lc_linn["cnt"].cumsum()
+
+        
+        pdb.set_trace()
+
+    def getVirToHostPicked(self):
+        """Return {virNode->host} map from a DB of picked vir-host pairs"""
+        opt = self.opt
+        taxaTree = self.getTaxaTree()
+        seqPicker = PhageHostSeqPicker(taxaTree=taxaTree)
+        dbPhPairsFile = self.store.getObjPath(opt.dbPhPairs)
+        seqPicker.load(dbPhPairsFile)
+        return seqPicker.seqVirHostPicks()
+
+    def predictOld(self):
         opt = self.opt
         groupRanks = ("order","family","genus","subgenus","species")
         taxaTree = self.getTaxaTree()

@@ -21,6 +21,10 @@ class Imm:
         """
         self.path = path
         self.p = None
+        self.cmd = None
+
+    def __del__(self):
+        self.flush()
 
     def train(self,inp=None):
         """Train (build) the IMM.
@@ -40,10 +44,13 @@ class Imm:
             closeInp = False
         p = Popen(cmd, stdin=inp, close_fds=True)
         self.p = p
+        self.cmd = cmd
         if closeInp:
             inp.close()
         if inp is not PIPE:
             p.communicate()
+            if self.p.returncode:
+                raise CalledProcessError(self.cmd,self.p.returncode)
         else:
             return p.stdin
 
@@ -57,6 +64,7 @@ class Imm:
         inp and out cannot both be None.
         """
         self.flush()
+        print "DBG: IMM scoring with %s" % (self.path,)
         cmd = [self.glImmScoreExe,"-N",self.path]
         closeInp = False
         closeOut = False
@@ -78,12 +86,15 @@ class Imm:
             raise ValueError("Both inp and out parameters cannot be None at the same time - set one to a real file/stream")
         p = Popen(cmd, stdin=inp, stdout=out, close_fds=True)
         self.p = p
+        self.cmd = cmd
         if closeInp:
             inp.close()
         if closeOut:
             out.close()
         if inp is not PIPE:
             strData=p.communicate()[0]
+            if self.p.returncode:
+                raise CalledProcessError(self.cmd,self.p.returncode)
             if strData is not None:
                 return self.parseScores(strData.splitlines())
         else:
@@ -97,6 +108,9 @@ class Imm:
         """
         if self.p is not None:
             self.p.wait()
+            if self.p.returncode:
+                raise CalledProcessError(self.cmd,self.p.returncode)
+
     
     @classmethod
     def parseScores(klass,inp=None):

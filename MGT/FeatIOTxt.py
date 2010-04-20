@@ -58,7 +58,7 @@ class SvmFastaFeatureWriterTxt:
         if lineLen is None:
             lineLen = 1000
         if not hasattr(out,'write'):
-            out = open(out,'w', buffering=1024*1024)
+            out = openCompressed(out,'w', buffering=1024*1024)
         self.out = out
         self.nOut = 0
         self.lineLen = lineLen

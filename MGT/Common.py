@@ -19,6 +19,11 @@ nma = numpy.ma
 from numpy import array
 import random
 from random import sample as sampleWOR #Random sampling w/o replacement
+
+def sampleBoundWOR(l,n):
+    """Random sampling w/o replacement that clips sample size parameter by population size"""
+    return sampleWOR(l,min(len(l),n))
+
 import os, sys, atexit, re, gzip
 pjoin = os.path.join
 from glob import iglob

@@ -6,8 +6,11 @@
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
 
-"""Some support for debugger. Tries to use IPython shell support if available"""
-__all__ = ["pdb","set_trace"]
+"""Some support for logging and debugging."""
+__all__ = ["pdb","set_trace","Memuse"]
+
+
+#This tries to use IPython shell support if available
 try:
     from IPython.Debugger import Pdb
     def set_trace():
@@ -20,5 +23,9 @@ except:
         import pdb
         pdb.set_trace()
     del pdb
-import pdb #legacy pdb.set_trace() use
+
+import pdb #standard pdb.set_trace() use
+
+
+from Bits import Memuse
 

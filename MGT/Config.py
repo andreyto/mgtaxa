@@ -113,7 +113,7 @@ class MGTOptions:
                 MEM = 2000,
                 ARCH = "lx*64",
                 maxQueued = 50,
-                LENGTH = "medium", #fast
+                LENGTH = "fast", #fast
                 ENVRC = self.envRc)
         self.app = Options(
                 runMode = "default"#override App.opt.runMode value if not "default" here. Other choices are "inproc"

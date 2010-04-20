@@ -21,7 +21,7 @@ jobs = imm.run()
 opt.runMode = "batchDep"
 opt.mode = "score"
 opt.outDir = "score"
-opt.immIds = immIdToSeqIds
+opt.immIds = immIdsFile
 opt.inpSeq = pjoin(seqDbPath,"195.fasta.gz")
 opt.outScoreComb = "score.comb"
 

@@ -62,6 +62,9 @@ class Struct(object):
     def iterkeys(self):
         return self.__dict__.iterkeys()
 
+    def items(self):
+        return self.__dict__.items()
+
     def setdefault(self,*l):
         try:
             return getattr(self,l[0])
@@ -84,13 +87,8 @@ class Struct(object):
 
     def updateOtherMissing(self,other):
         """Update in other keys that are not yet present where"""
-        if isinstance(other,Struct):
-            o = other.__dict__
-        else:
-            o = other
-        s = self.asDict()
-        for (key,value) in s.items():
-            o.setdefault(key,value)
+        for (key,value) in self.items():
+            other.setdefault(key,value)
 
     def updateFromOtherExisting(self,other):
         """Update in self keys that already present in self"""

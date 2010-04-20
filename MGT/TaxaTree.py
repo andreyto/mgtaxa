@@ -352,9 +352,16 @@ class TaxaNode(object):
     def setReduction(self,extractor,dstAttr,reduction=None,condition=None,childExtractor=None):
         """Assign to 'dstAttr' attribute the result of applying 'reduce(func,...)' to this node and its children.
         Example: setTotal() that sums only for non "unclassified" children could be implemented as:
-        setReduction(lambda node: getattr(node,srcAttr),dstAttr,operator.add,lambda node: not node.isUnclassified()).
-        Note: extractor(node) is called unconditionally; condition is only applied when the computed values of
-        'dstAttr' attribute are accumulated for reduction.
+        setReduction(srcAttr,dstAttr,operator.add,lambda node: not node.isUnclassified()).
+        Note: extractor(node) is called unconditionally; condition is only applied to decide whether to extract the value
+        with childExtractor() from each child sub-node.
+        Example: collectLeafIds() that assigns to dstAttr a list of all leaf node IDs under each node:
+        setReduction(lambda node: [ node.id ],dstAttr,operator.add)
+        Example: same as above, but propagates only a max 'n' elements from a list accumulated for each child node
+        (can be viewed as a balanced sampling of the tree):
+        boundedSample = lambda l,n: random.sample(l,min(len(l),n))
+        setReduction(lambda node: [ node.id ],dstAttr,operator.add,
+        childExtractor=lambda child: boundedSample(getattr(child,dstAttr),n).
         @param extractor - unary function object that is applied to each node to extract the value that is accumulated.
         The result is passed as a third argument to 'reduce' built-in.
         As a convenient exception, if 'extractor' is a string, it is considered to be a node attribute name.
@@ -366,7 +373,9 @@ class TaxaNode(object):
         @param childExtractor - unary function object that is applied to each child node of a given node to extract the 
         value that is accumulated. The list of results is passed as a second argument to 'reduce' built-in.
         As a convenient exception, if 'chilExtractor' is a string, it is considered to be a node attribute name.
-        Alternatively, if it is None (default), the value of 'dstAttr' of the child node will be extracted
+        Alternatively, if it is None (default), the value of 'dstAttr' of the child node will be extracted.
+        An example of a non-trivial use of this argument is when we are accumulating a list into 'dstAttr' and want to
+        extract only a random subset of this list from each child node.
         """
         if childExtractor is None:
             childExtractor=lambda child: getattr(child,dstAttr)
@@ -991,6 +1000,7 @@ class TaxaLevels:
         self.levels = list(linnMainRanks)
         self.levelIds = {noRank:0, unclassRank:self.unclassId, "species":20, "genus":30, "family":40,
                          "order":50, "class":60, "phylum":70, "kingdom":80, "superkingdom":90}
+        self.idToLevel = dict(((x[1],x[0]) for x in self.levelIds.items()))
         self.levelByTaxid = { "superkingdom" : (viralRootTaxid,) }
         self.viralLevels = ("superkingdom","family","genus","species",unclassRank)
         self.levelSet = set(self.levels) | set((unclassRank,))
@@ -1004,6 +1014,9 @@ class TaxaLevels:
 
     def getLevelId(self,name):
         return self.levelIds[name]
+
+    def getLevel(self,idlevel):
+        return self.idToLevel[idlevel]
 
     def getLevelNames(self,order="ascend"):
         if order == "ascend":
@@ -1040,8 +1053,20 @@ class TaxaLevels:
             if node.level not in viralLevels:
                 node.level = noRank
         levelIds = self.levelIds
-        for node in taxaTree.getNodesIter():
+        #assign node.linn_level to the lowest linnean level in the lineage,
+        #except for root node, which is no_rank
+        #also assign node.idlevel
+        linn_levels = set(self.levels)
+        iter = taxaTree.iterDepthTop()
+        node = iter.next()
+        node.idlevel = levelIds[node.level]
+        node.linn_level = node.level
+        for node in iter:
             node.idlevel = levelIds[node.level]
+            if node.level in linn_levels:
+                node.linn_level = node.level
+            else:
+                node.linn_level = node.getParent().linn_level
 
     def lineage(self,node,withUnclass=True):
         levelSet = self.levelSet

@@ -16,6 +16,17 @@ from MGT.DirStore import *
 from MGT.SeqDbFasta import *
 import UUID
 
+class ImmStore(SampStore):
+    
+    immSfx = ".imm"
+    
+    def getImmPath(self,immId):
+        return self.getFilePath("%s%s" % (immId,self.immSfx))
+
+    def listImmIds(self):
+        return list(self.fileNames(pattern="*"+self.immSfx,sfxStrip=self.immSfx))
+
+
 class ImmApp(App):
     """App-derived class for building collections of IMMs/ICMs and scoring against them"""
 
@@ -24,15 +35,19 @@ class ImmApp(App):
     maxSeqIdLen = UUID.maxIdLen
     maxSeqPartIdLen = UUID.maxIdLen
 
-    immSfx = ".imm"
     scoreSfx = ".score.pkl.gz"
 
+    @classmethod
+    def parseCmdLinePost(klass,options,args,parser):
+        opt = options
+        opt.setIfUndef("immDb","imm")
 
     def init(self):
         opt = self.opt
         self.taxaTree = None #will be lazy-loaded
         self.seqDb = None #will be lazy-loaded
-        self.store = SampStore.open(path=self.opt.get("cwd",os.getcwd()))
+        #self.store = SampStore.open(path=self.opt.get("cwd",os.getcwd()))
+        self.immStore = ImmStore.open(path=self.opt.immDb)
    
 
     def doWork(self,**kw):
@@ -62,6 +77,9 @@ class ImmApp(App):
             self.seqDb = SeqDbFasta.open(opt.seqDb) #"r"
             return self.seqDb
 
+    def getImmPath(self,immId):
+        return self.immStore.getImmPath(immId)
+
     def trainOne(self,**kw):
         """Train and save one IMM.
         Parameters are taken from self.opt
@@ -71,11 +89,10 @@ class ImmApp(App):
         opt = self.opt
         immId = opt.immId
         immSeqIds = opt.immSeqIds
-        store = self.store
         seqDb = self.getSeqDb()
-        imm = Imm(path=store.getFilePath("%s%s" % (immId,self.immSfx)))
+        imm = Imm(path=self.getImmPath(immId))
         inp = imm.train()
-        seqDb.writeFasta(ids=immSeqIds,out=inp)
+        seqDb.writeFastaBothStrains(ids=immSeqIds,out=inp)
         inp.close()
         imm.flush()
 
@@ -106,8 +123,7 @@ class ImmApp(App):
         immId = opt.immId
         inpFastaFile = opt.inpSeq
         outScoreFile = opt.outScore
-        store = self.store
-        imm = Imm(path=store.getFilePath("%s%s" % (immId,self.immSfx)))
+        imm = Imm(path=self.getImmPath(immId))
         scores = imm.score(inp=inpFastaFile)
         dumpObj(scores,outScoreFile)
         imm.flush()
@@ -124,7 +140,7 @@ class ImmApp(App):
         makedir(opt.outDir)
         rmf(pjoin(opt.outDir,"*"+self.scoreSfx))
         jobs = []
-        for immId in opt.immIds:
+        for immId in sorted(loadObj(opt.immIds)):
             immOpt = copy(opt)
             immOpt.mode = "score-one"
             immOpt.immId = immId
@@ -149,19 +165,18 @@ class ImmApp(App):
         opt = self.opt
         scores = None
         idScores = None
-        for (iImm,immId) in enumerate(opt.immIds):
+        immIds = sorted(loadObj(opt.immIds))
+        for (iImm,immId) in enumerate(immIds):
             inpScoreFile = pjoin(opt.outDir,"%s%s" % (immId,self.scoreSfx))
             score = loadObj(inpScoreFile)
             if scores is None:
-                scores = n.resize(score["score"],(len(score),len(opt.immIds)))
+                scores = n.resize(score["score"],(len(score),len(immIds)))
                 idScores = score["id"].copy()
             else:
                 assert n.all(idScores == score["id"])
             scores[:,iImm] = score["score"]
-        dumpObj(ImmScores(idImms=opt.immIds,idScores=idScores,scores=scores),opt.outScoreComb)
+        dumpObj(ImmScores(idImms=immIds,idScores=idScores,scores=scores),opt.outScoreComb)
     
-    def listImmIds(self):
-        return list(self.store.fileNames(pattern="*"+self.immSfx,sfxStrip=self.immSfx))
 
 if __name__ == "__main__":
     #Allow to call this as script

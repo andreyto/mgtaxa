@@ -3,6 +3,7 @@
 from MGT.DirStore import *
 from MGT.Taxa import *
 from MGT.FastaIO import *
+from MGT.FeatCommon import *
 
 class SeqDbFasta(DirStore):
     """An interface to a collection of FASTA files.
@@ -48,5 +49,19 @@ class SeqDbFasta(DirStore):
                 out.write(rec.header())
                 for line in rec.seqLines():
                     out.write(line)
+            reader.close()
+
+    def writeFastaBothStrains(self,ids,out):
+        fsout = None # create after lineLen is known
+        for id in ids:
+            reader = self.fastaReader(id)
+            for rec in reader.records():
+                header = rec.header()
+                seq = rec.sequence()
+                if len(seq) > 0:
+                    if fsout is None: 
+                        fsout = FastaWriter(out,lineLen=reader.lineLen())
+                    fsout.record(header=header,sequence=seq)
+                    fsout.record(header=header,sequence=revCompl(seq))
             reader.close()
 

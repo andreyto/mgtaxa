@@ -11,15 +11,6 @@ from MGT.Taxa import *
 from MGT.FeatIO import *
 from MGT.FeatCommon import *
 
-class RevCompl:
-    def __init__(self):
-        trans = ['C']*256
-        for (c,o) in zip('ATCG','TAGC'):
-            trans[ord(c)] = o
-        self.trans = ''.join(trans)
-
-    def __call__(self,s):
-        return s.translate(self.trans)[::-1]
 
 def transDegen(seq):
     """@todo this can be made much faster by computing a mask of degen seq positions and assigning random array"""
@@ -38,7 +29,6 @@ def transDegen(seq):
 def randomSeq(lenSeq):
     return n.fromstring('ACTG',dtype='S1')[nrnd.randint(0,4,lenSeq)].view(n.chararray)
 
-revCompl = RevCompl()
 
 def alphaHist(seq):
     d = defdict(int)

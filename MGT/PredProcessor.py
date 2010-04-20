@@ -49,9 +49,9 @@ class PerfMetrics(Struct):
     
     def __init__(self,test,pred,balanceCounts=True,maxLabel=None):
         """Constructor.
-        @param sequence of test (true) labels (int)
-        @param sequence of predicted labels (int)
-        @param balanceCount if True, use confusion matrix balanced by per-class test counts
+        @param test sequence of test (true) labels (int)
+        @param pred sequence of predicted labels (int)
+        @param balanceCounts if True, use confusion matrix balanced by per-class test counts
         @param maxLabel maximum value for labels plus one, if None - computed from actual test and pred values
         @post this object has masked array attributes for specificity, sensitivity, true positives etc for each class
         @todo Add additional metrics. One particular problem with per class specificities is when we

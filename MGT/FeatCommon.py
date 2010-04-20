@@ -33,3 +33,17 @@ class MGTSparseIntFeatures(object):
     @todo make it a subclass of numpy ndarray and hold the data here as well"""
     defDtype = n.dtype([("ind","i4"),("val","i8")])
 
+class RevCompl:
+    def __init__(self):
+        trans = ['N']*256
+        for (c,o) in zip('ATCG','TAGC'):
+            trans[ord(c)] = o
+        for (c,o) in zip('atcg','tagc'):
+            trans[ord(c)] = o
+        self.trans = ''.join(trans)
+
+    def __call__(self,s):
+        return s.translate(self.trans)[::-1]
+
+revCompl = RevCompl()
+

@@ -41,7 +41,7 @@ class App:
         """
         self._instanceOptionsPostBase(opt)
         self.instanceOptionsPost(opt)
-        optArgs, args = self.parseCmdLine(args=args)
+        optArgs, args = self.parseCmdLine(args=args,_explicitOpt=opt)
         optArgs.updateOtherMissing(opt)
         if opt.optFile is not None:
             opt = loadObj(opt.optFile)
@@ -61,6 +61,8 @@ class App:
             try:
                 if "cwd" in opt:
                     os.chdir(opt["cwd"])
+                #DBG:
+                #time.sleep(5)
                 ret = self.doWork(**kw)
             finally:
                 if "cwd" in opt:
@@ -143,7 +145,7 @@ class App:
         return [ runBatch(cmd.cmd,dryRun=dryRun,**bkw.asDict()) ]
 
     @classmethod
-    def parseCmdLine(klass,args=None):
+    def parseCmdLine(klass,args=None,_explicitOpt=None):
         """Obtain options from command line arguments.
         It is called from constructor or directly by the user.
         Derived classes must redefine makeOptionParserArgs() and optionally parseCmdLinePost() 
@@ -168,6 +170,8 @@ class App:
         parser = OptionParser(**parseArgs.asDict())
         (options, args) = parser.parse_args(args=args) #values=opt does not work
         options = Struct(options.__dict__)
+        if _explicitOpt is not None:
+            options.update(_explicitOpt)
         klass.parseCmdLinePost(options=options,args=args,parser=parser)
         return options,args
 
@@ -193,13 +197,15 @@ class App:
         pass
 
     @classmethod
-    def defaultOptions(klass):
-        return klass.parseCmdLine(args=[])
+    def defaultOptions(klass,_explicitOpt=None):
+        return klass.parseCmdLine(args=[],_explicitOpt=_explicitOpt)
 
     @classmethod
     def fillWithDefaultOptions(klass,options):
         """Fill with default values those options that are not already set."""
-        optArgs,args = klass.defaultOptions()
+        #we use _explicitOpt to override any default options with those from 'options'
+        #BEFORE parseCmdLinePost() is called
+        optArgs,args = klass.defaultOptions(_explicitOpt=options)
         optArgs.updateOtherMissing(options)
 
     def _instanceOptionsPostBase(self,opt):

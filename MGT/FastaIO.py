@@ -8,7 +8,7 @@
 
 """I/O of FASTA formatted sequence files"""
 
-__all__ = [ "FastaReader", "fastaReaderGzip" ]
+__all__ = [ "FastaReader", "fastaReaderGzip", "FastaWriter"]
 
 from MGT.Util import openGzip, openCompressed
 
@@ -34,6 +34,7 @@ class FastaReader(object):
             self.ownInfile = False
         self.infile = infile
         self.freshHdr = False
+        self.maxLineLen = 0
         
     def records(self):
         infile = self.infile
@@ -79,6 +80,7 @@ class FastaReader(object):
                 self.hdr = line
                 self.freshHdr = True
                 return
+            self.maxLineLen = max(self.maxLineLen,len(line)-1)
             yield line
 
     def seqChunks(self,chunkSize):
@@ -115,6 +117,9 @@ class FastaReader(object):
                 n += 1
         return n
 
+    def lineLen(self):
+        return self.maxLineLen
+
     def close(self):
         if self.ownInfile:
             self.infile.close()
@@ -122,4 +127,40 @@ class FastaReader(object):
 
 def fastaReaderGzip(fileName):
     return FastaReader(openGzip(fileName,'r'))
+
+class FastaWriter:
+    
+    def __init__(self,out,lineLen=None):
+        if lineLen is None:
+            lineLen = 1000
+        if not hasattr(out,'write'):
+            out = openCompressed(out,'w')
+            self.outClose = True
+        else:
+            self.outClose = False
+        self.out = out
+        self.lineLen = lineLen
+    
+    def __del__(self):
+        if self.outClose:
+            self.close()
+
+    def close(self):
+        self.out.close()
+
+    def record(self,header,sequence):
+        out = self.out
+        if not header.startswith(">"):
+            out.write(">")
+        out.write(header)
+        if not header.endswith("\n"):
+            out.write("\n")
+        if isinstance(sequence,str):
+            s = sequence
+        else:
+            s = sequence.tostring()
+        lineLen = self.lineLen
+        for x in range(0,len(s),lineLen):
+            out.write(s[x:x+lineLen])
+            out.write("\n")
 
