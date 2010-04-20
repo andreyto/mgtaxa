@@ -324,6 +324,32 @@ class PhageHostApp(App):
         seqPicker.load(dbPhPairsFile)
         return seqPicker.seqVirHostPicks()
 
+    def processPhymmScores(self):
+        """Load Phymm predictions to use as a reference implementation.
+        Parameters are taken from self.opt.
+        @param outPhymm File with Phymm output
+        @param predOutTaxa Output file with predicted taxa
+        """
+        opt = self.opt
+        taxaTree = self.getTaxaTree()
+        idSamp = []
+        inp = openCompressed(opt.outPhymm,'r')
+        inp.next()
+        for line in inp:
+            try:
+                fields = line.strip().split('\t')
+                id = int(float(fields[0].split('|')[0]))
+                #Phymm obfuscates original names below genus
+                predNameGen = fields[3]
+                predNode = taxaTree.searchName(predNameGen)
+                if len(predNode):
+                    predNode = predNode[0]
+            except BaseException, msg:
+                print "Exception caught for this line, skipping: %s \t %s" % (msg,line)
+        inp.close()
+            
+        
+
     def predictOld(self):
         opt = self.opt
         groupRanks = ("order","family","genus","subgenus","species")
