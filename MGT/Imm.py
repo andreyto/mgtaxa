@@ -3,12 +3,9 @@
 
 from MGT.Common import *
 
-class ImmScores:
+class ImmScores(Struct):
     """Class to represent a matrix of scores for multiple Imms (columns) for multiple samples (rows)"""
-    def __init__(self,idImms,idScores,scores):
-        self.idImms = idImms
-        self.idScores = idScores
-        self.scores = scores
+    pass
 
 class Imm:
     glImmBuildExe = options.glimmer3.immBuildExe

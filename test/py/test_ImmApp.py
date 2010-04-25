@@ -3,6 +3,8 @@ from MGT.SeqDbFasta import *
 
 seqDbPath = pjoin(options.testDataDir,"seqdb-fasta")
 
+jobs = []
+
 opt = Struct()
 opt.runMode = "batchDep"
 opt.seqDb = seqDbPath
@@ -15,13 +17,13 @@ opt.immIdToSeqIds = immIdsFile
 
 opt.mode = "train"
 
-imm = ImmApp(opt=opt)
-jobs = imm.run()
+#imm = ImmApp(opt=opt)
+#jobs = imm.run()
 
-opt.runMode = "batchDep"
 opt.mode = "score"
 opt.outDir = "score"
 opt.immIds = immIdsFile
+opt.nImmBatches = 3
 opt.inpSeq = pjoin(seqDbPath,"195.fasta.gz")
 opt.outScoreComb = "score.comb"
 

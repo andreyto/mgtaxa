@@ -8,9 +8,11 @@
 
 """I/O of FASTA formatted sequence files"""
 
-__all__ = [ "FastaReader", "fastaReaderGzip", "FastaWriter"]
+__all__ = [ "FastaReader", "fastaReaderGzip", "FastaWriter", "fastaLengths" ]
 
+from MGT.Common import *
 from MGT.Util import openGzip, openCompressed
+from MGT.UUID import *
 
 from cStringIO import StringIO
 import numpy
@@ -127,6 +129,16 @@ class FastaReader(object):
 
 def fastaReaderGzip(fileName):
     return FastaReader(openGzip(fileName,'r'))
+
+def fastaLengths(inp):
+    reader = FastaReader(inp)
+    res = []
+    for rec in reader.records():
+        id = rec.header().split()[0][1:]
+        ln = rec.seqLen()
+        res.append((id,ln))
+    reader.close()
+    return n.asarray(res,dtype=[("id",idDtype),("len","i8")])
 
 class FastaWriter:
     

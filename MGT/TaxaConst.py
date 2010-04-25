@@ -21,6 +21,10 @@ bacTaxid = 2
 archTaxid = 2157
 eukTaxid = 2759
 micTaxids = (bacTaxid,archTaxid)
+viroidsTaxid = 12884
+cellTaxid = 131567 # cellular organisms - bact, arch & euk
+micVirTaxids = (virTaxid,bacTaxid,archTaxid)
+skingdomTaxids = (virTaxid,bacTaxid,archTaxid,eukTaxid,viroidsTaxid)
 
 diatomsTaxid = 2836 # unicellular euk phytoplankton, major group of euk algae, divid plants
 cyanobacTaxid = 1117 # Cyanobacteria phylum
@@ -41,10 +45,6 @@ viralTaxidLev2 = (\
         439488, #ssRNA
         )
 phageTailedTaxid = 28883
-viroidsTaxid = 12884
-cellTaxid = 131567 # cellular organisms - bact, arch & euk
-micVirTaxids = (virTaxid,bacTaxid,archTaxid)
-skingdomTaxids = (virTaxid,bacTaxid,archTaxid,eukTaxid,viroidsTaxid)
 
 
 ## Main Linnaean ranks, modified with superkingdom in place of domain rank

@@ -9,7 +9,6 @@
 """Common definitions used by feature-related modules"""
 from MGT.Common import *
 
-## Default Numpy dtype for class labels
 labelDtype = n.dtype("f8")
 ## Default Numpy dtype for data split ids
 splitDtype = n.dtype("i4")

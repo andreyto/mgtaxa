@@ -451,9 +451,14 @@ class TaxaNode(object):
     def isSubnode(self,other):
         """Return true if this node is a descendant of the other node.
         Uses pre-computed nested sets indexes, which must be up-to-date.
-        A node is not considered a subnode of itself."""
+        @note A node is not considered a subnode of itself - see isUnder() for this."""
         return self.lnest > other.lnest and self.rnest < other.rnest
 
+    def isUnder(self,other,withSelf=False):
+        """Return true if this node is a descendant of the other node or the other node itself.
+        Uses pre-computed nested sets indexes, which must be up-to-date."""
+        return self.lnest >= other.lnest and self.rnest <= other.rnest
+    
     def isSubnodeAny(self,others):
         return self.whichSupernode(others) is not None
 
@@ -476,6 +481,13 @@ class TaxaNode(object):
             if y.isSubnode(node) or y is node:
                 return node
         assert ValueError, "Could not find lcsNode. Tree is corrupt or nodes are from differnt trees"
+    
+    def lcsNodeMany(self,others):
+        """Return the Lowest Common SuperNode of self and a sequence other nodes"""
+        lcs = self
+        for o in others:
+            lcs = lcs.lcsNode(o)
+        return lcs
 
     def setIsUnderUnclass(self):
         """Set an attribute 'isUnderUnclass' for the nodes in this branch.
@@ -535,6 +547,10 @@ class TaxaTree(object):
         except AttributeError:
             self.setNestedSetsIndex()
     
+        # When this is called as _vecGetNodes(taxidArray) it will return array of nodes
+        # with the same shape as input array. Used by getNodes()
+        self._vecGetNodes = n.vectorize(lambda taxid: self.nodes[taxid],otypes=["O"])
+    
     def write(self,out):
         for id in sorted(self.nodes.iterkeys()):
              out.write(str(self.nodes[id])+'\n')
@@ -569,7 +585,8 @@ class TaxaTree(object):
         return self.nodes[id]
 
     def getNodes(self,ids):
-        return [ self.nodes[id] for id in ids ]
+        """Return an array of nodes corresponding to an N-d array or sequence of ids"""
+        return self._vecGetNodes(ids)
 
     def removeNodes(self,ids):
         """Remove nodes referenced by 'ids' from auxiliary data structures.
@@ -991,6 +1008,8 @@ class TaxaLevels:
     We will train our classifiers to predict these levels."""
 
     unclassId = 10
+    ## min level ID of a Linnean rank. It should correlate with 
+    minLinnId = 20
 
     def __init__(self,taxaTree=None):
         """Constructor.
@@ -1004,6 +1023,8 @@ class TaxaLevels:
         self.levelByTaxid = { "superkingdom" : (viralRootTaxid,) }
         self.viralLevels = ("superkingdom","family","genus","species",unclassRank)
         self.levelSet = set(self.levels) | set((unclassRank,))
+        _linn_ids = sorted([self.levelIds[lev] for lev in self.levels])
+        self._linn_id_range = (_linn_ids[0],_linn_ids[1])
         #index of a given level name in the list 'levels'
         levelPos = {}
         for (i,level) in zip(range(len(self.levels)),self.levels):
@@ -1017,6 +1038,19 @@ class TaxaLevels:
 
     def getLevel(self,idlevel):
         return self.idToLevel[idlevel]
+
+    def getLinnLevelIdRange(self):
+        return self._linn_id_range
+
+    def getNodeLinnLevelId(self,node):
+        return self.getLevelId(node.linn_level)
+    
+    def isNodeInLinnLevelRange(self,node,minLevelId,maxLevelId):
+        """Check if Linnean level id of a node is within a (closed) range"""
+        linn_idlev = self.getNodeLinnLevelId(node)
+        if linn_idlev < minLevelId or linn_idlev > maxLevelId:
+            return False
+        return True
 
     def getLevelNames(self,order="ascend"):
         if order == "ascend":
@@ -1080,13 +1114,14 @@ class TaxaLevels:
         else:
             return [ (levelIds[n.level],n.id) for n in self.lineage(node)]
 
-    def lineageFixedList(self,node,null=None):
+    def lineageFixedList(self,node,null=None,format="id"):
         """Return a list of taxids that correspond to the list of level names returned by getLevelNames("ascend").
         If a given level is not present in this node's lineage, the corresponding element is 'null'."""
+        assert format in ("id","node")
         levelPos = self.levelPos
         ret = [null]*len(self.levels)
         for n in self.lineage(node,withUnclass=False):
-            ret[levelPos[n.level]] = n.id
+            ret[levelPos[n.level]] = (n.id if format == "id" else n)
         return ret
 
     def reduceNodes(self,tree,topNodeId=None):

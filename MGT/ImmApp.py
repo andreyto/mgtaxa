@@ -41,6 +41,7 @@ class ImmApp(App):
     def parseCmdLinePost(klass,options,args,parser):
         opt = options
         opt.setIfUndef("immDb","imm")
+        opt.setIfUndef("nImmBatches",10)
 
     def init(self):
         opt = self.opt
@@ -59,8 +60,8 @@ class ImmApp(App):
             return self.trainOne(**kw)
         elif opt.mode == "score":
             return self.scoreMany(**kw)
-        elif opt.mode == "score-one":
-            return self.scoreOne(**kw)
+        elif opt.mode == "score-batch":
+            return self.scoreBatch(**kw)
         elif opt.mode == "combine-scores":
             return self.combineScores(**kw)
         else:
@@ -112,27 +113,29 @@ class ImmApp(App):
             jobs += immApp.run(**kw)
         return jobs
 
-    def scoreOne(self,**kw):
-        """Score with one IMM.
+    def scoreBatch(self,**kw):
+        """Score with a batch of several IMM.
         Parameters are taken from self.opt
-        @param immId Score with this IMM
+        @param immIds Score with these IMMs (in memory list)
         @param inpSeq Name of the input multi-FASTA file to score
-        @param outScore File name for output raw scores
+        @param outDir Directory name for output score files
         """
         opt = self.opt
-        immId = opt.immId
+        immIds = opt.immIds
         inpFastaFile = opt.inpSeq
-        outScoreFile = opt.outScore
-        imm = Imm(path=self.getImmPath(immId))
-        scores = imm.score(inp=inpFastaFile)
-        dumpObj(scores,outScoreFile)
-        imm.flush()
+        for immId in immIds:
+            outScoreFile = pjoin(opt.outDir,"%s%s" % (immId,self.scoreSfx))
+            imm = Imm(path=self.getImmPath(immId))
+            scores = imm.score(inp=inpFastaFile)
+            dumpObj(scores,outScoreFile)
+            imm.flush()
 
     def scoreMany(self,**kw):
         """Score with many IMMs.
         Parameters are taken from self.opt
         @param immIds List of IMM IDs to score with
         @param inpSeq Name of the input multi-FASTA file to score
+        @param nImmBatches Number of IMM batches (determines number of batch jobs)
         @param outDir Directory name for output score files
         @param outScoreComb name for output file with combined scores
         """
@@ -140,11 +143,11 @@ class ImmApp(App):
         makedir(opt.outDir)
         rmf(pjoin(opt.outDir,"*"+self.scoreSfx))
         jobs = []
-        for immId in sorted(loadObj(opt.immIds)):
+        immIds = n.asarray(sorted(loadObj(opt.immIds)),dtype="O")
+        for immIdsBatch in n.array_split(immIds,min(opt.nImmBatches,len(immIds))):
             immOpt = copy(opt)
-            immOpt.mode = "score-one"
-            immOpt.immId = immId
-            immOpt.outScore = pjoin(opt.outDir,"%s%s" % (immId,self.scoreSfx))
+            immOpt.mode = "score-batch"
+            immOpt.immIds = immIdsBatch #now this is a sequence, not a file name
             immApp = ImmApp(opt=immOpt)
             jobs += immApp.run(**kw)
         coOpt = copy(opt)
@@ -159,23 +162,26 @@ class ImmApp(App):
         """Combine scores as a final stage of scoreMany().
         Parameters are taken from self.opt
         @param immIds List of IMM IDs to score with
+        @param inpSeq Name of the input multi-FASTA file that was scored (to pull seq lengths here)
         @param outDir Directory name for output score files
         @param outScoreComb name for output file with combined scores
         """
         opt = self.opt
         scores = None
-        idScores = None
+        idSamp = None
         immIds = sorted(loadObj(opt.immIds))
         for (iImm,immId) in enumerate(immIds):
             inpScoreFile = pjoin(opt.outDir,"%s%s" % (immId,self.scoreSfx))
             score = loadObj(inpScoreFile)
             if scores is None:
                 scores = n.resize(score["score"],(len(score),len(immIds)))
-                idScores = score["id"].copy()
+                idSamp = score["id"].copy()
             else:
-                assert n.all(idScores == score["id"])
+                assert n.all(idSamp == score["id"])
             scores[:,iImm] = score["score"]
-        dumpObj(ImmScores(idImms=immIds,idScores=idScores,scores=scores),opt.outScoreComb)
+        lenSamp = fastaLengths(opt.inpSeq)
+        assert n.all(idSamp == lenSamp["id"])
+        dumpObj(ImmScores(idImm=immIds,idSamp=idSamp,scores=scores,lenSamp=lenSamp["len"]),opt.outScoreComb)
     
 
 if __name__ == "__main__":

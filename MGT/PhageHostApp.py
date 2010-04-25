@@ -17,12 +17,11 @@ import UUID
 from MGT.SeqImportApp import *
 from MGT.ImmClassifierApp import *
 from MGT.ImmApp import *
+import csv
 
-class TaxaPred:
+class TaxaPred(Struct):
     """Class to represent taxonomic predictions - one taxid per sample"""
-    def __init__(self,idSamp,pred):
-        self.idSamp = idSamp
-        self.pred = pred
+    pass
 
 class PhageHostApp(App):
     """App-derived class for phage-host assignment"""
@@ -66,6 +65,8 @@ class PhageHostApp(App):
             make_option(None, "--pred-out-taxa",
             action="store", type="string",dest="predOutTaxa",help="Output file with predicted taxa; default is pred-taxa inside "+\
                     "--pred-out-dir"),
+            make_option(None, "--pred-min-len-samp",
+            action="store", type="int",default=0,dest="predMinLenSamp",help="Min length of samples to consider for prediction"),
         ]
         return Struct(usage = "Build phage-host association database, classifiers, and perform training, validation and de novo classification.\n"+\
                 "%prog [options]",option_list=option_list)
@@ -101,6 +102,8 @@ class PhageHostApp(App):
             return self.predict(**kw)
         elif opt.mode == "proc-scores":
             return self.processImmScores(**kw)
+        elif opt.mode == "proc-scores-phymm":
+            return self.processPhymmScores(**kw)
         elif opt.mode == "perf":
             return self.performance(**kw)
         else:
@@ -243,14 +246,48 @@ class PhageHostApp(App):
         """Set to a negative infinity (numpy.NINF) all columns in score matrix that point to NOT subtrees of posRoots nodes.
         This is used to mask all scores pointing to other than bacteria or archaea when we are assigning hosts to viruses"""
         scores = immScores.scores
-        idImms = immScores.idImms
+        idImms = immScores.idImm
         for (iCol,idImm) in enumerate(idImms):
             #assume here that idImm is a taxid
             node = taxaTree.getNode(idImm)
             if not (node.isSubnodeAny(posRoots) or node in posRoots):
                 scores[:,iCol] = n.NINF
 
+    def _maskScoresByRanks(self,taxaTree,immScores):
+        """Set to a negative infinity (numpy.NINF) all columns in score matrix that point to nodes of ranks not in desired range.
+        """
+        scores = immScores.scores
+        idImms = immScores.idImm
+        taxaTree = self.getTaxaTree()
+        taxaLevels = self.getTaxaLevels()
+        max_linn_levid = taxaLevels.getLevelId("family")
+        #min_linn_levid = max_linn_levid
+        min_linn_levid = taxaLevels.getLinnLevelIdRange()[0]
+        for (iCol,idImm) in enumerate(idImms):
+            #assume here that idImm is a taxid
+            node = taxaTree.getNode(idImm)
+            if not taxaLevels.isNodeInLinnLevelRange(node,min_linn_levid,max_linn_levid):
+                scores[:,iCol] = n.NINF
+   
+    def _taxaTopScores(self,taxaTree,immScores,topScoreN):
+        """Get TaxaTree nodes of topScoreN scores for each sample.
+        """
+        scores = immScores.scores
+        idImms = immScores.idImm
+        taxaTree = self.getTaxaTree()
+        taxaLevels = self.getTaxaLevels()
+        #get indices of topScoreN largest scores in each row
+        indScores = scores.argsort(axis=1)[:,-1:-topScoreN-1:-1]
+        return idImms[indScores]
 
+    def _getImmScores(self,reload=False):
+        if not hasattr(self,"immScores") or reload:
+            self.immScores = loadObj(self.opt.outScoreComb)
+            self.immScores.idImm = n.asarray(self.immScores.idImm,dtype=int)
+        return self.immScores
+
+
+    rejTaxid = 0
 
     def processImmScores(self,**kw):
         """Process raw IMM scores to predict host taxonomy for viral sequences.
@@ -260,16 +297,73 @@ class PhageHostApp(App):
         """
         opt = self.opt
         sc = loadObj(opt.outScoreComb)
-        #assume idImms are str(taxids):
-        sc.idImms = n.asarray(sc.idImms,dtype=int)
+        #assume idImm are str(taxids):
+        sc.idImm = n.asarray(sc.idImm,dtype=int)
         taxaTree = self.getTaxaTree()
+        taxaLevels = self.getTaxaLevels()
         scores = sc.scores
-        idImms = sc.idImms
+        idImms = sc.idImm
         micRoots = tuple([ taxaTree.getNode(taxid) for taxid in micTaxids ])
+        virRoot = taxaTree.getNode(virTaxid)
         self._maskScoresNonSubtrees(taxaTree,immScores=sc,posRoots=micRoots)
+        self._maskScoresByRanks(taxaTree,immScores=sc)
+        topTaxids = self._taxaTopScores(taxaTree,immScores=sc,topScoreN=10)
         predTaxids = idImms[scores.argmax(1)]
-        pred = TaxaPred(idSamp=sc.idScores,pred=predTaxids)
+        # this will reject any sample that has top level viral score more
+        # that top level cellular org score, on the assumption that easily
+        # assignbale viruses should be closer to cellular orgs than to other
+        # viruses.
+        # Result: removed 90 out of 250 samples, with no change in specificity.
+        #sc = self._getImmScores(reload=True)
+        #scVirRoot = sc.scores[:,sc.idImm == virTaxid][:,0]
+        #scCellRoot = sc.scores[:,sc.idImm == cellTaxid][:,0]
+        #predTaxids[scVirRoot>scCellRoot] = self.rejTaxid
+        
+        max_linn_levid = taxaLevels.getLevelId("order")
+        min_linn_levid = taxaLevels.getLinnLevelIdRange()[0]
+        # Reject predictions to clades outside of certain clade level range,
+        # as well as to any viral node
+        for i in xrange(len(predTaxids)):
+            if not taxaLevels.isNodeInLinnLevelRange(taxaTree.getNode(predTaxids[i]),
+                    min_linn_levid,max_linn_levid):
+                predTaxids[i] = self.rejTaxid
+            elif taxaTree.getNode(predTaxids[i]).isUnder(virRoot):
+                predTaxids[i] = self.rejTaxid
+
+        pred = TaxaPred(idSamp=sc.idSamp,predTaxid=predTaxids,topTaxid=topTaxids,lenSamp=sc.lenSamp)
         dumpObj(pred,opt.predOutTaxa)
+        self._exportPredictions(taxaPred=pred)
+        #todo: "root" tax level; matrix of predhost idlevel's; batch imm.score() jobs; score hist;
+
+    def _exportPredictions(self,taxaPred):
+        opt = self.opt    
+        taxaTree = self.getTaxaTree()
+        taxaLevels = self.getTaxaLevels()
+        levNames = taxaLevels.getLevelNames("ascend")
+        out = openCompressed(opt.predOutTaxa+".csv","w")
+        flds = ["id","len","taxid","name","rank"]
+        for lev in levNames:
+            flds += ["taxid_"+lev,"name_"+lev]
+        w = csv.DictWriter(out, fieldnames=flds, restval='null',dialect='excel-tab')
+        w.writerow(dict([(fld,fld) for fld in flds]))
+        for idS,taxid,lenS in it.izip(taxaPred.idSamp,taxaPred.predTaxid,taxaPred.lenSamp):
+            if lenS < opt.predMinLenSamp:
+                continue
+            row = dict(id=idS,len=lenS,taxid=taxid)
+            if taxid != self.rejTaxid:
+                node = taxaTree.getNode(taxid)
+                row["name"] = node.name
+                row["rank"] = node.linn_level
+                lin = taxaLevels.lineage(node,withUnclass=False)
+                for ln in lin:
+                    row["name_"+ln.level] = ln.name
+                    row["taxid_"+ln.level] = ln.id
+            w.writerow(row)
+        out.close()
+
+
+    def _idSampToPickedHostNode(self,idSamp,idToLab,taxaTree,virToHost):
+        return n.vectorize(lambda id_samp: virToHost[taxaTree.getNode(int(idToLab[id_samp]))][0],otypes=["O"])(idSamp)
 
     def performance(self,**kw):
         """Evaluate the performance of predicting host taxonomy on the DB of known pairs.
@@ -285,16 +379,21 @@ class PhageHostApp(App):
         pr = loadObj(opt.predOutTaxa)
         idLab = loadObj(opt.predIdLab)
         idSamp = pr.idSamp
-        predTaxids = pr.pred
+        predTaxids = pr.predTaxid
         idToLab = idLab.getIdToLab()
         virToHost = self.getVirToHostPicked()
+        testHostNodes = self._idSampToPickedHostNode(idSamp=idSamp,idToLab=idToLab,taxaTree=taxaTree,virToHost=virToHost)
+        
+        
         lcs_lev = []
         lcs_idlev = []
-        for predTaxid,idS in it.izip(predTaxids,idSamp):
+        rejCnt = 0
+        for predTaxid,idS,testHostNode in it.izip(predTaxids,idSamp,testHostNodes):
+            if predTaxid == self.rejTaxid:
+                rejCnt += 1
+                continue
             predHostNode = taxaTree.getNode(predTaxid)
-            virTaxid = int(idToLab[idS])
-            virNode = taxaTree.getNode(virTaxid)
-            testHostNode = virToHost[virNode][0]
+            virNode = taxaTree.getNode(int(idToLab[idS]))            
             lcsNode = testHostNode.lcsNode(predHostNode)
             lcs_lev.append(lcsNode.linn_level)
             lcs_idlev.append(taxaLevels.getLevelId(lcsNode.linn_level))
@@ -311,8 +410,18 @@ class PhageHostApp(App):
         lcs_lc_linn[-1:] = lcs_lc[lcs_lc["lev"] == "no_rank"]
         lcs_lc_cum = lcs_lc_linn.copy()
         lcs_lc_cum["cnt"] = lcs_lc_linn["cnt"].cumsum()
+        print lcs_lc_cum
+        print "Rejected: %s" % (rejCnt,)
 
-        
+        topPredHostNodes = taxaTree.getNodes(pr.topTaxids)
+        fmt = lambda node: "%s %s" % (node.linn_level,node.name)
+        for testHostNode,predHostNodes in it.izip(testHostNodes,topPredHostNodes):
+            lcs = testHostNode.lcsNodeMany(predHostNodes[:3])
+            for (i,node) in enumerate(testHostNode.lineage()):
+                print "  "*i,fmt(node),"XXX" if node is lcs else ""
+            print "***"
+            print "\n".join([(fmt(node)+" <> "+fmt(node.lcsNode(testHostNode))) for node in predHostNodes])
+            print "\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
         pdb.set_trace()
 
     def getVirToHostPicked(self):
@@ -324,7 +433,7 @@ class PhageHostApp(App):
         seqPicker.load(dbPhPairsFile)
         return seqPicker.seqVirHostPicks()
 
-    def processPhymmScores(self):
+    def processPhymmScores(self,**kw):
         """Load Phymm predictions to use as a reference implementation.
         Parameters are taken from self.opt.
         @param outPhymm File with Phymm output
@@ -333,19 +442,23 @@ class PhageHostApp(App):
         opt = self.opt
         taxaTree = self.getTaxaTree()
         idSamp = []
+        predTaxids = []
         inp = openCompressed(opt.outPhymm,'r')
         inp.next()
         for line in inp:
-            try:
-                fields = line.strip().split('\t')
-                id = int(float(fields[0].split('|')[0]))
-                #Phymm obfuscates original names below genus
-                predNameGen = fields[3]
-                predNode = taxaTree.searchName(predNameGen)
-                if len(predNode):
-                    predNode = predNode[0]
-            except BaseException, msg:
-                print "Exception caught for this line, skipping: %s \t %s" % (msg,line)
+            fields = [ x.strip() for x in line.split('\t') ]
+            id = fields[0].split('|')[0]
+            #Phymm obfuscates original names below genus
+            predNameGen = fields[3]
+            predNode = taxaTree.searchName(predNameGen)
+            if len(predNode):
+                predNode = predNode[0]
+                idSamp.append(id)
+                predTaxids.append(predNode.id)
+            else:
+                print "No TaxaTree node found for name %s" % (predNameGen,)
+        pred = TaxaPred(idSamp=n.asarray(idSamp,dtype=idDtype),pred=predTaxids)
+        dumpObj(pred,opt.predOutTaxa)
         inp.close()
             
         
