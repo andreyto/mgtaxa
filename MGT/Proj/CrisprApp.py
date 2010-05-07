@@ -123,12 +123,13 @@ class CrisprApp(App):
 
     @classmethod
     def parseCmdLinePost(klass,options,args,parser):
+        globOpt = globals()["options"]
         opt = options
         opt.sqlHost = "atovtchi1-lx.jcvi.org"
         opt.minSpacerLen = 20
         opt.maxSpacerLen = 60
         opt.minSpacerNum = 3
-        workDir = options.dataDir #os.environ["GOS_WORK"]
+        workDir = globOpt.dataDir #os.environ["GOS_WORK"]
         opt.topWorkDir = workDir
         opt.crArrSeqDir = pjoin(workDir,"scaf-crispr")
         opt.crArrDir = pjoin(workDir,"scaf-piler")
