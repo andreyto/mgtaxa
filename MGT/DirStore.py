@@ -132,6 +132,10 @@ class DirStore:
         for path in glob.iglob(self.getFilePath(pattern+self.objExt)):
             yield stripSfx(os.path.basename(path),self.objExt)
 
+    def getFilePaths(self,pattern="*"):
+        for path in glob.iglob(self.getFilePath(pattern)):
+            yield path
+    
     def fileNames(self,pattern="*",sfxStrip=None):
         for path in glob.iglob(self.getFilePath(pattern)):
             f = os.path.basename(path)
