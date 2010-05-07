@@ -24,7 +24,7 @@ class NORM_POLICY:
     REVERSE = 0x0040
     
 
-__all__ = ["NORM_POLICY","KmerSparseFeatures","KmerLadderSparseFeatures"]
+__all__ = ["NORM_POLICY","RC_POLICY","KmerSparseFeatures","KmerLadderSparseFeatures"]
 
 
 
@@ -43,14 +43,25 @@ class KmerSparseFeatures(KmerCounter):
 
     
     def _kmers(self,samp,method,result):
-        self.process(samp)
+        if samp is not None:
+            self.process(samp)
         (size,total) = method(result['val'],result['ind'])
         return result[:size]
         
-    def kmerCounts(self,samp):
+    def kmerCounts(self,samp=None):
+        """Return absolute k-mer counts.
+        @param[in] samp If not None, process() will be called first for this data,
+        and then count returned. Otherwise it will assume that process() has been called
+        before (maybe multiple times), and simply finalize and return counts.
+        """
         return self._kmers(samp,self.counts,self.result)
 
-    def kmerFrequencies(self,samp):
+    def kmerFrequencies(self,samp=None):
+        """Return frequencies normalized according to normalization policy supplied to ctor.
+        @param[in] samp If not None, process() will be called first for this data,
+        and then count returned. Otherwise it will assume that process() has been called
+        before (maybe multiple times), and simply finalize and return counts.
+        """
         res = self._kmers(samp,self.frequences,self.resultF)
         normPolicy = self.normPolicy
         assert normPolicy & NORM_POLICY.FREQ, normPolicy
