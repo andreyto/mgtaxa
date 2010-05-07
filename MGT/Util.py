@@ -905,3 +905,31 @@ def izipCount(l):
     """Return iterator of pairs (0,l[0]),(1,l[1]),... where l is an input iterable"""
     return it.izip(it.count(),l)
 
+def runsOfOnesArray(bits):
+    """Return Nx2 array where each row specifies the range for a run of 1 (or True) in 'bits' input array"""
+    # This is taken from
+    # http://stackoverflow.com/questions/1066758/find-length-of-sequences-of-identical-values-in-a-numpy-array
+    # This might be made slightly more memory efficient if the alternative recipe is used from the bottom of 
+    # the referenced page:
+    # >>> from numpy import array, arange
+    # >>> b = array([0,0,0,1,1,1,0,0,0,1,1,1,1,0,0], dtype=bool)
+    # >>> sw = (b[:-1] ^ b[1:]); print sw
+    # [False False  True False False  True False False  True False False False
+    #           True False]
+    # >>> isw = arange(len(sw))[sw]; print isw
+    # [ 2  5  8 12]
+    # >>> lens = isw[1::2] - isw[::2]; print lens
+    # [3 4]
+    # But that will require some processing depending on the start element.
+
+    # make sure all runs of ones are well-bounded
+    bounded = numpy.hstack(([0], bits, [0]))
+    # get 1 at run starts and -1 at run ends
+    difs = numpy.diff(bounded)
+    run_starts, = numpy.where(difs > 0)
+    run_ends, = numpy.where(difs < 0)
+    # go back to offsets before padding
+    #run_starts -= 1
+    #run_ends -= 1
+    return n.column_stack([run_starts,run_ends])
+
