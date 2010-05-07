@@ -146,8 +146,7 @@ def loadSeqs(inpFile,preProc=loadSeqPreprocIdent,inpFileId=None,genMissingId=Fal
             seqs.extend(rec[1])
             ids.extend(rec[2])
         iLine += 1
-    dtype=[('label',labelDtype),('feature','O'),('id',idDtype)]
-    data = n.empty(len(labs),dtype=dtype)
+    data = MGTSparseData.makeEmpty(len(labs))
     data["label"] = labs
     data["feature"] = seqs
     data["id"] = ids
@@ -205,13 +204,18 @@ def makeDenseFeatDtype(label,feature,id):
                 ("feature",feature.dtype,feature.shape[-1]),
                 ("id",id.dtype)])
 
+def makeDenseFeatDtypeFromShape(nAttr):
+    return n.dtype([("label",label.dtype),
+                ("feature",MGTDenseRealFeatures.defDtype,nAttr),
+                ("id",id.dtype)])
+
 def makeDenseFeature(label,feature,id):
     return n.rec.fromarrays((label,feature,id),
             dtype=makeDenseFeatDtype(label,feature,id))
 
 def sparseToDenseSeqs(data):
     """Convert sparse representation of the 'feature' field into dense matrix one.
-    @param data Numpy array with dtype [('label',any),('feature','O'),('id','O')]
+    @param data Numpy array with dtype [('label',any),('feature','O'),('id',idDtype)]
     where each 'feature' record is Numpy array (('ind',int),('val',float)).
     @return Numpy record array with dtype that has the same 'label' and 'id' fields,
     but 'feature' field is now a dense matrix."""
@@ -224,6 +228,18 @@ def sparseToDenseSeqs(data):
         m[iRec,(rec['ind']-1,)] = rec['val']
     return makeDenseFeature(data['label'],m,data['id'])
 
+def denseToSparseSeqs(data):
+    """Convert dense representation of the 'feature' field into sparse SVM one.
+    @param[in] data Numpy array with dtype [('label',any),('feature',1D array),('id',idDtype)]
+    @return data Numpy array with dtype [('label',any),('feature','O'),('id','O')]
+    where each 'feature' record is Numpy array (('ind',int),('val',float)).
+    """
+    newData = MGTSparseData.makeEmpty(len(data))
+    for (newRec,rec) in it.izip(newData,data):
+        newRec["id"] = rec["id"]
+        newRec["label"] = rec["label"]
+        newRec["feature"] = featVecDenseToSparse(rec["feature"])
+    return newData
 
 def loadSparseSeqs(inpFile,inpFileId=None,genMissingId=False,format=defFeatIOFormat):
     if format == "pkl":
@@ -273,10 +289,10 @@ def saveSparseSeqs(data,outFile,outFileId=None,format=defFeatIOFormat):
     if isinstance(outFile,str):
         writer.close()
 
-def saveDenseSeqsAsSparse(data,out,outFileId=None):
-    writer = SvmDenseFeatureWriterTxt(out=out,outId=outFileId)
+def saveDenseSeqsAsSparse(data,outFile,outFileId=None,format=defFeatIOFormat):
+    writer = SvmSparseFeatureWriter(out=outFile,outId=outFileId,format=format)
     for rec in data:
-        writer.write(label=rec["label"],feature=rec["feature"],id=rec["id"])
+        writer.write(label=rec["label"],feature=featVecDenseToSparse(rec["feature"]),id=rec["id"])
     writer.close()
 
 def saveDenseSeqsAsXyz(data,out,outFileId=None):
