@@ -210,7 +210,7 @@ install: all
 	$(CPR) $(PY_DIR) $(prefix)
 	install -t $(extdir) $(PYEXT) MGTX/__init__.py
 	$(CPR) $(DOC_DIR)/html $(docdir)
-	install -t $(sysconfdir) mgtaxa.cshrc mgtaxa.shrc
+	install -t $(sysconfdir) mgtaxa.cshrc mgtaxa.shrc $(PROJ_DIR)/etc/gt.sketch.default.style
 	install -t $(exec_bindir) $(PROGRAMS)
 	$(CPR) $(BIN_PY_DIR)/* $(bindir)
 
