@@ -30,7 +30,13 @@
 
 <tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1Svm_1_1IdLabels.html#43bb31fac17244a30ce27642a843b7a2">fromIdFile</a></td></tr>
 
+<tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1Svm_1_1IdLabels.html#dd01e76150e20a7e2d062ed6072d19d0">fromFields</a></td></tr>
+
 <tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1Svm_1_1IdLabels.html#b8c2769e7cd845cf8e16485918d9e449">union</a></td></tr>
+
+<tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1Svm_1_1IdLabels.html#abe105e6cdad5b32e22746b99d39eab1">getSplits</a></td></tr>
+
+<tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1Svm_1_1IdLabels.html#973a19f5a54a1f30096bf3b0eeb42582">join</a></td></tr>
 
 <tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1Svm_1_1IdLabels.html#5ab34429055dafa05a3fe1a546845372">selBySplits</a></td></tr>
 
@@ -104,7 +110,7 @@
 
 <p>
 <div class="fragment"><pre class="fragment">Ctor.
-@param records Numpy record array with fields id,label,split.
+@param records Numpy record array with fields id,label,split. Conversion to recarray will be attempted if necessary.
 @param fileName file created by save() call
 @pre Either records or fileName must be None. id field is unique, e.g. obtained with UUID module</pre></div>     </td>
   </tr>
@@ -130,7 +136,13 @@
           <td class="md" nowrap align="right"></td>
           <td class="md"></td>
           <td class="md" nowrap>&nbsp;</td>
-          <td class="mdname" nowrap> <em>targets</em> = <code>{}</code></td>
+          <td class="mdname" nowrap> <em>targets</em> = <code>{}</code>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>rndSeed</em> = <code>None</code></td>
         </tr>
         <tr>
           <td class="md"></td>
@@ -185,6 +197,58 @@ and overrides the maxCount parameter for a specific split or specific (split,lab
 <div class="fragment"><pre class="fragment">Return a default numpy dtype that can be used to construct new record arrays</pre></div>     </td>
   </tr>
 </table>
+<a class="anchor" name="dd01e76150e20a7e2d062ed6072d19d0"></a><!-- doxytag: member="MGT::Svm::IdLabels::fromFields" ref="dd01e76150e20a7e2d062ed6072d19d0" args="" --><p>
+<table class="mdTable" cellpadding="2" cellspacing="0">
+  <tr>
+    <td class="mdRow">
+      <table cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td class="md" nowrap valign="top">def MGT::Svm::IdLabels::fromFields           </td>
+          <td class="md" valign="top">(&nbsp;</td>
+          <td class="md" nowrap valign="top">&nbsp;</td>
+          <td class="mdname" nowrap> <em>klass</em>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>id</em>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>label</em> = <code>0</code>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>split</em> = <code>0</code></td>
+        </tr>
+        <tr>
+          <td class="md"></td>
+          <td class="md">)&nbsp;</td>
+          <td class="md" colspan="2"></td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+<table cellspacing="5" cellpadding="0" border="0">
+  <tr>
+    <td>
+      &nbsp;
+    </td>
+    <td>
+
+<p>
+<div class="fragment"><pre class="fragment">Create new object from ID and other field arrays.
+@param id ID array
+@param label Label array (or a constant value)
+@param split Split array (or a constant value)</pre></div>     </td>
+  </tr>
+</table>
 <a class="anchor" name="43bb31fac17244a30ce27642a843b7a2"></a><!-- doxytag: member="MGT::Svm::IdLabels::fromIdFile" ref="43bb31fac17244a30ce27642a843b7a2" args="" --><p>
 <table class="mdTable" cellpadding="2" cellspacing="0">
   <tr>
@@ -231,7 +295,89 @@ and overrides the maxCount parameter for a specific split or specific (split,lab
     <td>
 
 <p>
-<div class="fragment"><pre class="fragment">Create new object by IDs setting other fields to constant values</pre></div>     </td>
+<div class="fragment"><pre class="fragment">Create new object from IDs extracted from data file setting other fields to constant values.
+@param featFile the name of the data file. The IDs will be loaded from the accompanying id file.</pre></div>     </td>
+  </tr>
+</table>
+<a class="anchor" name="abe105e6cdad5b32e22746b99d39eab1"></a><!-- doxytag: member="MGT::Svm::IdLabels::getSplits" ref="abe105e6cdad5b32e22746b99d39eab1" args="" --><p>
+<table class="mdTable" cellpadding="2" cellspacing="0">
+  <tr>
+    <td class="mdRow">
+      <table cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td class="md" nowrap valign="top">def MGT::Svm::IdLabels::getSplits           </td>
+          <td class="md" valign="top">(&nbsp;</td>
+          <td class="md" nowrap valign="top">&nbsp;</td>
+          <td class="mdname1" valign="top" nowrap> <em>self</em>          </td>
+          <td class="md" valign="top">&nbsp;)&nbsp;</td>
+          <td class="md" nowrap></td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+<table cellspacing="5" cellpadding="0" border="0">
+  <tr>
+    <td>
+      &nbsp;
+    </td>
+    <td>
+
+<p>
+<div class="fragment"><pre class="fragment">Return dict(split-&gt;IdLabel)</pre></div>     </td>
+  </tr>
+</table>
+<a class="anchor" name="973a19f5a54a1f30096bf3b0eeb42582"></a><!-- doxytag: member="MGT::Svm::IdLabels::join" ref="973a19f5a54a1f30096bf3b0eeb42582" args="" --><p>
+<table class="mdTable" cellpadding="2" cellspacing="0">
+  <tr>
+    <td class="mdRow">
+      <table cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td class="md" nowrap valign="top">def MGT::Svm::IdLabels::join           </td>
+          <td class="md" valign="top">(&nbsp;</td>
+          <td class="md" nowrap valign="top">&nbsp;</td>
+          <td class="mdname" nowrap> <em>self</em>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>other</em>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>colOther</em> = <code>&quot;split&quot;</code>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>requireMatch</em> = <code>False</code></td>
+        </tr>
+        <tr>
+          <td class="md"></td>
+          <td class="md">)&nbsp;</td>
+          <td class="md" colspan="2"></td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+<table cellspacing="5" cellpadding="0" border="0">
+  <tr>
+    <td>
+      &nbsp;
+    </td>
+    <td>
+
+<p>
+<div class="fragment"><pre class="fragment">Perform inner join with another IdLabel object or a record array.
+@param other IdLabel instance or record array with at least fields "id" and colOther
+@param colOther Data column to take from other - the rest will be taken from self
+@param requireMatch If True, will expect every ID from self to be present in other
+@return new IdLabels instance resulting from join operation</pre></div>     </td>
   </tr>
 </table>
 <a class="anchor" name="156a1f1c09a54d334521eb5f241df80b"></a><!-- doxytag: member="MGT::Svm::IdLabels::makeRecords" ref="156a1f1c09a54d334521eb5f241df80b" args="" --><p>
@@ -408,7 +554,13 @@ classes would have a chance of showing false positives only.</pre></div>     </t
           <td class="md" nowrap align="right"></td>
           <td class="md"></td>
           <td class="md" nowrap>&nbsp;</td>
-          <td class="mdname" nowrap> <em>ids</em></td>
+          <td class="mdname" nowrap> <em>ids</em>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>rawRec</em> = <code>False</code></td>
         </tr>
         <tr>
           <td class="md"></td>
@@ -427,7 +579,7 @@ classes would have a chance of showing false positives only.</pre></div>     </t
     <td>
 
 <p>
-<div class="fragment"><pre class="fragment">Return a new IdLabels object that contains only records within a given ids sequence</pre></div>     </td>
+<div class="fragment"><pre class="fragment">Return a new IdLabels object (or only records array) that contains only records within a given ids sequence.</pre></div>     </td>
   </tr>
 </table>
 <a class="anchor" name="7edec33d1ebea64689ee7087dffcfe75"></a><!-- doxytag: member="MGT::Svm::IdLabels::selByLabs" ref="7edec33d1ebea64689ee7087dffcfe75" args="" --><p>
@@ -668,7 +820,7 @@ classes would have a chance of showing false positives only.</pre></div>     </t
 </table>
 <hr>The documentation for this class was generated from the following file:<ul>
 <li>mgtaxa/MGT/Svm.py</ul>
-<hr size="1"><address style="align: right;"><small>Generated on Wed Jul 29 17:53:24 2009 for Mgtaxa by&nbsp;
+<hr size="1"><address style="align: right;"><small>Generated on Sat May 8 15:32:21 2010 for Mgtaxa by&nbsp;
 <a href="http://www.doxygen.org/index.html">
 <img src="doxygen.png" alt="doxygen" align="middle" border="0"></a> 1.4.6 </small></address>
 </body>

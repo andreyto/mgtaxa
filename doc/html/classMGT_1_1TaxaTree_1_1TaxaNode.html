@@ -68,11 +68,17 @@
 
 <tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1TaxaTree_1_1TaxaNode.html#7c632d9896f0fd5cd596e2bd6e0a87e1">setMaxSubtreeRank</a></td></tr>
 
+<tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1TaxaTree_1_1TaxaNode.html#ddaf7e7b67013a5450f2b9f2544efc80">setAttribute</a></td></tr>
+
 <tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1TaxaTree_1_1TaxaNode.html#a982357b4bd2d7715598054d759e6df8">isSubnode</a></td></tr>
+
+<tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1TaxaTree_1_1TaxaNode.html#6d3895e33537f43dc44b55b8edf389bd">isUnder</a></td></tr>
 
 <tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1TaxaTree_1_1TaxaNode.html#f1183314476b765ebdae34a2a9564daa">whichSupernode</a></td></tr>
 
 <tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1TaxaTree_1_1TaxaNode.html#d4eda6b3eeec312541beb372e02d6c86">lcsNode</a></td></tr>
+
+<tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1TaxaTree_1_1TaxaNode.html#4d86f42266a6e38d20ce1ca6c1d9b851">lcsNodeMany</a></td></tr>
 
 <tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1TaxaTree_1_1TaxaNode.html#154bcb893a4deba83c12f16175be1362">setIsUnderUnclass</a></td></tr>
 
@@ -263,7 +269,51 @@ Depth must be precalculated for each node by a call to TaxaTree.setDepth().</pre
 <p>
 <div class="fragment"><pre class="fragment">Return true if this node is a descendant of the other node.
 Uses pre-computed nested sets indexes, which must be up-to-date.
-A node is not considered a subnode of itself.</pre></div>     </td>
+@note A node is not considered a subnode of itself - see isUnder() for this.</pre></div>     </td>
+  </tr>
+</table>
+<a class="anchor" name="6d3895e33537f43dc44b55b8edf389bd"></a><!-- doxytag: member="MGT::TaxaTree::TaxaNode::isUnder" ref="6d3895e33537f43dc44b55b8edf389bd" args="" --><p>
+<table class="mdTable" cellpadding="2" cellspacing="0">
+  <tr>
+    <td class="mdRow">
+      <table cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td class="md" nowrap valign="top">def MGT::TaxaTree::TaxaNode::isUnder           </td>
+          <td class="md" valign="top">(&nbsp;</td>
+          <td class="md" nowrap valign="top">&nbsp;</td>
+          <td class="mdname" nowrap> <em>self</em>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>other</em>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>withSelf</em> = <code>False</code></td>
+        </tr>
+        <tr>
+          <td class="md"></td>
+          <td class="md">)&nbsp;</td>
+          <td class="md" colspan="2"></td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+<table cellspacing="5" cellpadding="0" border="0">
+  <tr>
+    <td>
+      &nbsp;
+    </td>
+    <td>
+
+<p>
+<div class="fragment"><pre class="fragment">Return true if this node is a descendant of the other node or the other node itself.
+Uses pre-computed nested sets indexes, which must be up-to-date.</pre></div>     </td>
   </tr>
 </table>
 <a class="anchor" name="8799aea055e40ba8fdcb44fa36dff694"></a><!-- doxytag: member="MGT::TaxaTree::TaxaNode::iterDepthTop" ref="8799aea055e40ba8fdcb44fa36dff694" args="" --><p>
@@ -406,6 +456,43 @@ See setNestedSetsIndex() method for application example.</pre></div>     </td>
 <div class="fragment"><pre class="fragment">Return the Lowest Common SuperNode of self and other</pre></div>     </td>
   </tr>
 </table>
+<a class="anchor" name="4d86f42266a6e38d20ce1ca6c1d9b851"></a><!-- doxytag: member="MGT::TaxaTree::TaxaNode::lcsNodeMany" ref="4d86f42266a6e38d20ce1ca6c1d9b851" args="" --><p>
+<table class="mdTable" cellpadding="2" cellspacing="0">
+  <tr>
+    <td class="mdRow">
+      <table cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td class="md" nowrap valign="top">def MGT::TaxaTree::TaxaNode::lcsNodeMany           </td>
+          <td class="md" valign="top">(&nbsp;</td>
+          <td class="md" nowrap valign="top">&nbsp;</td>
+          <td class="mdname" nowrap> <em>self</em>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>others</em></td>
+        </tr>
+        <tr>
+          <td class="md"></td>
+          <td class="md">)&nbsp;</td>
+          <td class="md" colspan="2"></td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+<table cellspacing="5" cellpadding="0" border="0">
+  <tr>
+    <td>
+      &nbsp;
+    </td>
+    <td>
+
+<p>
+<div class="fragment"><pre class="fragment">Return the Lowest Common SuperNode of self and a sequence other nodes</pre></div>     </td>
+  </tr>
+</table>
 <a class="anchor" name="fdd9d57946e0e08e0295199d33b43b12"></a><!-- doxytag: member="MGT::TaxaTree::TaxaNode::lineage" ref="fdd9d57946e0e08e0295199d33b43b12" args="" --><p>
 <table class="mdTable" cellpadding="2" cellspacing="0">
   <tr>
@@ -521,6 +608,59 @@ Condition is always called with a valid node argument.</pre></div>     </td>
 
 <p>
 <div class="fragment"><pre class="fragment">Return (self.lind,numpy.zeros(number of nodes in subtree)).</pre></div>     </td>
+  </tr>
+</table>
+<a class="anchor" name="ddaf7e7b67013a5450f2b9f2544efc80"></a><!-- doxytag: member="MGT::TaxaTree::TaxaNode::setAttribute" ref="ddaf7e7b67013a5450f2b9f2544efc80" args="" --><p>
+<table class="mdTable" cellpadding="2" cellspacing="0">
+  <tr>
+    <td class="mdRow">
+      <table cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td class="md" nowrap valign="top">def MGT::TaxaTree::TaxaNode::setAttribute           </td>
+          <td class="md" valign="top">(&nbsp;</td>
+          <td class="md" nowrap valign="top">&nbsp;</td>
+          <td class="mdname" nowrap> <em>self</em>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>name</em>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>value</em>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>doCopy</em> = <code>False</code></td>
+        </tr>
+        <tr>
+          <td class="md"></td>
+          <td class="md">)&nbsp;</td>
+          <td class="md" colspan="2"></td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+<table cellspacing="5" cellpadding="0" border="0">
+  <tr>
+    <td>
+      &nbsp;
+    </td>
+    <td>
+
+<p>
+<div class="fragment"><pre class="fragment">Assign an attribute to every node in a subtree.
+@param name Name of attribute
+@param value Value, the same for every node
+@param doCopy If True, assign copy.copy(value) to every node - 
+in case we assigning an empty list that we later want to modify independently for every node</pre></div>     </td>
   </tr>
 </table>
 <a class="anchor" name="d1c29d186f2a22d4573859e2cf2c991e"></a><!-- doxytag: member="MGT::TaxaTree::TaxaNode::setDebugOnUpdate" ref="d1c29d186f2a22d4573859e2cf2c991e" args="" --><p>
@@ -877,7 +1017,13 @@ base is None, the lind of this node will be used.</pre></div>     </td>
           <td class="md" nowrap align="right"></td>
           <td class="md"></td>
           <td class="md" nowrap>&nbsp;</td>
-          <td class="mdname" nowrap> <em>condition</em> = <code>None</code></td>
+          <td class="mdname" nowrap> <em>condition</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>childExtractor</em> = <code>None</code></td>
         </tr>
         <tr>
           <td class="md"></td>
@@ -898,16 +1044,31 @@ base is None, the lind of this node will be used.</pre></div>     </td>
 <p>
 <div class="fragment"><pre class="fragment">Assign to 'dstAttr' attribute the result of applying 'reduce(func,...)' to this node and its children.
 Example: setTotal() that sums only for non "unclassified" children could be implemented as:
-setReduction(lambda node: getattr(node,srcAttr),dstAttr,operator.add,lambda node: not node.isUnclassified()).
-Note: extractor(node) is called unconditionally; condition is only applied when the computed values of
-'dstAttr' attribute are accumulated for reduction.
+setReduction(srcAttr,dstAttr,operator.add,lambda node: not node.isUnclassified()).
+Note: extractor(node) is called unconditionally; condition is only applied to decide whether to extract the value
+with childExtractor() from each child sub-node.
+Example: collectLeafIds() that assigns to dstAttr a list of all leaf node IDs under each node:
+setReduction(lambda node: [ node.id ],dstAttr,operator.add)
+Example: same as above, but propagates only a max 'n' elements from a list accumulated for each child node
+(can be viewed as a balanced sampling of the tree):
+boundedSample = lambda l,n: random.sample(l,min(len(l),n))
+setReduction(lambda node: [ node.id ],dstAttr,operator.add,
+childExtractor=lambda child: boundedSample(getattr(child,dstAttr),n).
 @param extractor - unary function object that is applied to each node to extract the value that is accumulated.
+The result is passed as a third argument to 'reduce' built-in.
 As a convenient exception, if 'extractor' is a string, it is considered to be a node attribute name.
 @param dstAttr - name of destination attribute to set in each node with accumulated result
 @param reduction - binary function object that is passed as a first argument to 'reduce' built-in, defaults
 to operator.add
 @param condition - apply this condition to each child node to decide if it should contribute to the 'dstAttr'
-of the parent.</pre></div>     </td>
+of the parent.
+@param childExtractor - unary function object that is applied to each child node of a given node to extract the 
+value that is accumulated. The list of results is passed as a second argument to 'reduce' built-in.
+As a convenient exception, if 'chilExtractor' is a string, it is considered to be a node attribute name.
+Alternatively, if it is None (default), the value of 'dstAttr' of the child node will be extracted.
+An example of a non-trivial use of this argument is when we are accumulating a list into 'dstAttr' and want to
+extract only a random subset of this list from each child node.
+</pre></div>     </td>
   </tr>
 </table>
 <a class="anchor" name="54217795cb97f755da4b347bf1918089"></a><!-- doxytag: member="MGT::TaxaTree::TaxaNode::setTotal" ref="54217795cb97f755da4b347bf1918089" args="" --><p>
@@ -1134,7 +1295,7 @@ and second time before returning from the node, in which case  it is called as f
 </table>
 <hr>The documentation for this class was generated from the following file:<ul>
 <li>mgtaxa/MGT/TaxaTree.py</ul>
-<hr size="1"><address style="align: right;"><small>Generated on Wed Jul 29 17:53:24 2009 for Mgtaxa by&nbsp;
+<hr size="1"><address style="align: right;"><small>Generated on Sat May 8 15:32:21 2010 for Mgtaxa by&nbsp;
 <a href="http://www.doxygen.org/index.html">
 <img src="doxygen.png" alt="doxygen" align="middle" border="0"></a> 1.4.6 </small></address>
 </body>

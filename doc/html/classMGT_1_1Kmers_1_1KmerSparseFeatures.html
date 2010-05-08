@@ -26,14 +26,102 @@
 </map>
 <a href="classMGT_1_1Kmers_1_1KmerSparseFeatures-members.html">List of all members.</a><table border="0" cellpadding="0" cellspacing="0">
 <tr><td></td></tr>
+<tr><td colspan="2"><br><h2>Public Member Functions</h2></td></tr>
+<tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1Kmers_1_1KmerSparseFeatures.html#54762e195aefc598af68c69ff6060b20">kmerCounts</a></td></tr>
+
+<tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1Kmers_1_1KmerSparseFeatures.html#0b2b7af86b2a141c5029a55e362da98b">kmerFrequencies</a></td></tr>
+
 </table>
 <hr><a name="_details"></a><h2>Detailed Description</h2>
 <div class="fragment"><pre class="fragment">Any of the kmerXXX methods may or may not return a reference to internal data,
 so make a copy if a guaranteed independent copy of the result is required.</pre></div> 
 <p>
+<hr><h2>Member Function Documentation</h2>
+<a class="anchor" name="54762e195aefc598af68c69ff6060b20"></a><!-- doxytag: member="MGT::Kmers::KmerSparseFeatures::kmerCounts" ref="54762e195aefc598af68c69ff6060b20" args="" --><p>
+<table class="mdTable" cellpadding="2" cellspacing="0">
+  <tr>
+    <td class="mdRow">
+      <table cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td class="md" nowrap valign="top">def MGT::Kmers::KmerSparseFeatures::kmerCounts           </td>
+          <td class="md" valign="top">(&nbsp;</td>
+          <td class="md" nowrap valign="top">&nbsp;</td>
+          <td class="mdname" nowrap> <em>self</em>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>samp</em> = <code>None</code></td>
+        </tr>
+        <tr>
+          <td class="md"></td>
+          <td class="md">)&nbsp;</td>
+          <td class="md" colspan="2"></td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+<table cellspacing="5" cellpadding="0" border="0">
+  <tr>
+    <td>
+      &nbsp;
+    </td>
+    <td>
+
+<p>
+<div class="fragment"><pre class="fragment">Return absolute k-mer counts.
+@param[in] samp If not None, process() will be called first for this data,
+and then count returned. Otherwise it will assume that process() has been called
+before (maybe multiple times), and simply finalize and return counts.
+</pre></div>     </td>
+  </tr>
+</table>
+<a class="anchor" name="0b2b7af86b2a141c5029a55e362da98b"></a><!-- doxytag: member="MGT::Kmers::KmerSparseFeatures::kmerFrequencies" ref="0b2b7af86b2a141c5029a55e362da98b" args="" --><p>
+<table class="mdTable" cellpadding="2" cellspacing="0">
+  <tr>
+    <td class="mdRow">
+      <table cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td class="md" nowrap valign="top">def MGT::Kmers::KmerSparseFeatures::kmerFrequencies           </td>
+          <td class="md" valign="top">(&nbsp;</td>
+          <td class="md" nowrap valign="top">&nbsp;</td>
+          <td class="mdname" nowrap> <em>self</em>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>samp</em> = <code>None</code></td>
+        </tr>
+        <tr>
+          <td class="md"></td>
+          <td class="md">)&nbsp;</td>
+          <td class="md" colspan="2"></td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+<table cellspacing="5" cellpadding="0" border="0">
+  <tr>
+    <td>
+      &nbsp;
+    </td>
+    <td>
+
+<p>
+<div class="fragment"><pre class="fragment">Return frequencies normalized according to normalization policy supplied to ctor.
+@param[in] samp If not None, process() will be called first for this data,
+and then count returned. Otherwise it will assume that process() has been called
+before (maybe multiple times), and simply finalize and return counts.
+</pre></div>     </td>
+  </tr>
+</table>
 <hr>The documentation for this class was generated from the following file:<ul>
 <li>mgtaxa/MGT/Kmers.py</ul>
-<hr size="1"><address style="align: right;"><small>Generated on Wed Jul 29 17:53:23 2009 for Mgtaxa by&nbsp;
+<hr size="1"><address style="align: right;"><small>Generated on Sat May 8 15:32:20 2010 for Mgtaxa by&nbsp;
 <a href="http://www.doxygen.org/index.html">
 <img src="doxygen.png" alt="doxygen" align="middle" border="0"></a> 1.4.6 </small></address>
 </body>

@@ -26,6 +26,8 @@
 
 <tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1App_1_1App.html#7fbee04b0616a629f4d95df494195bf2">run</a></td></tr>
 
+<tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1App_1_1App.html#09a4bf43798064d08fcf97038480b300">_ajustDepend</a></td></tr>
+
 <tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1App_1_1App.html#7dbfd4f4b688baa8b586ac92f0a1b368">doWork</a></td></tr>
 
 <tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1App_1_1App.html#ac267b48bfd17ef5348d9bf22b63bd3d">runBatch</a></td></tr>
@@ -37,6 +39,10 @@
 <tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1App_1_1App.html#24772e34d10ff65d64f403cc54e8c423">parseCmdLinePost</a></td></tr>
 
 <tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1App_1_1App.html#06f076ddf6592cd130206b999dae0f67">fillWithDefaultOptions</a></td></tr>
+
+<tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1App_1_1App.html#b29b726526da9aadde8f51b12de3b2e9">_instanceOptionsPostBase</a></td></tr>
+
+<tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1App_1_1App.html#26fc22445fbd5a2bddd63c2d5b7b8b17">instanceOptionsPost</a></td></tr>
 
 <tr><td class="memItemLeft" nowrap align="right" valign="top">def&nbsp;</td><td class="memItemRight" valign="bottom"><a class="el" href="classMGT_1_1App_1_1App.html#eaae1fdec0f3e5713f679c22dc89b457">getAppName</a></td></tr>
 
@@ -118,6 +124,83 @@ if calling from Python code:
     app = App(opt=opt) #that fills yet unset options with defaults
     app.run() #either runs in the same process, or submits itself or a set of other Apps to batch queue
 </pre></div>     </td>
+  </tr>
+</table>
+<a class="anchor" name="09a4bf43798064d08fcf97038480b300"></a><!-- doxytag: member="MGT::App::App::_ajustDepend" ref="09a4bf43798064d08fcf97038480b300" args="" --><p>
+<table class="mdTable" cellpadding="2" cellspacing="0">
+  <tr>
+    <td class="mdRow">
+      <table cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td class="md" nowrap valign="top">def MGT::App::App::_ajustDepend           </td>
+          <td class="md" valign="top">(&nbsp;</td>
+          <td class="md" nowrap valign="top">&nbsp;</td>
+          <td class="mdname" nowrap> <em>self</em>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>kw</em></td>
+        </tr>
+        <tr>
+          <td class="md"></td>
+          <td class="md">)&nbsp;</td>
+          <td class="md" colspan="2"></td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+<table cellspacing="5" cellpadding="0" border="0">
+  <tr>
+    <td>
+      &nbsp;
+    </td>
+    <td>
+
+<p>
+<div class="fragment"><pre class="fragment">squash all None is 'depend' list. "None" can come from other run() calls when runMode=="inproc".</pre></div>     </td>
+  </tr>
+</table>
+<a class="anchor" name="b29b726526da9aadde8f51b12de3b2e9"></a><!-- doxytag: member="MGT::App::App::_instanceOptionsPostBase" ref="b29b726526da9aadde8f51b12de3b2e9" args="" --><p>
+<table class="mdTable" cellpadding="2" cellspacing="0">
+  <tr>
+    <td class="mdRow">
+      <table cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td class="md" nowrap valign="top">def MGT::App::App::_instanceOptionsPostBase           </td>
+          <td class="md" valign="top">(&nbsp;</td>
+          <td class="md" nowrap valign="top">&nbsp;</td>
+          <td class="mdname" nowrap> <em>self</em>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>opt</em></td>
+        </tr>
+        <tr>
+          <td class="md"></td>
+          <td class="md">)&nbsp;</td>
+          <td class="md" colspan="2"></td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+<table cellspacing="5" cellpadding="0" border="0">
+  <tr>
+    <td>
+      &nbsp;
+    </td>
+    <td>
+
+<p>
+<div class="fragment"><pre class="fragment">Set (in place) instance-specific options.
+This is called from __init__() and has access to the execution context (such as current dir).
+This method should not be redefined in derived classes. Redefine instanceOptionsPost, which
+is called right after this one.</pre></div>     </td>
   </tr>
 </table>
 <a class="anchor" name="7dbfd4f4b688baa8b586ac92f0a1b368"></a><!-- doxytag: member="MGT::App::App::doWork" ref="7dbfd4f4b688baa8b586ac92f0a1b368" args="" --><p>
@@ -340,6 +423,44 @@ and "python sys.argv[0]" otherwise.</pre></div>     </td>
 such as self.getCmd()+' --opt-file '+optFile.</pre></div>     </td>
   </tr>
 </table>
+<a class="anchor" name="26fc22445fbd5a2bddd63c2d5b7b8b17"></a><!-- doxytag: member="MGT::App::App::instanceOptionsPost" ref="26fc22445fbd5a2bddd63c2d5b7b8b17" args="" --><p>
+<table class="mdTable" cellpadding="2" cellspacing="0">
+  <tr>
+    <td class="mdRow">
+      <table cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          <td class="md" nowrap valign="top">def MGT::App::App::instanceOptionsPost           </td>
+          <td class="md" valign="top">(&nbsp;</td>
+          <td class="md" nowrap valign="top">&nbsp;</td>
+          <td class="mdname" nowrap> <em>self</em>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>opt</em></td>
+        </tr>
+        <tr>
+          <td class="md"></td>
+          <td class="md">)&nbsp;</td>
+          <td class="md" colspan="2"></td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+<table cellspacing="5" cellpadding="0" border="0">
+  <tr>
+    <td>
+      &nbsp;
+    </td>
+    <td>
+
+<p>
+<div class="fragment"><pre class="fragment">Set (in place) instance-specific options.
+This is called from __init__() and has access to the execution context (such as current dir).</pre></div>     </td>
+  </tr>
+</table>
 <a class="anchor" name="da53e44b251f3d6a171c9baffa92f5fb"></a><!-- doxytag: member="MGT::App::App::makeOptionParserArgs" ref="da53e44b251f3d6a171c9baffa92f5fb" args="" --><p>
 <table class="mdTable" cellpadding="2" cellspacing="0">
   <tr>
@@ -388,7 +509,13 @@ Must be redefined in the derived class only if there are any application specifi
           <td class="md" nowrap align="right"></td>
           <td class="md"></td>
           <td class="md" nowrap>&nbsp;</td>
-          <td class="mdname" nowrap> <em>args</em> = <code>None</code></td>
+          <td class="mdname" nowrap> <em>args</em> = <code>None</code>, </td>
+        </tr>
+        <tr>
+          <td class="md" nowrap align="right"></td>
+          <td class="md"></td>
+          <td class="md" nowrap>&nbsp;</td>
+          <td class="mdname" nowrap> <em>_explicitOpt</em> = <code>None</code></td>
         </tr>
         <tr>
           <td class="md"></td>
@@ -566,7 +693,7 @@ If kw["runMode"] or global options.app.runMode == "inproc" it will call self.run
 </table>
 <hr>The documentation for this class was generated from the following file:<ul>
 <li>mgtaxa/MGT/App.py</ul>
-<hr size="1"><address style="align: right;"><small>Generated on Wed Jul 29 17:53:23 2009 for Mgtaxa by&nbsp;
+<hr size="1"><address style="align: right;"><small>Generated on Sat May 8 15:32:20 2010 for Mgtaxa by&nbsp;
 <a href="http://www.doxygen.org/index.html">
 <img src="doxygen.png" alt="doxygen" align="middle" border="0"></a> 1.4.6 </small></address>
 </body>
