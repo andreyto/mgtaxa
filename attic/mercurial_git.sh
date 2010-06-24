@@ -1,4 +1,5 @@
 #!/bin/sh
+set -ex #abort if any command fails and echo all commands
 
 if [ $1 = -h ]; then 
 
