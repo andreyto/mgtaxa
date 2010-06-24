@@ -699,7 +699,7 @@ def groupRecArray(arr,keyField):
     @param keyField name of field to create the key from
     @return dict that for each unique value of keyField contains a numpy record 
     array with all records that have this key value.
-    @postcondition Grouping is stable - the original order of records within each group is preserved."""
+    @post Grouping is stable - the original order of records within each group is preserved."""
     m = defdict(list)
     for rec in arr:
         #dereferenced recarray field scalars are compared by address in dict (because they are mutable?), 

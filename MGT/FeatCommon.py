@@ -51,7 +51,7 @@ class MGTSparseData(object):
     
     @classmethod
     def makeEmpty(klass,numFeat):
-        return n.empty(numFeat,dtype=defDtype)
+        return n.empty(numFeat,dtype=klass.defDtype)
 
 class RevCompl:
     def __init__(self):
@@ -69,7 +69,14 @@ revCompl = RevCompl()
 
 def featVecDenseToSparse(x):
     """Return sparse feature vector from a dense one"""
-    ind = x.nonzero()
+    ##@todo here we always save the index of last element, even if it is zero -
+    ## otherwise when we convert later sparse feature into dense, we can lose
+    ## dimensions at the end. This causes exceptions during prediction with 
+    ## classifiers that operate on dense features.
+    ## This has to be handled at some other level, but it is not clear where at this time.
+    ind = x.nonzero()[0]
+    if x[-1] == 0:
+        ind = n.append(ind,len(x)-1)
     # sparse ind starts from 1
-    return n.rec.fromarrays(((ind[0]+1).astype(indDtype),x[ind]),names=("ind","val"))
+    return n.rec.fromarrays(((ind+1).astype(indDtype),x[(ind,)]),names=("ind","val"))
 

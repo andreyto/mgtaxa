@@ -185,14 +185,27 @@ class IdLabels:
 
     @classmethod
     def fromIdFile(klass,featFile,label=0,split=0):
-        """Create new object by IDs setting other fields to constant values"""
+        """Create new object from IDs extracted from data file setting other fields to constant values.
+        @param featFile the name of the data file. The IDs will be loaded from the accompanying id file."""
         ids = loadSeqsIdDef(featFile)
         recs = klass.makeRecords(len(ids))
         recs["id"] = ids
         recs["label"] = label
         recs["split"] = split
         return klass(records=recs)
-
+    
+    @classmethod
+    def fromFields(klass,id,label=0,split=0):
+        """Create new object from ID and other field arrays.
+        @param id ID array
+        @param label Label array (or a constant value)
+        @param split Split array (or a constant value)"""
+        recs = klass.makeRecords(len(id))
+        recs["id"] = id
+        recs["label"] = label
+        recs["split"] = split
+        return klass(records=recs)
+    
     @classmethod
     def union(klass,idLabs):
         """Return a union of several IdLabels objects.
@@ -215,6 +228,9 @@ class IdLabels:
     def getRecords(self):
         return self.data.records
 
+    def __len__(self):
+        return len(self.getRecords())
+
     def getIdToRec(self):
         return self.idToRec
 
@@ -228,11 +244,33 @@ class IdLabels:
         return self.splitToRec
 
     def getSplits(self):
+        """Return dict(split->IdLabel)"""
         splits = {}
         splitToRec = self.getSplitToRec()
         for key,rec in splitToRec.iteritems():
             splits[key] = self.__class__(records=rec)
         return splits
+
+    def join(self,other,colOther="split",requireMatch=False):
+        """Perform inner join with another IdLabel object or a record array.
+        @param other IdLabel instance or record array with at least fields "id" and colOther
+        @param colOther Data column to take from other - the rest will be taken from self
+        @param requireMatch If True, will expect every ID from self to be present in other
+        @return new IdLabels instance resulting from join operation"""
+        if isinstance(other,IdLabels):
+            idToRecOther = other.getIdToRec()
+        else:
+            ffarg = {}
+            ffarg["id"] = other["id"]
+            ffarg[colOther] = other[colOther]
+            idToRecOther = self.fromFields(**ffarg).getIdToRec()
+        if not requireMatch:
+            recs = self.selById(set(idToRecOther),rawRec=True)
+        else:
+            recs = self.getRecords()
+        for rec in recs:
+            rec[colOther] = idToRecOther[rec["id"]][colOther]
+        return self.__class__(records=recs)
 
     def labSet(self):
         return set(self.getLabToRec())
@@ -257,12 +295,16 @@ class IdLabels:
         ind = n.asarray([ ind for (ind,lab) in it.izip(it.count(),recs["label"]) if lab in labs ],dtype=int)
         return self.__class__(records=recs[ind])
 
-    def selById(self,ids):
-        """Return a new IdLabels object that contains only records within a given ids sequence"""
+    def selById(self,ids,rawRec=False):
+        """Return a new IdLabels object (or only records array) that contains only records within a given ids sequence."""
         ids = set(ids)
         recs = self.getRecords()
         ind = n.asarray([ ind for (ind,id) in it.izip(it.count(),recs["id"]) if id in ids ],dtype=int)
-        return self.__class__(records=recs[ind])
+        records=recs[ind]
+        if rawRec:
+            return records
+        else:
+            return self.__class__(records=records)
 
     def selByCondition(self,condition):
         """Return a new IdLabels object that contains only records for which 'condition(record)' returns True. 

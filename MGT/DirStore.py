@@ -172,11 +172,22 @@ class DirStore:
         else:
             return value
 
+    def openStream(self,name,*l,**kw):
+        """Return an open file object stream for name"""
+        return openCompressed(self.getFilePath(name),*l,**kw)
+    
+
 class SampStore(DirStore):
 
     idMapName = "idmap"
     ## name of default idLabs object
     idLabsName = "idlab"
+    ## name of default param scan idLabs object - should hold cross-val splits and exclude test samples
+    idLabsParScanName = "idlab.parscan"
+    ## name of default test idLabs object - should hold one split for union of parscan data and another for test data
+    idLabsTestName = "idlab.test"
+    ## name of default full training idLabs object - should hold one split for union of all data with known labels
+    idLabsTrainName = "idlab.train"
     ## name of dirstore under which all ParamScanStore's are created
     parScanSupName = "parscan"
     ## name of default ParamScanStore
@@ -191,7 +202,7 @@ class SampStore(DirStore):
     trainSupName = "train"
     ## name of default TrainStore
     trainName = "1"
-    ## name of dirstore under which all TestStore's are created
+    ## name of dirstore under which all PredStore's are created
     predictSupName = "pred"
     ## name of default PredictStore
     predictName = "1"
@@ -199,6 +210,13 @@ class SampStore(DirStore):
 
     def getSampFilePath(self,name=None):
         return self.getFilePath(self.getDefault(name,"sampName"))
+
+    def loadSamp(self,name=None):
+        return loadSeqs(inpFile=self.getSampFilePath(name=name))
+    
+    def saveSamp(self,data,name=None):
+        ##@todo make it generic - not hard-wrired sparse features
+        return saveSparseSeqs(data,outFile=self.getSampFilePath(name=name))
     
     def fromPreProc(self,inpSamp,preProc):
         data = loadSeqs(inpFile=inpSamp,preProc=preProc)
@@ -226,7 +244,7 @@ class SampStore(DirStore):
     def exportFasta(self,name,lineLen=None):
         data = loadSeqs(self.getSampFilePath())
         saveSeqs(data,outFile=self.getFilePath(name),format="fasta",lineLen=lineLen)
-    
+
     def featStores(self,pattern="*"):
         for x in self.stores(pattern=pattern,klass=FeatStore):
             yield x
@@ -277,6 +295,8 @@ class SampStore(DirStore):
     def parScan(self,opt,name=None,idLabsName=None,**kw):
         """Create a new substore under parScanSupStore() and run parameter scan where.
         If a substore with a given name already exists, it will be first erased."""
+        if idLabsName is None:
+            idLabsName = self.getIdLabsName(self.idLabsParScanName)
         store = self.parScanSupStore().subStore(name=self.getDefault(name,"parScanName"),
                 klass=ParamScanStore,
                 mode="c",
@@ -294,6 +314,8 @@ class SampStore(DirStore):
 
     
     def test(self,opt,name=None,idLabsName=None,**kw):
+        if idLabsName is None:
+            idLabsName = self.getIdLabsName(self.idLabsTestName)
         store = self.testSupStore().subStore(name=self.getDefault(name,"testName"),
                 klass=TestStore,
                 mode="c",
@@ -310,6 +332,8 @@ class SampStore(DirStore):
         return self.subStore(name=self.trainSupName,klass=DirStore)
     
     def train(self,opt,name=None,idLabsName=None,**kw):
+        if idLabsName is None:
+            idLabsName = self.getIdLabsName(self.idLabsTrainName)
         store = self.trainSupStore().subStore(name=self.getDefault(name,"trainName"),
                 klass=TrainStore,
                 mode="c",

@@ -132,7 +132,10 @@ class ClassifierApp(App):
 
     @classmethod
     def parseCmdLinePost(klass,options,args,parser):
-        thresh = [ float(t) for t in options.thresh.split(',') ]
+        if isinstance(options.thresh,str):
+            thresh = [ float(t) for t in options.thresh.split(',') ]
+        else:
+            thresh = options.thresh
         if len(thresh) == 3:
             thresh = numpy.arange(thresh[0],thresh[1],thresh[2])
         elif len(thresh) == 1:
@@ -141,7 +144,8 @@ class ClassifierApp(App):
             parser.error("--predict-thresh value must be 'start,end,step' or 'value', received %s" % options.thresh)
         options.thresh = thresh
         if options.trainLabels is not None:
-            options.trainLabels = n.asarray([ int(l) for l in options.trainLabels.split(',') ])
+            if isinstance(options.trainLabels,str):
+                options.trainLabels = n.asarray([ int(l) for l in options.trainLabels.split(',') ])
         if options.mode == "test":
             if options.perfFile is None:
                 options.perfFile = "perf.pkl"
