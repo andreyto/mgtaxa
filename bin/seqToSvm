@@ -1,0 +1,24 @@
+#!/bin/bash
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
+
+kmerLen=7
+python $MGT_HOME/bin/pull_taxa.py
+$MGT_HOME/bin/rm-res
+$MGT_EXEC_BIN/generate_kmer_freq -l 0 -s 1 -k $kmerLen < ../train.p.svm > train.svm
+$MGT_EXEC_BIN/generate_kmer_freq -l 0 -s 1 -k $kmerLen < ../test.p.svm > test.svm
+#cp ../train.p.svm train.svm
+#cp ../test.p.svm test.svm
+python $MGT_HOME/bin/svmweights.py train.svm | head -n 2 > counts.log
+echo > weights.log
+#python $MGT_HOME/bin/svmweights.py train.svm | tail -n 1 > weights.log
+python $MGT_HOME/bin/svmbalance.py train.svm 1290
+mv train.svm.b train.svm
+qsub -b n -S /bin/tcsh -t 1-12 train.qsub
+

@@ -1,0 +1,23 @@
+#!/bin/bash
+
+## Source this file to set up custom environment needed e.g. by MGTAXA dependencies
+
+if [ -z "$AT_HOME_ENVIRON_DONE" ]; then
+
+# absolute path to the user HOME under which everything is installed
+export AHOME=/home/atovtchi
+
+# this has to point to the area with enough space, e.g. project area
+export WORK=$AHOME/work
+
+source .env_run.sh
+source .env_build.sh
+
+# Other custom stuff for this user
+export GOSII_WORK="/usr/local/projects/GOSII/atovtchi"
+
+export AT_HOME_ENVIRON_DONE=1
+
+fi # [ -z "$AT_HOME_ENVIRON_DONE" ]
+
+

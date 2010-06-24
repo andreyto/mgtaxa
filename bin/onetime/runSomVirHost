@@ -1,0 +1,20 @@
+#!/bin/bash
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
+mkdir wd_2_10
+python $MGT_HOME/bin/wdhfeat.py -i viralHosts.seq -o wd_2_10/all.svm -b -1 -a dna --shred-len=10000
+cd wd_2_10
+python $MGT_HOME/bin/ghsom.py -i all.svm -n all -f ghsom
+mkdir static-11x11
+cd static-11x11
+cp $MGT_HOME/etc/ghsom.static.prop .
+vim ghsom.static.prop
+runLinux -c "/home/atovtchi/work/distros/som/ghsom/ghsom ghsom.static.prop" --project 600005 --length medium --nowait
+#python $MGT_HOME/bin/somPhageHostClass.py -i static/all -s all.svm -p ../viralHostsPick.pkl -d static.som
+

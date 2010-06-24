@@ -1,0 +1,27 @@
+#!/bin/bash
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
+
+dbdir=/usr/local/scratch/atovtchi/blast
+dldir=$dbdir/dl
+
+mkdir -p $dbdir
+mkdir -p $dldir
+
+for name in refseq_genomic other_genomic wgs nt htgs; do
+	cd $dldir && \
+	wget -v "ftp://ftp.ncbi.nih.gov/blast/db/${name}.*" && \
+	for f in ${name}.*.gz; do
+		tar -C $dbdir -zxf $f
+                # we need to set the current mod date, else
+                # scratch fs housekeeping will erase them
+                touch $dbdir/*
+	done
+done
+

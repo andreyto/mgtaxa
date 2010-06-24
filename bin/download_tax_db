@@ -1,0 +1,37 @@
+#!/bin/sh
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+# makegitax.py needs 4G+ RAM, or it will thrash and take forever
+
+curdir=`pwd`
+
+topdb=$curdir
+
+dbdir=$topdb/taxonomy
+dldir=$topdb/taxonomy.new
+bakdir=$topdb/taxonomy.bak
+
+mkdir -p $dldir
+
+ftpdir=ftp://ftp.ncbi.nlm.nih.gov/pub/taxonomy
+
+cd $dldir && \
+wget -v "$ftpdir/taxdump.tar.gz" && \
+tar -zxf taxdump.tar.gz && \
+rm taxdump.tar.gz && \
+wget -v "$ftpdir/gi_taxid_nucl.dmp.gz" && \
+wget -v "$ftpdir/gi_taxid_prot.dmp.gz" && \
+wget -v "$ftpdir/taxcat.tar.gz" && \
+tar -zxf taxcat.tar.gz && \
+rm taxcat.tar.gz && \
+python $MGT_HOME/bin/makegitax.py -i gi_taxid_* -o gi_taxid.pkl.gz && \
+cd $curdir && \
+rm -rf $bakdir && \
+mv $dbdir $bakdir && \
+mv $dldir $dbdir
+

@@ -1,0 +1,13 @@
+#!/bin/tcsh
+#we need -fPIC to be able to build share libs under x86_64 by linking with static libs from mysql
+setenv CFLAGS "$CFLAGS -fPIC"
+setenv CXXFLAGS "$CXXFLAGS -O3 -DDBUG_OFF    -fno-implicit-templates -fno-exceptions -fno-rtti -fPIC"
+#make distclean || true
+#./configure --with-pic --with-embedded-server --without-server --with-client-ldflags=-all-static --with-mysqld-ldflags=-all-static --prefix=$INST --exec-prefix=$INSTMACH
+./configure --with-pic --prefix=$INST --exec-prefix=$INSTMACH && \
+make -j 8 && make install 
+#cp -a libmysqld/examples/mysql $INSTMACH/bin/mysql_embedded  
+#mysql_config wrongly reports --include in $INSTMACH, put a symlink where
+rm -f $INSTMACH/include/mysql && \
+ln -s $INST/include/mysql $INSTMACH/include/
+

@@ -1,0 +1,15 @@
+#!/bin/bash
+#set -ex #abort if any command fails and echo all commands
+topdir=$(pwd)
+DEP_SRC_DST=$topdir
+CPA="rsync -av"
+[ -n "$DEP_SRC_TOP" ] || exit 1
+cd $DEP_SRC_TOP
+pkgs="atlas tcltk python git cmake mysql egenix numpy pymol reportlab biopython boost setuptools matplotlib pytables swig shogun genometools"
+$CPA $pkgs $DEP_SRC_DST && rm -rf $pkgs
+for pkg in $pkgs; do
+    mv install_$pkg ~/work/mgtaxa/deps
+done
+mv install_stage_* ~/work/mgtaxa/deps
+mv config/* ~/work/mgtaxa/deps/config
+

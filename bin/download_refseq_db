@@ -1,0 +1,39 @@
+#!/bin/bash
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
+
+dbdir=$(pwd)
+dldir=$dbdir/dl
+
+mkdir -p $dbdir
+mkdir -p $dldir
+
+topUrl=ftp://ftp.ncbi.nlm.nih.gov/refseq/release
+
+orgGroups="microbial protozoa viral"
+#orgGroups="protozoa viral"
+
+for name in $orgGroups; do
+	cd $dldir && \
+	wget -v "${topUrl}/${name}/${name}[0-9]*.[gp]*.*.gz" && \
+    for suff in genomic.fna genomic.gbff protein.faa protein.gpff; do
+        gunzip -c ${name}*.${suff}.gz > ${dbdir}/${name}.${suff}
+        touch $dbdir/*
+    done
+    for gbFile in ${dbdir}/${name}.[gp]*.g?ff; do
+	    python $MGT_HOME/bin/extractGbHeader.py < $gbFile > $gbFile.hdr
+        gzip $gbFile
+        gzip $gbFile.hdr
+    done
+    for faFile in ${dbdir}/${name}.[gp]*.f?a; do
+        grep '>' $faFile > $faFile.hdr
+        gzip $faFile
+    done
+done
+

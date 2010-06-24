@@ -1,0 +1,18 @@
+setenv MGT_HOME __MGT_HOME__
+setenv MGT_BIN __MGT_BIN__
+setenv MGT_EXEC_BIN __MGT_EXEC_BIN__
+setenv PYTHONPATH __MGT_PY_PATH__:${PYTHONPATH}
+setenv PATH ${PATH}:${MGT_BIN}:${MGT_EXEC_BIN}
+
+#setenv LD_LIBRARY_PATH $INSTMACH/lib
+setenv CA_TOP ${HOME}/work/CA/wgs-assembler
+setenv CA_BINDIR ${CA_TOP}/Linux-amd64/bin
+setenv SCM_SRC ${CA_TOP}/src/AS_SCM
+setenv SVM_TOP $INSTMACH/svm
+setenv SVM_LIBLINEAR_BIN $SVM_TOP/liblinear
+setenv SVM_LIBSVM_BIN $SVM_TOP/libsvm
+setenv PHYLA_GEN_KMERS_BIN $MGT_BIN/generate_kmer_freq
+setenv PHYLA_KMERS /usr/local/projects/BIOINFO/WORK/data/CAMERA/svm/data_dec07
+setenv PHYLA_DATA /usr/local/projects/BIOINFO/WORK/data/phyla
+#setenv PHYLA_DATA /home/atovtchi/work-2/phyla
+

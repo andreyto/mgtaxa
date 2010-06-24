@@ -1,0 +1,18 @@
+#!/bin/bash
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+#
+#   See COPYING file distributed along with the MGTAXA package for the
+#   copyright and license terms.
+#
+### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
+
+
+# formatdb take a single space separatated string for -i option
+# when you need to combine several FASTA files to a single DB,
+# and it is crazily sensitive to delimiteres, that is why find -printf is used below
+# if we need to search in subdirectories.
+#seqFiles=$(find GSIO* -name inp.fasta -printf " %p")
+seqFiles=$(find . -name '*.fasta.seq' -printf " %p")
+echo $seqFiles
+formatdb -n inp -t inp -p F -i "$seqFiles"
+

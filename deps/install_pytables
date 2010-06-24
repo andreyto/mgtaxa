@@ -1,0 +1,56 @@
+#!/bin/tcsh
+
+## PyTables cannot handle separate locations --prefix --exec-prefix
+## in its dependencies, so we do not use --exec-prefix
+
+set curdir=`pwd`
+
+#goto pytables
+
+szip:
+
+cd szip
+make clean
+./configure --prefix=$INSTMACH && \
+make && \
+make install
+cd $curdir
+
+
+cd hdf5
+make clean
+./configure --prefix=$INSTMACH && \
+make && \
+make install
+cd $curdir
+
+lzo:
+
+cd lzo
+make clean
+./configure --prefix=$INSTMACH --with-pic && \
+make && \
+make install
+#ln -s $INSTMACH/lib/liblzo2.a $INSTMACH/lib/liblzo.a
+cd $curdir
+
+#lzop:
+
+#setenv CFLAGS "$CFLAGS -I$INSTMACH/include/lzo"
+#setenv CPPFLAGS "$CPPFLAGS -I$INSTMACH/include/lzo"
+
+pytables:
+
+if ( $?LD_RUN_PATH ) then
+	setenv LD_RUN_PATH ""
+endif
+setenv LD_RUN_PATH $INSTMACH/lib
+
+cd tables
+rm -rf build
+set PYTAB_SETUP_ARGS="--hdf5=$INSTMACH --lzo=$INSTMACH"
+python setup.py $PYTAB_SETUP_ARGS build_ext --inplace && \
+python setup.py $PYTAB_SETUP_ARGS install --prefix=$INST --exec-prefix=$INSTMACH && \
+python -m tables -c 'tables.test()'
+#somehow test just silently does nothing when run like above, but works if run interactively
+
