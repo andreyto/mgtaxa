@@ -1,0 +1,5 @@
+#!/bin/tcsh
+easy_install ../pyemf-2.0.0.tar.gz
+rm -rf build
+python setup.py build install --prefix=$INST --exec-prefix=$INSTMACH
+

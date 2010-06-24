@@ -1,0 +1,20 @@
+#!/bin/sh
+## Use 'svn co https://pymol.svn.sourceforge.net/svnroot/pymol/trunk pymol' to get source (or svn update)
+topdir=$(pwd)
+cd Pmw/src && \
+rm -rf build && \
+python setup.py install --prefix=$INST --exec-prefix=$INSTMACH && \
+cd $topdir && \
+cd pymol && \
+cd pymol && \
+rm -rf build && \
+python setup.py install --prefix=$INST --exec-prefix=$INSTMACH && \
+python setup2.py install --prefix=$INST --exec-prefix=$INSTMACH && \
+cp -a pymol $INSTMACH/bin/ && \
+cd $topdir && \
+cd cealign && \
+rm -rf build && \
+python setup.py install && \
+##cat ./PYMOLRC >> ~/.pymolrc && \
+cd $topdir
+
