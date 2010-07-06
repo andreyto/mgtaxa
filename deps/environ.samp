@@ -5,16 +5,14 @@
 if [ -z "$AT_HOME_ENVIRON_DONE" ]; then
 
 # absolute path to the user HOME under which everything is installed
-export AHOME=/home/atovtchi
+export AHOME=/home/mgtaxa
 
 # this has to point to the area with enough space, e.g. project area
 export WORK=$AHOME/work
 
-source .env_run.sh
-source .env_build.sh
-
-# Other custom stuff for this user
-export GOSII_WORK="/usr/local/projects/GOSII/atovtchi"
+source ~/.env_run.sh
+use gcc41
+source ~/.env_build.sh
 
 export AT_HOME_ENVIRON_DONE=1
 
