@@ -1,5 +1,7 @@
 make clean
-./configure --prefix=$INST --exec-prefix=$INSTMACH && \
+#Disable ccache (compiler cache) because it version 1.3 it fails at 'make install'
+#if yodl help compiler is not installed on the system.
+./configure --prefix=$INST --exec-prefix=$INSTMACH --disable-ccache && \
 make && \
 make install
 

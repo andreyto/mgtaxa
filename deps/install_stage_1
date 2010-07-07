@@ -7,8 +7,8 @@
 # point to the newly compiled Python)
 set -ex #abort if any command fails and echo all commands
 topdir=$(pwd)
-cd gcc && ${topdir}/install_gcc && cd ${topdir}
-cd atlas && ${topdir}/install_atlas && cd ${topdir}
+#cd gcc && ${topdir}/install_gcc && cd ${topdir}
+#cd atlas && ${topdir}/install_atlas && cd ${topdir}
 cd tcltk && ${topdir}/install_tcltk && cd ${topdir}
 cd python/Python && ${topdir}/install_python && cd ${topdir}
 

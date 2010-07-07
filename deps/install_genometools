@@ -1,5 +1,6 @@
 #!/bin/bash
 set -ex #abort if any command fails and echo all commands
+make clean
 make 64bit=yes
 make prefix=$INSTMACH install
 cd gtpython
