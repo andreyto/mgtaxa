@@ -1,0 +1,14 @@
+#------------------------------------------------------------------------------
+# TIGR wide global environment settings - please do NOT edit 
+#f=/usr/local/global.files/global.profile
+#if [ -r "$f" ]; then . $f; else echo "Missing $f - contact your sysadmin."; fi 
+#------------------------------------------------------------------------------
+#
+# Put your additions/changes below
+#
+## When sudo is used, as sudo -i, .bashrc is not sourced, but we need it
+## This assumes that .bashrc has a guard conditional, so it is not sourced twice
+source ~/.bashrc
+#echo "Sourcing .profile"
+source ~/.environ
+

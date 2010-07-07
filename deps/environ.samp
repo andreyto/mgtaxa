@@ -4,6 +4,10 @@
 
 if [ -z "$AT_HOME_ENVIRON_DONE" ]; then
 
+## JCVI stuff should better go first because it can wipe any of our env changes
+use gcc41
+
+#echo "Sourcing .environ"
 # absolute path to the user HOME under which everything is installed
 export AHOME=/home/mgtaxa
 
@@ -11,7 +15,6 @@ export AHOME=/home/mgtaxa
 export WORK=$AHOME/work
 
 source ~/.env_run.sh
-use gcc41
 source ~/.env_build.sh
 
 export AT_HOME_ENVIRON_DONE=1

@@ -1,0 +1,16 @@
+if [ -z "$AT_BASHRC_DONE" ]; then
+
+#------------------------------------------------------------------------------
+# TIGR wide global environment settings - please do NOT edit 
+f=/usr/local/global.files/global.bashrc
+if [ -r "$f" ]; then . $f; else echo "Missing $f - contact your sysadmin."; fi 
+#------------------------------------------------------------------------------
+#
+# Put your additions/changes below
+#
+#echo "Sourcing .bashrc"
+source ~/.environ
+
+export AT_BASHRC_DONE=1
+fi
+
