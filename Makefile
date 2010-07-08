@@ -54,7 +54,7 @@ PYTHON := $(shell which python)
 MAKE := make
 AR := $(shell which ar)
 ARFLAGS := -rvs
-DOXYGEN := $(INST)/x86_32/bin/doxygen
+DOXYGEN := $(shell which doxygen)
 #CPR := cp -dR
 CPR := $(shell which rsync) -av
 MKDIRP := mkdir -p
@@ -98,8 +98,8 @@ extdir := $(libdir)/MGTX
 ## source tree, as long as they are not involved in target compilation, and 'make'
 ## will still succeed.
 
-PROJ_DIR := $(HOME)/work/mgtaxa
-BUILD_DIR := $(PROJ_DIR)/build/$(MACH)
+PROJ_DIR := $(shell cd ..; pwd)
+BUILD_DIR := $(shell pwd)
 BUILD_EXT_DIR := $(BUILD_DIR)/MGTX
 SRC_DIR := $(PROJ_DIR)/src
 EXT_DIR := $(PROJ_DIR)/ext
@@ -175,7 +175,7 @@ $(info $(PY_INC_DIR))
 all: build doc
 
 .PHONY: build
-build: $(PROGRAMS) $(PROGRAMS_TEST) $(LIBRARIES) $(PYEXT) $(PYEXT_TEST) mgtaxa.cshrc mgtaxa.insrc.cshrc mgtaxa.shrc mgtaxa.insrc.shrc
+build: $(PROGRAMS) $(PROGRAMS_TEST) $(LIBRARIES) $(PYEXT) $(PYEXT_TEST) mgtaxa.shrc mgtaxa.insrc.shrc
 
 
 .PHONY: doc
@@ -210,7 +210,7 @@ install: all
 	$(CPR) $(PY_DIR) $(prefix)
 	install -t $(extdir) $(PYEXT) MGTX/__init__.py
 	$(CPR) $(DOC_DIR)/html $(docdir)
-	install -t $(sysconfdir) mgtaxa.cshrc mgtaxa.shrc $(PROJ_DIR)/etc/gt.sketch.default.style
+	install -t $(sysconfdir) mgtaxa.shrc $(PROJ_DIR)/etc/gt.sketch.default.style
 	install -t $(exec_bindir) $(PROGRAMS)
 	$(CPR) $(BIN_PY_DIR)/* $(bindir)
 
