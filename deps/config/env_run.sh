@@ -45,6 +45,10 @@ export PYTHONPATH=${PYMACH}:${PYMACH}/Numeric:${PYCOMMON}:${PYTHONPATH}
 
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${INST_LIB_MACH}:${INST_LIB}:${INST_LIB_MACH}/R/lib:${INST_LIB}/mysql"
 
+# This will be used when building our own MySQL package, and to configure MGTAXA connection
+export MGT_MYSQL_HOST=mgtaxa-dev.jcvi.org
+export MGT_MYSQL_PORT=13306
+
 export AT_ENV_RUN_DONE=1
 
 fi # [ -z "$AT_ENV_RUN_DONE" ]

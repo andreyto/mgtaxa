@@ -1,12 +1,16 @@
 #!/bin/bash
 
 ## Source this file to set up custom environment needed e.g. by MGTAXA dependencies
+## The intention is to keep the files .env_run.sh and .env_build.sh relatively generic,
+## and put site-specific stuff in this file.
 
 if [ -z "$AT_HOME_ENVIRON_DONE" ]; then
 
-## JCVI stuff should better go first because it can wipe any of our env changes
-use gcc41
-
+## JCVI only has functional gcc (with gfortran) in /usr/local, so we need to make sure
+## its shared libs are found at run-time
+export CFLAGS="$CFLAGS -I/usr/local/include"
+export LDFLAGS="$LDFLAGS -L/usr/local/lib64 -Wl,-R/usr/local/lib64 -L/usr/local/lib -Wl,-R/usr/local/lib"
+ 
 #echo "Sourcing .environ"
 # absolute path to the user HOME under which everything is installed
 export AHOME=/home/mgtaxa
