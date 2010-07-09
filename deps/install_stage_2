@@ -1,21 +1,23 @@
 #!/bin/bash
-set -ex #abort if any command fails and echo all commands
+set -e#abort if any command fails and echo all commands
+set -x
 topdir=$(pwd)
 if false; then
 bash setuptools/setuptools-0.6c9-py2.5.egg 
 easy_install --upgrade mercurial
 cd git/git && ${topdir}/install_git && cd ${topdir}
-cd cmake/cmake && ${topdir}/install_cmake && cd ${topdir}
+cd cmake && ${topdir}/install_cmake && cd ${topdir}
 cd mysql/mysql && ${topdir}/install_mysql && cd ${topdir}
 cd egenix/egenix-mx-base && ${topdir}/install_egenix && cd ${topdir}
 cd numpy/numpy && ${topdir}/install_numpy && cd ${topdir}
-cd pymol && ${topdir}/install_pymol && cd ${topdir}
+#cd pymol && ${topdir}/install_pymol && cd ${topdir}
 cd reportlab/reportlab && ${topdir}/install_reportlab && cd ${topdir}
 cd biopython/biopython && ${topdir}/install_biopython && cd ${topdir}
 cd boost/boost && ${topdir}/install_boost && cd ${topdir}
 cd matplotlib/matplotlib && ${topdir}/install_matplotlib && cd ${topdir}
 cd mysql/MySQL-python/MySQL-python && ${topdir}/install_pymysql && cd ${topdir}
 cd pytables && ${topdir}/install_pytables && cd ${topdir}
+fi
 easy_install --upgrade bx-python
 easy_install --upgrade ipython
 #A simple easy_install call below should work, but it does not. So we use specific tarball link.
@@ -26,6 +28,5 @@ easy_install --upgrade http://downloads.sourceforge.net/project/mdp-toolkit/mdp-
 cd swig/swig && ${topdir}/install_swig && cd ${topdir}
 cd numpy/numpy && ${topdir}/install_numpy && cd ${topdir}
 cd shogun/shogun/src && ${topdir}/install_shogun && cd ${topdir}
-fi
 cd genometools/genometools && ${topdir}/install_genometools && cd ${topdir}
 

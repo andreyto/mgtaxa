@@ -1,0 +1,6 @@
+## edit site.cfg and set threadsafe=False !!!!
+## Otherwise we get destroyed attributes or NULL arguments during runtime,
+## at least on my mysql build
+rm -rf build dist *.so
+python setup.py install --prefix=$INST --exec-prefix=$INSTMACH
+

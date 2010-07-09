@@ -1,4 +1,7 @@
-make clean && \
+pkg_ver=cmake-2.8.0
+rm -rf $pkg_ver
+tar -zxf $pkg_ver.tar.gz
+cd $pkg_ver
 ./configure --prefix=$INST --exec-prefix=$INSTMACH && \
 make && \
 make install
