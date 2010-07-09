@@ -6,5 +6,5 @@
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
 
-mysql --user=root --password=OrangeN0 --auto-rehash=TRUE
+mysql  --defaults-file=$INST/etc/my.cnf --user=root --password=OrangeN0 --auto-rehash=TRUE
 

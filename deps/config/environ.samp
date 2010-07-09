@@ -18,6 +18,9 @@ export AHOME=/home/mgtaxa
 # this has to point to the area with enough space, e.g. project area
 export WORK=$AHOME/work
 
+# project area shared scratch space
+export SCRATCH=/usr/local/projects/MGTAXA/scratch
+
 source ~/.env_run.sh
 source ~/.env_build.sh
 

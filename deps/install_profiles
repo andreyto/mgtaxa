@@ -1,0 +1,10 @@
+#!/bin/bash
+
+CPA="cp -a"
+
+$CPA $DEP_SRC_TOP/config/env_run.sh $HOME/.env_run.sh
+$CPA $DEP_SRC_TOP/config/env_build.sh $HOME/.env_build.sh
+$CPA $DEP_SRC_TOP/config/environ.samp $HOME/.environ
+$CPA $DEP_SRC_TOP/config/bashrc.samp $HOME/.bashrc
+$CPA $DEP_SRC_TOP/config/profile.samp $HOME/.profile
+

@@ -1,5 +1,5 @@
 #BEGIN CONFIG INFO
-#DESCR: 4GB RAM, InnoDB only, ACID, few connections, heavy queries
+#DESCR: mostly read-only data, few connections, heavy queries, bulk load
 #TYPE: SYSTEM
 #END CONFIG INFO
 
@@ -32,7 +32,7 @@
 user = root
 password	= OrangeN0
 port		= 13306
-socket		= /tmp/atovtchi.mysql.sock
+socket		= /tmp/mgt.mysql.sock
 
 # *** Application-specific options follow here ***
 
@@ -43,7 +43,7 @@ socket		= /tmp/atovtchi.mysql.sock
 
 # generic configuration options
 port		= 13306
-socket		= /tmp/atovtchi.mysql.sock
+socket		= /tmp/mgt.mysql.sock
 
 # back_log is the number of connections the operating system can keep in
 # the listen queue, before the MySQL connection manager thread has
@@ -244,7 +244,7 @@ log_long_format
 # specify multiple paths here by separating them by ";" - they will then
 # be used in a round-robin fashion.
 #A.T.
-tmpdir = /usr/local/scratch/atovtchi
+tmpdir = /tmp
 
 
 # ***  Replication related settings 
@@ -323,7 +323,7 @@ server-id = 1
 # is also required by the OS to cache rows. Even if you're not using
 # MyISAM tables, you should still set it to 8-64M as it will also be
 # used for internal temporary disk tables.
-key_buffer_size = 3000M
+key_buffer_size = 1000M
 
 # Size of the buffer used for doing full table scans of MyISAM tables.
 # Allocated per thread, if a full scan is needed.

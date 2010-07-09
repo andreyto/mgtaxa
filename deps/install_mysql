@@ -11,3 +11,15 @@ make -j 8 && make install
 rm -f $INSTMACH/include/mysql && \
 ln -s $INST/include/mysql $INSTMACH/include/
 
+#create default config
+[ -n "$MGT_MYSQL_HOST" ] || exit 1
+
+mkdir -p $INST/etc
+
+source $DEP_SRC_TOP/config/functions.sh
+
+cat $DEP_SRC_TOP/config/my.cnf.samp |\
+replace_make_var port "$MGT_MYSQL_PORT" |\
+replace_make_var socket /tmp/mgt.mysql.sock > $INST/etc/my.cnf.samp
+replace_make_var tmpdir "$MGT_MYSQL_TMPDIR" |\
+
