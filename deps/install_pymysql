@@ -1,6 +1,14 @@
-## edit site.cfg and set threadsafe=False !!!!
+#!/bin/bash
+## We edit site.cfg and set threadsafe=False.
 ## Otherwise we get destroyed attributes or NULL arguments during runtime,
 ## at least on my mysql build
+
+source $DEP_SRC_TOP/config/functions.sh
+
+cp site.cfg site.cfg.orig
+cat site.cfg.orig |\
+replace_make_var threadsafe False  > site.cfg
+
 rm -rf build dist *.so
 python setup.py install --prefix=$INST --exec-prefix=$INSTMACH
 
