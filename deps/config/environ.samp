@@ -12,14 +12,14 @@ export CFLAGS="$CFLAGS -I/usr/local/include"
 export LDFLAGS="$LDFLAGS -L/usr/local/lib64 -Wl,-R/usr/local/lib64 -L/usr/local/lib -Wl,-R/usr/local/lib"
  
 #echo "Sourcing .environ"
-# absolute path to the user HOME under which everything is installed
-export AHOME=/home/mgtaxa
+# absolute path to the user HOME under which everything is installed (by default - self)
+export AHOME=$HOME
 
 # this has to point to the area with enough space, e.g. project area
-export WORK=$AHOME/work
+export WORK=$HOME/work
 
 # project area shared scratch space
-export SCRATCH=/usr/local/projects/MGTAXA/scratch
+export SCRATCH=/usr/local/projects/MGTAXA/scratch/$USER
 
 source ~/.env_run.sh
 source ~/.env_build.sh
