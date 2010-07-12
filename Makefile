@@ -20,10 +20,10 @@
 prefix := $(INST)/mgtaxa
 
 # Data files will be stored here
-datadir := $(GOSII_WORK)
+datadir := $(prefix)/var
 
 # Temporary files will be stored here
-tmpdir := /usr/local/scratch/$(USER)/mgtaxa
+tmpdir := $(prefix)/tmp
 
 exec_prefix := $(INSTMACH)/mgtaxa
 
