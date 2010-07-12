@@ -390,8 +390,8 @@ class DbSqlMy(DbSql):
     def open(self,**kw):
         import MySQLdb.cursors
         self.close()
-        self.con = self.dbmod.connect(port=13306,
-                                      #unix_socket="/tmp/atovtchi.mysql.sock",
+        self.con = self.dbmod.connect(port=kw.get("port",13306),
+                                      #unix_socket=kw.get("unix_socket","/tmp/atovtchi.mysql.sock"),
                                       host=kw.get("host","localhost"),
                                       db=kw.get('db',"mgtaxa"),
                                       user="root",
@@ -551,10 +551,10 @@ class DbSqlMonet(DbSql):
     def createIndices(self,names,table):
         pass
 
-def createDbSql():
+def createDbSql(**kw):
     #db = DbSqlLite("/export/atovtchi/test_seq.db")
     #db = DbSqlMonet()
-    db = DbSqlMy()
+    db = DbSqlMy(**kw)
     return db
 
 class IntIdGenerator(object):
