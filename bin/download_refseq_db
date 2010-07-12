@@ -8,7 +8,7 @@
 
 
 
-dbdir=$(pwd)
+dbdir=$MGT_NCBI_DB
 dldir=$dbdir/dl
 
 mkdir -p $dbdir

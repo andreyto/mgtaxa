@@ -15,6 +15,7 @@ if [ -z "$MGT_RC_DONE" ]; then
     ## Start of variable block that can be redefined in ~/.mgtaxa
     export MGT_DATA=__MGT_DATA__
     export MGT_TMP=__MGT_TMP__
+    export MGT_NCBI_DB=$MGT_DATA
     ## End of variable block that can be redefined in ~/.mgtaxa
     if [ -f ~/.mgtaxa ]; then source ~/.mgtaxa; fi
     export PYTHONPATH=$MGT_PY_PATH:${PYTHONPATH}

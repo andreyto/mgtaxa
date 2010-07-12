@@ -8,13 +8,15 @@
 
 # makegitax.py needs 4G+ RAM, or it will thrash and take forever
 
-curdir=`pwd`
+curdir=$MGT_NCBI_DB
 
 topdb=$curdir
 
 dbdir=$topdb/taxonomy
 dldir=$topdb/taxonomy.new
 bakdir=$topdb/taxonomy.bak
+
+cd $curdir
 
 mkdir -p $dldir
 

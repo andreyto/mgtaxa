@@ -8,7 +8,7 @@
 
 
 
-dbdir=/usr/local/scratch/atovtchi/blast
+dbdir=$MGT_NCBI_DB/blast
 dldir=$dbdir/dl
 
 mkdir -p $dbdir
