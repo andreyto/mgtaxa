@@ -15,6 +15,7 @@ ln -s $INST/include/mysql $INSTMACH/include/
 [ -n "$MGT_MYSQL_HOST" ] || exit 1
 
 mkdir -p $INST/etc
+mkdir -p $INST/var
 
 source $DEP_SRC_TOP/config/functions.sh
 
@@ -22,4 +23,10 @@ cat $DEP_SRC_TOP/config/my.cnf.samp |\
 replace_make_var port "$MGT_MYSQL_PORT" |\
 replace_make_var tmpdir "$MGT_MYSQL_TMPDIR" |\
 replace_make_var socket /tmp/mgt.mysql.sock > $INST/etc/my.cnf.samp
+
+if [ -e $INST/etc/my.cnf ]; then
+    echo "SAMPLE MySQL config created $INST/etc/my.cnf.samp. You need to merge it with your existing config"
+else
+    mv $INST/etc/my.cnf.samp $INST/etc/my.cnf
+fi
 

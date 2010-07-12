@@ -11,6 +11,8 @@ function replace_make_var {
     _par_var="$1"
     shift
     _par_val="$@"
+    #escape / for sed into \/, using bash string subst
+    _par_val=${_par_val//\//\\\/}
     sed "s/^\([[:space:]]*$_par_var[[:space:]]*=[[:space:]]*\)\(.*\)[[:space:]]*\(#.*\)*/\1$_par_val/"
 }
 

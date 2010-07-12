@@ -1,0 +1,36 @@
+#!/bin/bash
+set -ex
+root_password="$1"
+if [ -z "$root_password" ]; then
+	echo "Initialize database for the new MySQL install"
+	echo "Usage: $0 new_root_password"
+	exit 1
+fi
+read -p "!!! THIS WILL ERASE THE EXISTING MYSQL DB !!! Enter Yes to proceed: " _user_confirm
+if [[ ! "$_user_confirm" == "Yes" ]]; then
+	echo "Not confirmed, exiting"
+	exit 0
+fi
+myconf=--defaults-file=$INST/etc/my.cnf
+mysqladmin $myconf shutdown || true
+mysql_install_db --defaults-file=$INST/etc/my.cnf
+nohup mysqld_safe $myconf &
+#I was not able to have the following command working with original (empty) password
+#provided from the command line. The only way it works with empty password is that it
+#has to be entered from the TTY
+mysqladmin $myconf -p -u root password "$root_password"
+mysql --defaults-file=$INST/etc/my.cnf -B --user=root --password=$root_password <<EOF
+CREATE DATABASE mgtaxa;
+#with GRANT, password will be encrypted automatically
+#if using set password instead, need to substitute password('mypassword')
+GRANT ALL ON mgtaxa.* TO root@'%.jcvi.org' IDENTIFIED BY '$root_password';
+GRANT ALL ON mgtaxa.* TO root@'%.tigr.org' IDENTIFIED BY '$root_password';
+#file can be granted only globally
+GRANT FILE ON *.* TO root@'%.jcvi.org' IDENTIFIED BY '$root_password';
+GRANT FILE ON *.* TO root@'%.tigr.org' IDENTIFIED BY '$root_password';
+FLUSH PRIVILEGES;
+\q
+EOF
+# The alternative below is very brittle; probably does not work at all
+#mysqladmin $myconf -p -u root -h $(hostname) password "$root_password"
+
