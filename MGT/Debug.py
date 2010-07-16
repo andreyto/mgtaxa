@@ -31,6 +31,7 @@ try:
     import pdb #standard pdb.set_trace() use
 except AttributeError:
     pdb = None
+    set_trace = None
 
 def debugMsg(msg,level=1):
     """
