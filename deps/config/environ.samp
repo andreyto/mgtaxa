@@ -7,10 +7,11 @@
 if [ -z "$AT_HOME_ENVIRON_DONE" ]; then
 
 ## JCVI only has functional gcc (with gfortran) in /usr/local, so we need to make sure
-## its shared libs are found at run-time
+## its shared libs are found at run-time instead of the one in /usr/
 export CFLAGS="$CFLAGS -I/usr/local/include"
 export LDFLAGS="$LDFLAGS -L/usr/local/lib64 -Wl,-R/usr/local/lib64 -L/usr/local/lib -Wl,-R/usr/local/lib"
- 
+export LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib:$LD_LIBRARY_PATH
+
 #echo "Sourcing .environ"
 # absolute path to the user HOME under which everything is installed (by default - self)
 export AHOME=$HOME
