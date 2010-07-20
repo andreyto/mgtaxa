@@ -19,9 +19,59 @@ from MGT.ImmClassifierApp import *
 from MGT.ImmApp import *
 import csv
 
+from MGT.GFF import GFF3Record, GFF3Attributes
+
 class TaxaPred(Struct):
     """Class to represent taxonomic predictions - one taxid per sample"""
     pass
+
+class GFF3RecordPhageHostAnnot(GFF3Record):
+    """Represents one record (line) in GFF3 file with initialization specific for Phage-Host annotation."""
+
+    annDtype = [
+    ("id_pep","O"),       #> JCVI-pep-ID
+    ("id_read",idDtype),  #> READ-ID
+    ("strand_pep","i1"),  #> Strand of the ORF with respect to the read
+    ("id_contig",idDtype),#> Contig-ID
+    ("start_read","i4"),  #> Start coordinate of read on contig
+    ("end_read","i4"),    #> End coordinate of read on contig
+    ("strand_read","S1"), #> Orientation of read with respect to contig (C = complement, U = unknown (?))
+    ("type_ann","S32"),   #> Annotation type (ALLGROUP_PEP; CDD_RPS; PFAM/TIGRFAM_HMM; FRAG_HMM;ACLAME_HMM)
+    ("id_ann",idDtype),   #> Evidence-ID
+    ("descr_ann","O"),    #> Evidence-description
+    #Derived here:
+    ("taxid_ann",taxidDtype),  #Annotation taxid, extracted from descr_ann where available
+    ("descr_ann_short","S32"), #Short description extracted from descr_ann for presentation
+    #The following fields are added in this method by joining with our assigned host taxonomy:
+    ("taxid_host",taxidDtype), #Taxid of aasigned host
+    ("len_contig","i4"),       #Length of contig
+    ]
+    
+    def fromAnnotRec(self,feat,taxaTree):
+        """Pull data from annotation record defined in PhageHostApp.compareWithProtAnnot()"""
+        self.type = "protein_match"
+        self.start = feat["start_read"]
+        self.end = feat["end_read"]
+        feat_strand = feat["strand_pep"] * (-1 if (feat["strand_read"] == 'C') else 1)
+        self.strand = '+' if feat_strand > 0 else '-' if feat_strand < 0 else '.'
+        # no attributes should be automatically carried forward from the previous values:
+        self.attribs = GFF3Attributes()
+        ats = self.attribs
+        ret = [ self ]
+        if feat["taxid_ann"] != 0:
+            try:
+                tn = taxaTree.getNode(feat["taxid_ann"])
+                tn_name = tn.name
+            except KeyError:
+                print "DBG: taxid %s is not found in taxonomy tree" % feat["taxid_ann"]
+                tn_name = ''
+        else:
+            tn_name = ''
+        ats["ID"] = "%s_%s" % (feat["id_pep"],feat["id_ann"])
+        ats["Name"] = ' '.join((tn_name,feat["id_ann"],feat["descr_ann_short"].strip()))
+        if len(ats["Name"]) == 0:
+            ats["Name"] = ats["ID"]
+        return ret
 
 class PhageHostApp(App):
     """App-derived class for phage-host assignment"""
@@ -34,7 +84,7 @@ class PhageHostApp(App):
     @classmethod
     def makeOptionParserArgs(klass):
         from optparse import make_option
-        optChoicesMode = ("build-db-ph","sel-db-ph-pairs","shred-vir-test","predict")
+        optChoicesMode = ("build-db-ph","sel-db-ph-pairs","shred-vir-test","predict","cmp-prot-annot","perf")
         option_list = [
             make_option("-m", "--mode",
             action="store", type="choice",choices=optChoicesMode,
@@ -60,6 +110,8 @@ class PhageHostApp(App):
             action="store", type="string",default="imm",dest="immDb",help="Path to a collection of IMMs"),
             make_option(None, "--pred-seq",
             action="store", type="string",dest="predSeq",help="Path to a FASTA file with sequences to classify"),
+            make_option(None, "--annot-cont",
+            action="store", type="string",dest="annotCont",help="Path to a file with protein annotations mapped to viral contigs"),
             make_option(None, "--pred-out-dir",
             action="store", type="string",default="results",dest="predOutDir",help="Output directory for classification results"),
             make_option(None, "--pred-out-taxa",
@@ -106,6 +158,8 @@ class PhageHostApp(App):
             return self.processPhymmScores(**kw)
         elif opt.mode == "perf":
             return self.performance(**kw)
+        elif opt.mode == "cmp-prot-annot":
+            return self.compareWithProtAnnot(**kw)
         else:
             raise ValueError("Unknown opt.mode value: %s" % (opt.mode,))
 
@@ -361,6 +415,118 @@ class PhageHostApp(App):
             w.writerow(row)
         out.close()
 
+    def compareWithProtAnnot(self,**kw):
+        """Compare our predicted host taxonomy with protein level annotations.
+        Anootations are loaded from a tab delimited file that maps hits from
+        various database searches onto predicted peptides, which are mapped
+        onto reads, which are in turn mapped onto phage contigs/scaffolds that we
+        used as input to predict the bacterial hosts.
+        The expectation is that we might see e.g. BLAST hits to phages with a known
+        host range, or to the hosts themselves.
+        Parameters are taken from self.opt.
+        @param contAnnot Input file with protein annotations projected onto viral contigs
+        @param predOutTaxa Output file with predicted taxa
+        """
+        #Fields of the input annotation file and the assigned dtype:
+        annDtype = [
+        ("id_pep","O"),       #> JCVI-pep-ID
+        ("id_read",idDtype),  #> READ-ID
+        ("strand_pep","i1"),  #> Strand of the ORF with respect to the read
+        ("id_contig",idDtype),#> Contig-ID
+        ("start_read","i4"),  #> Start coordinate of read on contig
+        ("end_read","i4"),    #> End coordinate of read on contig
+        ("strand_read","S1"), #> Orientation of read with respect to contig (C = complement, U = unknown (?))
+        ("type_ann","S32"),   #> Annotation type (ALLGROUP_PEP; CDD_RPS; PFAM/TIGRFAM_HMM; FRAG_HMM;ACLAME_HMM)
+        ("id_ann",idDtype),   #> Evidence-ID
+        ("descr_ann","O"),    #> Evidence-description
+        #Derived here:
+        ("taxid_ann",taxidDtype),  #Annotation taxid, extracted from descr_ann where available
+        ("descr_ann_short","S80"), #Short description extracted from descr_ann for presentation
+        #The following fields are added in this method by joining with our assigned host taxonomy:
+        ("taxid_host",taxidDtype), #Taxid of aasigned host
+        ("len_contig","i4"),       #Length of contig
+        ]
+        #mnemonics for field indices in annotation file
+        i_CONT = 3
+        opt = self.opt
+        pred = loadObj(opt.predOutTaxa)
+        contToPred = indexTuples(it.izip(pred.idSamp,pred.predTaxid,pred.lenSamp))
+        inpAnn = openCompressed(opt.annotCont,"r")
+        annot = []
+        for words in (line.split('\t') for line in inpAnn):
+            cont = words[i_CONT].strip()
+            if cont in contToPred:
+                pred = contToPred[cont]
+                if pred[2] >= opt.predMinLenSamp:
+                    annot.append(tuple((w.strip() for w in words)) + (0,'') + pred[1:])
+            #if len(annot) >= 100:
+            #    break
+        annot = n.asarray(annot,dtype=annDtype)
+        
+        #there are some negative start positions in the data - clip them
+        annot["start_read"] = n.maximum(annot["start_read"],0)
+        annot["end_read"] = n.minimum(annot["end_read"],annot["len_contig"])
+
+        #there are reverted coords in input data - swap them
+        #start_read = annot["start_read"].copy()
+        #end_read = annot["end_read"].copy()
+        #start_read[annot["start_read"] > annot["end_read"]] = annot["end_read"]
+        #end_read[annot["start_read"] > annot["end_read"]] = annot["start_read"]
+        #annot["start_read"] = start_read
+        #annot["end_read"] = end_read
+        
+        for rec in annot:
+            if rec["type_ann"] == "ALLGROUP_PEP":
+                #re.findall returns list of group tuples
+                name_and_tax = re.findall(".*\|\w+\W(.*)\Wtaxon:\b*([0-9]+)\W",rec["descr_ann"])
+                if len(name_and_tax):
+                    rec["taxid_ann"] = int(name_and_tax[0][1])
+                    rec["descr_ann_short"] = name_and_tax[0][0]
+                else:
+                    print "DEBUG: taxon field expected but not found: %s" % rec["descr_ann"]
+                    rec["descr_ann_short"] = rec["descr_ann"]
+            else:
+                #id_ann can be repeated up to twice in different case at the start of descr_ann
+                #@todo not correct for FRAG_HMM - apparently it is parsed wrongly when tab splitting
+                descr_ann_short = re.findall(".*%s\W+(.*)" % re.escape(rec["id_ann"]),rec["descr_ann"],re.IGNORECASE)
+                if len(descr_ann_short):
+                    rec["descr_ann_short"] = descr_ann_short[0]
+                else:
+                    rec["descr_ann_short"] = rec["descr_ann"]
+
+        #self.plotContigAnnotGff(annRecs=annot,outGraphFileRoot="tmp_")
+        annot = groupRecArray(annot,"id_contig")
+        #pdb.set_trace()
+        for id_contig,annRecs in annot.items():
+            annById = groupRecArray(annRecs,"id_ann")
+            # take only one (first) annotation with a give id_ann
+            annRecs = [ v[0] for v in annById.values() ]
+            self.plotContigAnnotGff(annRecs=annRecs,outGraphFileRoot="tmp_")
+
+    def plotContigAnnotGff(self,annRecs,outGraphFileRoot):
+        """Generate GFF files and graphics for CRISPR genes and arrays from one SeqRecord from a pre-processed Genbank file"""
+
+        from MGT.GFF import GFF3Record, GFF3Header
+        from MGT.GFFTools import GFF3Graphics
+        taxaTree = self.getTaxaTree()
+        annRec1 = annRecs[0]
+        outFileRt = outGraphFileRoot+(".%s.%s"%\
+                (taxaTree.getNode(annRec1["taxid_host"]).name.replace(" ","_").replace("/","_"),\
+                annRec1["id_contig"]))
+        gffFile = outFileRt + ".gff3"
+        out = open(gffFile,"w")
+        out.write(str(GFF3Header()))
+        orec = GFF3RecordPhageHostAnnot(seqid=annRec1["id_contig"])
+        for feat in annRecs:
+            for o in orec.fromAnnotRec(feat,taxaTree=taxaTree):
+                out.write(str(o))
+        out.close()
+        grFile = outFileRt + ".png"
+        gr = GFF3Graphics(outFormat="png",width=max(annRec1["len_contig"]/10,800))
+        try:
+            gr(gffFile,grFile)
+        except CalledProcessError, msg:
+            print "Creating genome diagram from GFF3 file failed: %s" % (msg,)
 
     def _idSampToPickedHostNode(self,idSamp,idToLab,taxaTree,virToHost):
         return n.vectorize(lambda id_samp: virToHost[taxaTree.getNode(int(idToLab[id_samp]))][0],otypes=["O"])(idSamp)

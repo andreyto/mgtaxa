@@ -1,4 +1,12 @@
-"""Support for writing GFF3 files"""
+"""Support for writing GFF3 files.
+The format has a short description here:
+http://gmod.org/wiki/GFF3
+A formal definition:
+http://www.sequenceontology.org/gff3.shtml
+And the formal definition of attributes("ontology") in SOFA reference on this page:
+http://www.sequenceontology.org/resources/intro.html
+"""
+import re
 
 class GFF3Header(object):
     """GFF3 file header"""
@@ -11,16 +19,38 @@ from urllib import quote as _url_quote
 
 class GFF3Attributes(dict):
     """Represents GFF3 attributes."""
-    
-    _non_quote="/ .?!^~\'\"()[]"
+
+    _non_quote=" a-zA-Z0-9.:\^*$@!+_?-|"
+    #official (from gmod), but space is only not allowed in ID: _non_quote="[a-zA-Z0-9.:^*$@!+_?-|]
+
+    _re_quote=re.compile("[^%s]" % _non_quote)
+
+    @classmethod
+    def quote_val_url(klass,val):
+        return _url_quote(str(val),safe=klass._non_quote)
     
     @classmethod
-    def quote_val(klass,val):
-        return _url_quote(str(val),safe=klass._non_quote)
+    def quote_val_re(klass,val):
+        return re.sub(klass._re_quote," ",str(val))
+
+    def __init__(self,*l,**kw):
+        dict.__init__(self,*l,**kw)
+        ## set quote_method to select how characters will be quoted 
+        ## when writing GFF3 file. Although the standard tells to use URL quoting,
+        ## some tools (e.g. genometools) do not unquote them when creating diagrams,
+        ## which lead to ugly looking text.
+        ## Posiible values are:
+        ## re [default] - replace every non-allowed symbol with space
+        ## url          - use url quoting
+        self.quote_method = "re"
 
     def __str__(self):
-        return ';'.join(( "%s=%s" % (tag, self.quote_val(value) if isinstance(value,str) or \
-                not hasattr(value,"__len__") else ','.join( (self.quote_val(x) for x in value) )) for \
+        if self.quote_method == "url":
+            quote_val = self.quote_val_url
+        else:
+            quote_val = self.quote_val_re
+        return ';'.join(( "%s=%s" % (tag, quote_val(value) if isinstance(value,str) or \
+                not hasattr(value,"__len__") else ','.join( (quote_val(x) for x in value) )) for \
                 (tag,value) in sorted(self.items())))
 
 GFF3At = GFF3Attributes

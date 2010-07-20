@@ -28,16 +28,19 @@ class MGTOptions:
         self.toolEmail = "atovtchi@jcvi.org"
         self.tmpDir = os.environ["MGT_TMP"]
         self.dataDir = os.environ["MGT_DATA"]
+        self.ncbiDbDir = os.environ["MGT_NCBI_DB"]
         self.srcDir = "/home/atovtchi/work/mgtaxa"
         def _pdata(dir):
             return pjoin(self.dataDir,dir)
+        def _pdata_ncbi(dir):
+            return pjoin(self.ncbiDbDir,dir)
         self.homeDir = os.environ["MGT_HOME"]
         self.instDir = self.homeDir
         self.binDir = pjoin(self.instDir,"bin")
         self.confDir = pjoin(self.instDir,"etc")
         self.envRc = os.environ["MGT_RC"]
         self.testDataDir = os.path.join(self.srcDir,"test_data")
-        self.refSeqDataDir = _pdata("refseq")
+        self.refSeqDataDir = _pdata_ncbi("refseq")
         # Max length to store for a full header. It is stored in a separate table,
         # so size does not matter that much
         self.fastaHdrSqlLen = 2048
@@ -53,8 +56,8 @@ class MGTOptions:
         #self.selDumpFile = 'mgt_sel.csv'
         self.selFastaFile = 'mgt_sel.fasta.gz'
         self.blastSelAlias = 'mgt'
-        self._setTaxaFileNames(_pdata('taxonomy'),sfx="")
-        self._setTaxaFileNames(_pdata('taxonomy.new'),sfx="New")
+        self._setTaxaFileNames(_pdata_ncbi('taxonomy'),sfx="")
+        self._setTaxaFileNames(_pdata_ncbi('taxonomy.new'),sfx="New")
         self.taxaTreeTablePrefix = "txtr"
         self.taxaTreeTableSfxMain = ""
         #self.kmerTxtDir = os.environ['PHYLA_KMERS']

@@ -1132,9 +1132,9 @@ class CrisprApp(App):
         """)
     
     def annotMicCrispr(self):
-        #self.loadMicProtHitsSql()
-        #self.loadMicProtAnnotCrisprSql()
-        #self.annotMicCrisprGb()
+        self.loadMicProtHitsSql()
+        self.loadMicProtAnnotCrisprSql()
+        self.annotMicCrisprGb()
         self.plotCrispr()
 
     def loadMicProtAnnotCrisprSql(self):

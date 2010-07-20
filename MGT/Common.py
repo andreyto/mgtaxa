@@ -5,7 +5,7 @@
 #
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
-
+from MGT.Types import *
 from MGT.Util import *
 from MGT.BatchRun import *
 from MGT.Config import *

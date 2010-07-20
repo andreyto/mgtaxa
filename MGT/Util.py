@@ -690,6 +690,63 @@ def groupPairs(data,keyField=0):
     # silent insertion of default elements on access to non-existing keys
     return dict(x)
 
+def groupTuples(data,keyField=0):
+    """Create a dict(key->list of tuples) out of a sequence of tuples.
+    Similar to creating a non-unique database index or sorting by a given field, 
+    with the exception that the data is copied inside the index.
+    @param data sequence of tuples
+    @param keyField index of field to use as key (all fields are used as val)"""
+    x = defdict(list)
+    for rec in data:
+        x[rec[keyField]].append(rec)
+    # important to convert to regular dictionary otherwise we get
+    # silent insertion of default elements on access to non-existing keys
+    return dict(x)
+
+def indexTuples(data,keyField=0):
+    """Create a dict(key->tuple) out of a sequence of tuples.
+    Similar to creating a unique database index. 
+    A ValueError exception will be raised if records are not unique.
+    @param data sequence of tuples
+    @param keyField index of field to use as key (all fields are used as val)"""
+    x = dict()
+    #in order to test for uniqueness we need the length of the input,
+    #but len() will not work if the input is an iterator, so we count
+    for (i_rec,rec) in enumerate(data):
+        x[rec[keyField]] = rec
+    if len(x) <= i_rec:
+        raise ValueError("Non-unique items in input data")
+    return x
+
+def recFromRecords(recs,dtype=None):
+    """Does the same as numpy.rec.fromrecords() but does not fail when records are recarrays with 'O' fields.
+    This works around a bug in numpy 1.3.
+    Always creates a fresh copy of the data.
+    @param recs sequence of numpy rec array records or tuples.
+    @param dtype dtype for the new array, if None - will be taken from recs[0], 
+    which in that case must be non-empty list of numpy recs
+    @return new record array with concatenated records
+    @todo probably use in groupRecArray()"""
+    n_recs = len(recs)
+    out = n.empty(n_recs,dtype=recs[0].dtype if dtype is None else dtype)
+    for (i_rec,rec) in enumerate(recs):
+        out[i_rec] = rec
+    return out
+
+def has_numpy_bug_object_cast_rec_arr(arr):
+    """Check if a bug when numpy cannot convert a rec array with 'O' fields to itself with dtype argument"""
+    # we need at least one record to check
+    if len(arr) == 0:
+        return False
+    else:
+        # bug happens when we build a list of records and try to convert it to array
+        recs = [ arr[0] ]
+        try:
+            n.asarray(recs,dtype=arr.dtype)
+        except ValueError:
+            return True
+        else:
+            return False
 
 def groupRecArray(arr,keyField):
     """Create a dict(key->record array) out of record array.
@@ -699,12 +756,19 @@ def groupRecArray(arr,keyField):
     @param keyField name of field to create the key from
     @return dict that for each unique value of keyField contains a numpy record 
     array with all records that have this key value.
-    @post Grouping is stable - the original order of records within each group is preserved."""
+    @post Grouping is stable - the original order of records within each group is preserved.
+    @bug This will not work if there are fields of type "O" - seems to be a numpy bug"""
     m = defdict(list)
-    for rec in arr:
-        #dereferenced recarray field scalars are compared by address in dict (because they are mutable?), 
-        #hence .item() to get immutable Python scalar
-        m[rec[keyField].item()].append(rec)
+    if has_numpy_bug_object_cast_rec_arr(arr):
+        for rec in arr:
+            #dereferenced recarray field scalars are compared by address in dict (because they are mutable?), 
+            #hence .item() to get immutable Python scalar
+            m[rec[keyField].item()].append(tuple(rec)) #have numpy bug, convert rec to tuple
+    else:
+        for rec in arr:
+            #dereferenced recarray field scalars are compared by address in dict (because they are mutable?), 
+            #hence .item() to get immutable Python scalar
+            m[rec[keyField].item()].append(rec)
     for key in m:
         m[key] = n.asarray(m[key],dtype=arr.dtype)
     # important to convert to regular dictionary otherwise we get

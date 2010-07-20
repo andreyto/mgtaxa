@@ -236,7 +236,7 @@ style =
     -- number of nucleotides. Set to 0 to disable type track.
     max_show_width     = nil,
     -- Limit the number of tracks
-    max_num_lines      = 10,
+    max_num_lines      = nil,
   },
 --------------------------------------
   five_prime_splice_site = {
