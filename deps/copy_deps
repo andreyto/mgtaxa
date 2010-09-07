@@ -1,0 +1,25 @@
+#!/bin/sh
+# This copies dependency sources and build scripts into the build dir.
+# Define DEP_SRC_TOP env variable to point to the build dir.
+# Define DEP_SRC_ORIG env variable to point to the dir with original 
+# dependecies sources, e.g.
+#export DEP_SRC_ORIG=/usr/local/depot/projects/MGTAXA/atovtchi/mgtaxa-dep-src
+# CD to the directory where this script is located and run it.
+if [[ -z "$DEP_SRC_TOP" ]]; then
+    print "DEP_SRC_TOP is undefined, exiting."
+    exit 1
+fi
+if [[ -z "$DEP_SRC_ORIG" ]]; then
+    print "DEP_SRC_ORIG is undefined, exiting."
+    exit 1
+fi
+if [[ ! -f copy_deps ]]; then
+    print "Should run from this script's dir, exiting."
+    exit 1
+fi
+
+CPA="cp -a"
+mkdir -p $DEP_SRC_TOP
+$CPA $DEP_SRC_ORIG/* $DEP_SRC_TOP/
+$CPA * $DEP_SRC_TOP/
+
