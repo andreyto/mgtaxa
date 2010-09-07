@@ -79,7 +79,7 @@ class HctApp(App):
             self.dbSql.close()
             del self.dbSql
 
-    def init(self):
+    def initWork(self):
         self.cvTreeExe = "/home/atovtchi/work/distros/cvtree/cvtree/cvtree"
         self.cvTreeMatExe = "/home/atovtchi/work/distros/cvtree/cvtree/batch_dist.pl"
         self.taxaTree = None #will be lazy-loaded
@@ -101,7 +101,6 @@ class HctApp(App):
         self.outGroupFaa = pjoin(fungiDir,outGroupAccNoVer+'.faa')
     
     def doWork(self,**kw):
-        self.init()
         opt = self.opt
         if opt.mode == "seq":
             return self.pullSeq()

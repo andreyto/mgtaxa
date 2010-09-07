@@ -728,9 +728,11 @@ def recFromRecords(recs,dtype=None):
     @return new record array with concatenated records
     @todo probably use in groupRecArray()"""
     n_recs = len(recs)
+    if dtype is None and n_recs == 0:
+        raise ValueError("Need dtype specified when an empty sequence of records is given")
     out = n.empty(n_recs,dtype=recs[0].dtype if dtype is None else dtype)
     for (i_rec,rec) in enumerate(recs):
-        out[i_rec] = rec
+        out[i_rec] = tuple(rec)
     return out
 
 def has_numpy_bug_object_cast_rec_arr(arr):
@@ -748,6 +750,15 @@ def has_numpy_bug_object_cast_rec_arr(arr):
         else:
             return False
 
+def numpyToScalarFunc(x):
+    """Return a function object that will be either numpy.asscalar or identity depending on type of x"""
+    try:
+        n.asscalar(x)
+        _to_sc = n.asscalar
+    except AttributeError:
+        _to_sc = lambda x: x
+    return _to_sc
+
 def groupRecArray(arr,keyField):
     """Create a dict(key->record array) out of record array.
     Similar to creating a non-unique database index or sorting by a given field, 
@@ -759,20 +770,22 @@ def groupRecArray(arr,keyField):
     @post Grouping is stable - the original order of records within each group is preserved.
     @bug This will not work if there are fields of type "O" - seems to be a numpy bug"""
     m = defdict(list)
-    if has_numpy_bug_object_cast_rec_arr(arr):
-        for rec in arr:
-            #dereferenced recarray field scalars are compared by address in dict (because they are mutable?), 
-            #hence .item() to get immutable Python scalar
-            m[rec[keyField].item()].append(tuple(rec)) #have numpy bug, convert rec to tuple
-    else:
-        for rec in arr:
-            #dereferenced recarray field scalars are compared by address in dict (because they are mutable?), 
-            #hence .item() to get immutable Python scalar
-            m[rec[keyField].item()].append(rec)
-    for key in m:
-        m[key] = n.asarray(m[key],dtype=arr.dtype)
-    # important to convert to regular dictionary otherwise we get
-    # silent insertion of default elements on access to non-existing keys
+    if len(arr):
+        _tokey = numpyToScalarFunc(arr[0])
+        if has_numpy_bug_object_cast_rec_arr(arr):
+            for rec in arr:
+                #dereferenced recarray field scalars are compared by address in dict (because they are mutable?), 
+                #hence asscalar (which calls .item()) to get immutable Python scalar
+                m[_tokey(rec[keyField])].append(tuple(rec)) #have numpy bug, convert rec to tuple
+        else:
+            for rec in arr:
+                #dereferenced recarray field scalars are compared by address in dict (because they are mutable?), 
+                #hence .item() to get immutable Python scalar
+                m[rec[keyField].item()].append(rec)
+        for key in m:
+            m[key] = n.asarray(m[key],dtype=arr.dtype)
+        # important to convert to regular dictionary otherwise we get
+        # silent insertion of default elements on access to non-existing keys
     return dict(m)
 
 def indexRecArray(arr,keyField):

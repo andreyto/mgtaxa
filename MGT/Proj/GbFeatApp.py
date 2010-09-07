@@ -43,14 +43,13 @@ class GbFeatApp(App):
             self.dbSql.close()
             del self.dbSql
 
-    def init(self):
+    def initWork(self):
         self.cvTreeExe = "/home/atovtchi/work/distros/cvtree/cvtree/cvtree"
         self.cvTreeMatExe = "/home/atovtchi/work/distros/cvtree/cvtree/batch_dist.pl"
         self.taxaTree = None #will be lazy-loaded
         self.store = SampStore.open(path=self.opt.get("cwd",os.getcwd()))
     
     def doWork(self,**kw):
-        self.init()
         opt = self.opt
         if opt.mode == "split-cds":
             return self.splitAllGenBankCds()

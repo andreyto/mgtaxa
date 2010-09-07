@@ -55,7 +55,7 @@ class SynecApp(App):
             ftOpt.norm = NORM_POLICY.FREQ | NORM_POLICY.EU_ROW
         ftOpt.balance = -2 #do not even shuffle (somehow it takes a while) - we do it anyway when making idlabs
     
-    def init(self):
+    def initWork(self):
         self.orgs = n.asarray(
                 [
                     (64471, True,1),
@@ -91,7 +91,6 @@ class SynecApp(App):
         self.seqFile = self.store.getSampFilePath()
     
     def doWork(self,**kw):
-        self.init()
         opt = self.opt
         if opt.mode == "seq":
             inFastaHdr = [ pjoin(options.refSeqDataDir,"microbial.genomic.fna.hdr") ]

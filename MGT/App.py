@@ -39,10 +39,10 @@ class App:
             app = App(opt=opt) #that fills yet unset options with defaults
             app.run() #either runs in the same process, or submits itself or a set of other Apps to batch queue
         """
-        self._instanceOptionsPostBase(opt)
-        self.instanceOptionsPost(opt)
         optArgs, args = self.parseCmdLine(args=args,_explicitOpt=opt)
         optArgs.updateOtherMissing(opt)
+        self._instanceOptionsPostBase(opt)
+        self.instanceOptionsPost(opt)
         if opt.optFile is not None:
             opt = loadObj(opt.optFile)
         self.opt = opt
@@ -63,6 +63,7 @@ class App:
                     os.chdir(opt["cwd"])
                 #DBG:
                 #time.sleep(5)
+                self.initWork(**kw)
                 ret = self.doWork(**kw)
             finally:
                 if "cwd" in opt:
@@ -99,11 +100,18 @@ class App:
         depend = [ d for d in kw.get("depend",[None]) if d is not None ]
         return depend
         
+    def initWork(self,**kw):
+        """Perform common initialization right before doing the actual work in doWork().
+        Must be redefined in the derived classes.
+        Should not be called directly by the user except from initWork() in a derived class.
+        This one can create large objects because they are not passed through the batch submission,
+        but immediately used within the same process."""
+        pass
 
     def doWork(self,**kw):
         """Do the actual work.
         Must be redefined in the derived classes.
-        Private method. Should not be called directly by the user.
+        Should not be called directly by the user except from doWork() in a derived class.
         Should work with empty keyword dict, using only self.opt.
         If doing batch submision of other App instances, must return a list of sink (final) BatchJob objects."""
         pass

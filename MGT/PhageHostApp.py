@@ -135,14 +135,13 @@ class PhageHostApp(App):
         opt.setIfUndef("outScoreComb",klass._outScoreCombPath(opt))
    
 
-    def init(self):
+    def initWork(self):
         opt = self.opt
         self.taxaTree = None #will be lazy-loaded
         self.taxaLevels = None #will be lazy-loaded
         self.store = SampStore.open(path=self.opt.get("cwd",os.getcwd()))
 
     def doWork(self,**kw):
-        self.init()
         opt = self.opt
         if opt.mode == "build-db-ph":
             return self.buildDbPhageHost(**kw)
@@ -415,6 +414,43 @@ class PhageHostApp(App):
             w.writerow(row)
         out.close()
 
+    def _loadBlastAnnotEvalues(self,hitKeys):
+        """A quick fix to add e-values to peptide annotation table loaded by compareWithProtAnnot"""
+        #The lines of interest to us are like these:
+        #JCVI_PEP_metagenomic.orf.1120383692912.1        ALLGROUP_PEP    rf|YP_912045.1 ... <e-value>
+        evalueCacheFile = "hit_e_val.pkl"
+        if not os.path.exists(evalueCacheFile):
+            inpFiles = [
+                "/usr/local/projects/GOSII/hlorenzi/IO/INTERACTIONS/annotation/GS108viral-4F-01-677_FRDNTY201.db.evidence",
+                "/usr/local/projects/GOSII/hlorenzi/IO/INTERACTIONS/annotation/GS112viral-4F-01-661_FRDLTJ301.db.evidence",
+                "/usr/local/projects/GOSII/hlorenzi/IO/INTERACTIONS/annotation/GS117viral-4F-01-677_FRHLGZN01.db.evidence",
+                "/usr/local/projects/GOSII/hlorenzi/IO/INTERACTIONS/annotation/GS110viral-4F-01-650_FRHLGZN01.db.evidence",
+                "/usr/local/projects/GOSII/hlorenzi/IO/INTERACTIONS/annotation/GS117viral-4F-01-664_FRI4PDL01.db.evidence",
+                "/usr/local/projects/GOSII/hlorenzi/IO/INTERACTIONS/annotation/GS122viral-4F-01-677_FRJHH4T01.db.evidence"
+                ]
+            recs = []
+            for inpFile in inpFiles:
+                print "DEBUG: processing %s, collected %s records" % (inpFile,len(recs))
+                inp = openCompressed(inpFile,'r')
+                #skip header
+                inp.next()
+                recs += [ (w[0].strip(),w[2].strip(),float(w[-1])) for w in \
+                        ( line.strip().split('\t') for line in inp ) \
+                        if len(w) >= 3 and \
+                        w[1].strip() == "ALLGROUP_PEP" and 
+                        (w[0].strip(),w[2].strip()) in hitKeys ]
+            #m = defdict(list)
+            #for rec in recs:
+            #    m[(rec[0],rec[1])].append(rec[2])
+            dumpObj(recs,evalueCacheFile)
+        else:
+            print "DEBUG: loading e-values from cache dump file"
+            recs = loadObj(evalueCacheFile)
+        m = dict( ( ((rec[0],rec[1]),rec[2]) for rec in recs ) )
+        assert len(m) == len(recs)
+        return m
+
+
     def compareWithProtAnnot(self,**kw):
         """Compare our predicted host taxonomy with protein level annotations.
         Anootations are loaded from a tab delimited file that maps hits from
@@ -442,10 +478,15 @@ class PhageHostApp(App):
         #Derived here:
         ("taxid_ann",taxidDtype),  #Annotation taxid, extracted from descr_ann where available
         ("descr_ann_short","S80"), #Short description extracted from descr_ann for presentation
+        #Loaded from extra file:
+        #E-value of ALLGROUP_PEP BLAST hit
+        ("e_val","f4"),
         #The following fields are added in this method by joining with our assigned host taxonomy:
         ("taxid_host",taxidDtype), #Taxid of aasigned host
         ("len_contig","i4"),       #Length of contig
         ]
+        # default e-value, to set when not defined in extra file
+        defEval = 1e-2
         #mnemonics for field indices in annotation file
         i_CONT = 3
         opt = self.opt
@@ -458,22 +499,31 @@ class PhageHostApp(App):
             if cont in contToPred:
                 pred = contToPred[cont]
                 if pred[2] >= opt.predMinLenSamp:
-                    annot.append(tuple((w.strip() for w in words)) + (0,'') + pred[1:])
+                    annot.append(tuple((w.strip() for w in words)) + (0,'',defEval) + pred[1:])
             #if len(annot) >= 100:
             #    break
         annot = n.asarray(annot,dtype=annDtype)
-        
+        _to_sc_id_pep = numpyToScalarFunc(annot[0]["id_pep"])
+        _to_sc_id_ann = numpyToScalarFunc(annot[0]["id_ann"])
+        _hit_key = lambda rec: (_to_sc_id_pep(rec["id_pep"]),_to_sc_id_ann(rec["id_ann"]))
+        hitKeys = set( ( _hit_key(rec) for rec in annot ) )
+        mEval = self._loadBlastAnnotEvalues(hitKeys = hitKeys)
+        for rec in annot:
+            if rec["type_ann"] == "ALLGROUP_PEP":
+                try:
+                    rec["e_val"] = mEval[_hit_key(rec)]
+                except KeyError:
+                    print "DEBUG: %s not found in e-val map" % (rec,)
         #there are some negative start positions in the data - clip them
         annot["start_read"] = n.maximum(annot["start_read"],0)
         annot["end_read"] = n.minimum(annot["end_read"],annot["len_contig"])
 
         #there are reverted coords in input data - swap them
-        #start_read = annot["start_read"].copy()
-        #end_read = annot["end_read"].copy()
-        #start_read[annot["start_read"] > annot["end_read"]] = annot["end_read"]
-        #end_read[annot["start_read"] > annot["end_read"]] = annot["start_read"]
-        #annot["start_read"] = start_read
-        #annot["end_read"] = end_read
+        inv = (annot["start_read"] >= annot["end_read"])
+        start_read = n.select([inv],[annot["end_read"]],default=annot["start_read"])
+        end_read = n.select([inv],[annot["start_read"]],default=annot["end_read"])
+        annot["start_read"] = start_read
+        annot["end_read"] = end_read
         
         for rec in annot:
             if rec["type_ann"] == "ALLGROUP_PEP":
@@ -495,19 +545,55 @@ class PhageHostApp(App):
                     rec["descr_ann_short"] = rec["descr_ann"]
 
         #self.plotContigAnnotGff(annRecs=annot,outGraphFileRoot="tmp_")
+        annotTable = annot
         annot = groupRecArray(annot,"id_contig")
         #pdb.set_trace()
+        taxaTree = self.getTaxaTree()
+        outGraphDir="."
+        makedir(pjoin(outGraphDir,"long"))
+        makedir(pjoin(outGraphDir,"func"))
+        makedir(pjoin(outGraphDir,"clade"))
+        def _out_graph_root(kind):
+            return pjoin(outGraphDir,kind,"ann")
+        pdb.set_trace()
         for id_contig,annRecs in annot.items():
             annById = groupRecArray(annRecs,"id_ann")
-            # take only one (first) annotation with a give id_ann
-            annRecs = [ v[0] for v in annById.values() ]
-            self.plotContigAnnotGff(annRecs=annRecs,outGraphFileRoot="tmp_")
+            # take only one (first) annotation with a given id_ann
+            annRecs = recFromRecords([ v[0] for v in annById.values() ])
+            self.plotContigAnnotGff(annRecs=annRecs,
+                    outGraphFileRoot=_out_graph_root("long"))
+            self.plotContigAnnotGff(annRecs=annRecs[annRecs["type_ann"] != "ALLGROUP_PEP"],
+                    outGraphFileRoot=_out_graph_root("func"))
+            #group by annot higher-order clade (genus) and take one (first) record for each
+            #ATTENTION: this will leave just one per-clade annotation per contig. Better would
+            #be to group annotations by coordinate first, but we do not have exact enough coords
+            #at this time.
+            annRecsSp = []
+            for rec in annRecs:
+                taxid_ann = rec["taxid_ann"]
+                if taxid_ann != 0:
+                    try:
+                        nodeAnn = taxaTree.getNode(taxid_ann)
+                        nodeAnnSp = nodeAnn.findLeftRankInLineage(ranks=("genus","family","order"))
+                        if nodeAnnSp is not None:
+                            annRecsSp.append((nodeAnnSp.name,rec))
+                    except KeyError:
+                        print "DEBUG: taxid not found in taxonomy tree"
+            annRecsSp = groupPairs(annRecsSp)
+            annRecsSp = recFromRecords([ v[0] for v in annRecsSp.values() ],dtype=annRecs.dtype)
+            self.plotContigAnnotGff(annRecs=annRecsSp,
+                    outGraphFileRoot=_out_graph_root("clade"))
 
-    def plotContigAnnotGff(self,annRecs,outGraphFileRoot):
-        """Generate GFF files and graphics for CRISPR genes and arrays from one SeqRecord from a pre-processed Genbank file"""
+    def plotContigAnnotGff(self,annRecs,outGraphFileRoot,gdFormat="pdf"):
+        """Generate GFF files and graphics for CRISPR genes and arrays from one SeqRecord from a pre-processed Genbank file.
+        @param gdFormat file type for genomic digrams, one of "pdf","png","svg" 
+        (svg output in genometools (v.1.3.5) incorrectly clips a lot on the right side of the diagram)"""
 
         from MGT.GFF import GFF3Record, GFF3Header
         from MGT.GFFTools import GFF3Graphics
+        #If annRecs is empty, many things downstream do not make sense
+        if len(annRecs) == 0:
+            return
         taxaTree = self.getTaxaTree()
         annRec1 = annRecs[0]
         outFileRt = outGraphFileRoot+(".%s.%s"%\
@@ -521,8 +607,8 @@ class PhageHostApp(App):
             for o in orec.fromAnnotRec(feat,taxaTree=taxaTree):
                 out.write(str(o))
         out.close()
-        grFile = outFileRt + ".png"
-        gr = GFF3Graphics(outFormat="png",width=max(annRec1["len_contig"]/10,800))
+        grFile = outFileRt + ".%s" % (gdFormat,)
+        gr = GFF3Graphics(outFormat=gdFormat,width=max(annRec1["len_contig"]/10,800))
         try:
             gr(gffFile,grFile)
         except CalledProcessError, msg:

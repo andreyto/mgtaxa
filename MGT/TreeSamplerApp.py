@@ -111,8 +111,12 @@ class TreeSamplerApp(MGTOptions,App):
         MGTOptions.__init__(self)
         App.__init__(self,*l,**kw)
 
-    def init(self,stage):
+    def initWork(self,**kw):
         opt = self.opt
+        if opt.mode in ("shred","split"):
+            stage = 1
+        else:
+            stage = 2
         self.store = SampStore.open(path=opt.get("cwd",os.getcwd()))
         self.db = opt.db
         if self.db is None:
@@ -150,11 +154,6 @@ class TreeSamplerApp(MGTOptions,App):
     def doWork(self,**kw):
         opt = self.opt
         print "SamplerConcatApp options: \n%s\n" % opt
-        if opt.mode in ("shred","split"):
-            stage = 1
-        else:
-            stage = 2
-        self.init(stage)
         
         if opt.mode == "shred":
 

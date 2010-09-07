@@ -43,7 +43,7 @@ class ImmApp(App):
         opt.setIfUndef("immDb","imm")
         opt.setIfUndef("nImmBatches",10)
 
-    def init(self):
+    def initWork(self):
         opt = self.opt
         self.taxaTree = None #will be lazy-loaded
         self.seqDb = None #will be lazy-loaded
@@ -52,7 +52,6 @@ class ImmApp(App):
    
 
     def doWork(self,**kw):
-        self.init()
         opt = self.opt
         if opt.mode == "train":
             return self.trainMany(**kw)

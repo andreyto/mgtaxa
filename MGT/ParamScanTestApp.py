@@ -25,12 +25,11 @@ class ParamScanTestApp(App):
     def parseCmdLinePost(klass,options,args,parser):
         pass
     
-    def init(self):
+    def initWork(self):
         self.taxaTree = None #will be lazy-loaded
         self.store = SampStore.open(path=self.opt.cdd)
     
     def doWork(self,**kw):
-        self.init()
         opt = self.opt
         if opt.mode == "feat":
             return self.prepFeat(**kw)
