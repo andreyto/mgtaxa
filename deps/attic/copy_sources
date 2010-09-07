@@ -1,5 +1,7 @@
 #!/bin/bash
-#set -ex #abort if any command fails and echo all commands
+# This is a "run-once" service script used to move a subset of
+# dependency sources into its own dir. DO NOT RUN again.
+set -ex #abort if any command fails and echo all commands
 topdir=$(pwd)
 DEP_SRC_DST=$topdir
 CPA="rsync -av"

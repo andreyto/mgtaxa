@@ -28,4 +28,5 @@ cd swig/swig && ${topdir}/install_swig && cd ${topdir}
 cd numpy/numpy && ${topdir}/install_numpy && cd ${topdir}
 cd shogun/shogun/src && ${topdir}/install_shogun && cd ${topdir}
 cd genometools/genometools && ${topdir}/install_genometools && cd ${topdir}
+easy_install --upgrade sqlalchemy
 

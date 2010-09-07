@@ -31,8 +31,6 @@ export CPPFLAGS="${CXXFLAGS}"
 #But LD_LIBRARY_PATH is still the only way to use some packages with older build procedures
 export LDFLAGS="-L$INST_LIB_MACH -Wl,-R$INST_LIB_MACH -L${INST_LIB} -Wl,-R${INST_LIB} ${LDFLAGS}"
 
-#Here we keep the source tree and the build area for all dependency packages
-export DEP_SRC_TOP=$WORK/distros
 
 export AT_ENV_BUILD_DONE=1
 

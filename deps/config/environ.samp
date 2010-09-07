@@ -19,10 +19,19 @@ export AHOME=$HOME
 # this has to point to the area with enough space, e.g. project area
 export WORK=$HOME/work
 
+# Here we keep the source tree and the build area for all dependency packages
+# Although this var is used only during build phase, it is more convenient to define
+# it in this top level file.
+# This will take 3G when the source tree if first copied, and 6G after build has been done.
+# This can be deleted after everything has been built.
+export DEP_SRC_TOP=$WORK/distros
+
 # project area shared scratch space
 export SCRATCH=/usr/local/projects/MGTAXA/scratch/$USER
 
+# This should be sourced at all times
 source ~/.env_run.sh
+# This can be commented out after everything is built
 source ~/.env_build.sh
 
 export AT_HOME_ENVIRON_DONE=1

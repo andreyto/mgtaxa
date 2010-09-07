@@ -1,4 +1,6 @@
 #!/bin/bash
+# Run this to setup profile files for a newly created user.
+# THIS WILL ERASE EXISTING .bashrc and .profile !!!
 
 CPA="cp -a"
 
