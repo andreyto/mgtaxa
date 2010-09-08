@@ -1,14 +1,20 @@
 #!/bin/bash
+VER="8.4.19"
 topdir=`pwd`
-cd tcl/tcl/unix && \
-( make distclean || true )
+cd tcl && \
+rm -rf tcl$VER && \
+tar -zxf tcl${VER}-src.tar.gz && \
+cd tcl/unix && \
+( make distclean || true ) && \
 ./configure --prefix=$INSTMACH && \
 make -j 6 && \
 make install && \
 cd $topdir && \
-cd tk/tk/unix && \
+cd tk && \
+rm -rf tk$VER && \
+tar -zxf tk${VER}-src.tar.gz && \
+cd tk/unix && \
 ( make distclean || true ) && \
 ./configure --prefix=$INSTMACH && \
 make -j 6 && \
 make install
-
