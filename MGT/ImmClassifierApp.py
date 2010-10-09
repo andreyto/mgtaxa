@@ -166,7 +166,7 @@ class ImmClassifierApp(App):
         jobs = imm.run(**kw)
         #TMP:
         return jobs
-        ##@todo
+        ##@todo Default method to make predictions based on scores (maybe)
 
         rOpt = copy(opt)
         rOpt.mode = "reduce-scores"
@@ -177,7 +177,7 @@ class ImmClassifierApp(App):
         return rApp.run(**kw)
 
     def reduceScores(self,**kw):
-        """Reduce a matrix of combined scores to best positions on the texonomic tree.
+        """Reduce a matrix of combined scores to best positions on the taxonomic tree.
         Parameters are taken from self.opt
         @param outScoreComb name for file with combined scores
         @param outTaxaPred name for output file with predicted taxonomy
@@ -188,7 +188,7 @@ class ImmClassifierApp(App):
         #self.idImms = idImms
         #self.idScores = idScores
         #self.scores = scores
-
+        raise NotImplementedError()
         pass
         
         idScores = None

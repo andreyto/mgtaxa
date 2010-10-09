@@ -237,6 +237,15 @@ def isSamePath(path1,path2):
     paths = [ os.path.abspath(os.path.realpath(p)) for p in (path1,path2) ]
     return paths[0] == paths[1]
 
+def editSymlink(source,link_name):
+    """Create the new symlink or change existing symlink.
+    @param source What symlink will point to
+    @param link_name Path to symlink itself
+    """
+    if os.path.islink(link_name):
+        os.remove(link_name)
+    os.symlink(source,link_name)
+
 def openCompressed(filename,mode,compressFormat=None,**kw):
     """Open a filename which can be either compressed or plain file.
     @param compressFormat if None, an attempt will be made to autodetect format 
@@ -453,7 +462,7 @@ def readFastaRecords(infile,readSeq=True):
         yield FastaRecord(title, seq)
 
 def splitFastaFile(inpFile,outBase,maxChunkSize):
-    inpFile = open(inpFile,'r')
+    inpFile = openCompressed(inpFile,'r')
     inp = readFastaRecords(inpFile)
     out = None
     iChunk = 0

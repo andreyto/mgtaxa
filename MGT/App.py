@@ -210,11 +210,14 @@ class App:
 
     @classmethod
     def fillWithDefaultOptions(klass,options):
-        """Fill with default values those options that are not already set."""
+        """Fill with default values those options that are not already set.
+        @param options Existing options object - will be modified in place and also returned
+        @return Modified options parameter"""
         #we use _explicitOpt to override any default options with those from 'options'
         #BEFORE parseCmdLinePost() is called
         optArgs,args = klass.defaultOptions(_explicitOpt=options)
         optArgs.updateOtherMissing(options)
+        return options
 
     def _instanceOptionsPostBase(self,opt):
         """Set (in place) instance-specific options.
