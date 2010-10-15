@@ -3,6 +3,7 @@
 
 from MGT.Common import *
 
+
 class ImmScores(object):
     """Class to represent a matrix of scores for multiple Imms (columns) for multiple samples (rows)"""
     def __init__(self,idImm,idSamp,scores,lenSamp):
