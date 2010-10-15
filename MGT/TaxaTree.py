@@ -49,8 +49,21 @@ class TaxaNode(object):
             delattr(TaxaNode,'_hookDebugOnUpdate')
             delattr(TaxaNode,'__setattr__')
 
-    def __init__(self):
+    def __init__(self,kw**):
+	"""Ctor.
+	All parameters are optional keyword arguments, which will be assigned w/o any further processing.
+	Currently valid arguments:
+	@param id Node unique id
+	@param rank Rank of this node. Describes vertical division of the tree such as with "species,genus,order,class,..."
+	@param divid NCBI division id. Groups nodes, typically horizontally (bacterial, phage,...)
+	@param name official name of the node
+	@param names dict for other names "name type" -> "name"
+
+	This constructor can be used w/o any arguments to create an empty object, which is then initialized by a
+	data loading procedure and linked into the tree with self.setParent(). Alternatively, it can be initialized
+	by the caling code by supplying keyword arguments, and then linked by self.setParent()"""
         self.children = []
+	self.__dict__.update(kw)
     
     def __str__(self):
         return strAttributes(self,exclude=("children","par"))

@@ -575,6 +575,33 @@ def logicalAnd(*arrays):
         res = n.logical_and(res,a)
     return res
 
+def allSame(seq,key=None,comp=None):
+    """Return True if all elements of iterable are equal.
+    @param seq Any iterable
+    @param key Unary operator that gives the key to compare as key(x) for x in seq. None means identity.
+    @param comp Comparison equality binary operator (transitivity holds). None means ==.
+    @note Will raise ValueError on empty iterable
+    @note It assumes transitivity of equality comparison, and only checks first element with all others
+    @note Use case: allSame(arrays,key=len) will check that all arrays have the same length
+    @note Use case: allSame(arrays,comp=lambda x,y: numpy.all(x==y))
+    """
+    if key is None:
+        key = lambda x: x
+    if comp is None:
+        comp = lambda x,y: x == y
+    itr = ( key(x) for x in seq )
+    try:
+        first = next(itr)
+    except StopIteration:
+        raise ValueError("Need non-empty iterable")
+    for x in itr:
+        if not comp(first,x):
+            return False
+    return True
+    
+def sameArrays(arrays):
+    return allSame(arrays,comp=lambda x,y: n.all(x==y))
+
 def binCount(seq,format="dict"):
     cnt = defdict(int)
     #numpy recarray records will be compared by address (not what we need),
