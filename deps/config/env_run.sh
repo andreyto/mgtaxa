@@ -9,9 +9,6 @@ if [ -z "$AT_ENV_RUN_DONE" ]; then
 # my account has no sudo rights (test with 'sudo -l')
 #use localbins
 
-# tell SGE to use new CentOS grid
-source /usr/local/sge_current/jcvi/common/settings.sh
-
 
 ## Some JCVI profile files apparently wack LD_LIBRARY_PATH
 ## Source MPI selector settings if it is installed on the local system
