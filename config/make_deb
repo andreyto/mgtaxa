@@ -1,0 +1,5 @@
+#!/bin/bash
+set -ex
+## Build on Debian or other system with BOOST in standard location
+make -f ../Makefile BOOST_OS=YES install
+

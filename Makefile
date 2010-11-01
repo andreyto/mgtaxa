@@ -138,10 +138,10 @@ NUMPY_INC_DIR := $(shell $(PYTHON) -c 'import numpy; print numpy.get_include()')
 #Boost.python would require linking with a shared boost library.
 
 ifeq ($(BOOST_OS),YES)
-ifeq ($(MACH),x86_32)
+ifneq (,$(filter x86_32%,$(MACH)))
 BOOST_LIB_DIR := /usr/lib
 else 
-ifeq ($(MACH),x86_64)
+ifneq (,$(filter x86_64%,$(MACH)))
 BOOST_LIB_DIR := /usr/lib64
 else
 $(error "Unknown MACH variable value: $(MACH))
@@ -166,8 +166,8 @@ endif
 #Example of debugging the make process.
 #Debugging using 'echo' outside of target definition works fine as 
 #long as we redirect all output to a file.
-$(shell echo $(PY_INC_DIR) &> make.log)
-$(info $(PY_INC_DIR))
+#$(shell echo $(PY_INC_DIR) &> make.log)
+#$(info $(PY_INC_DIR))
 
 ####################### .PHONY Target Definitions #########################
 

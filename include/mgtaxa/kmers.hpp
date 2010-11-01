@@ -105,7 +105,7 @@ std::ostream& operator<< (std::ostream& out, const Kmer& kmer);
 
 std::string kmerToStr(const Kmer& kmer, int kmerLen, const AbcConvCharToInt& conv);
 
-void kmerToRevCompl(const Kmer& kmer, int kmerLen, const AbcConvCharToInt& conv, Kmer& kmer);
+void kmerToRevCompl(const Kmer& kmer, int kmerLen, const AbcConvCharToInt& conv, Kmer& kmerOut);
   
 
 /** Forward declaration of payload class for  KmerState.*/
