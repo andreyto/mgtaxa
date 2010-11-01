@@ -58,7 +58,7 @@ taxaTree.setIndex()
 #storeOut.save(taxaTree)
 
 
-storePickle = NodeStoragePickleSep(fileName="test_TaxaTree.pkl")
+storePickle = NodeStoragePickle(fileName="test_TaxaTree.pkl")
 
 print "DEBUG: Pickling the tree"
 

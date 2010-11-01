@@ -142,11 +142,11 @@ def fastaLengths(inp):
 
 class FastaWriter:
     
-    def __init__(self,out,lineLen=None):
+    def __init__(self,out,lineLen=None,mode="w"):
         if lineLen is None:
             lineLen = 1000
         if not hasattr(out,'write'):
-            out = openCompressed(out,'w')
+            out = openCompressed(out,mode)
             self.outClose = True
         else:
             self.outClose = False
@@ -175,4 +175,17 @@ class FastaWriter:
         for x in range(0,len(s),lineLen):
             out.write(s[x:x+lineLen])
             out.write("\n")
+
+def fastaWriteOnce(records,out,lineLen=None,mode="w"):
+    """Open out file, write several records at once as FASTA, and close the file.
+    @param records Iterable of tuples (header,sequence)
+    @param out Output file
+    @param lineLen Line length for FASTA output
+    @return Number of records written
+    """
+    w = FastaWriter(out=out,lineLen=lineLen,mode=mode)
+    for (iRec,(hdr,seq)) in enumerate(records):
+        w.record(header=hdr,sequence=seq)
+    w.close()
+    return (iRec+1)
 

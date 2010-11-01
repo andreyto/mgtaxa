@@ -11,6 +11,9 @@ if [ -z "$AT_HOME_ENVIRON_DONE" ]; then
 export CFLAGS="$CFLAGS -I/usr/local/include"
 export LDFLAGS="$LDFLAGS -L/usr/local/lib64 -Wl,-R/usr/local/lib64 -L/usr/local/lib -Wl,-R/usr/local/lib"
 export LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib:$LD_LIBRARY_PATH
+## ANT (the Java make) is installed at JCVI, but ANT_HOME has to be defined,
+## otherwise Globus Toolkit build fails when ant cannot find xmlvalidate module ("task")
+export ANT_HOME=/usr/local/packages/apache-ant
 
 #echo "Sourcing .environ"
 # absolute path to the user HOME under which everything is installed (by default - self)

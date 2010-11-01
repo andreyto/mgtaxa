@@ -43,7 +43,7 @@ class GbFeatApp(App):
             self.dbSql.close()
             del self.dbSql
 
-    def initWork(self):
+    def initWork(self,**kw):
         self.cvTreeExe = "/home/atovtchi/work/distros/cvtree/cvtree/cvtree"
         self.cvTreeMatExe = "/home/atovtchi/work/distros/cvtree/cvtree/batch_dist.pl"
         self.taxaTree = None #will be lazy-loaded

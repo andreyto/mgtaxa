@@ -15,10 +15,14 @@ from MGT.TaxaIODb import *
 
 def loadTaxaTree(ncbiDumpFile=options.taxaNodesFile,
         ncbiNamesDumpFile=options.taxaNamesFile,
-        allNames=False):
-    return TaxaTree(NodeStorageNcbiDump(ncbiDumpFile=ncbiDumpFile,
-        ncbiNamesDumpFile=ncbiNamesDumpFile,
-        allNames=allNames))
+        allNames=False,pklFile=None):
+    if pklFile is None:
+        return TaxaTree(NodeStorageNcbiDump(ncbiDumpFile=ncbiDumpFile,
+            ncbiNamesDumpFile=ncbiNamesDumpFile,
+            allNames=allNames))
+    else:
+        storePickle = NodeStoragePickle(fileName=pklFile)
+        return TaxaTree(storage=storePickle)
 
 def loadTaxaTreeNew(allNames=False):
     return loadTaxaTree(ncbiDumpFile=options.taxaNodesFileNew,

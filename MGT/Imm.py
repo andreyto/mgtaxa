@@ -13,11 +13,13 @@ class ImmScores(object):
         self.lenSamp = lenSamp
     
     @classmethod
-    def concatImms(klass,immScores):
+    def catImms(klass,immScores):
         """Concatenate a sequence of ImmScores objects representing different Imms for the same samples."""
         assert len(immScores) > 0, "Need at least one object in a sequence"
         assert sameArrays((x.idSamp for x in immScores))
-        idImm = n.concatenate([ x.idImm for x in immScores ])
+        #conversion to UUID string array is a kludge to avoid second array items been
+        #cut if they are longer than the items of the first array
+        idImm = n.concatenate([ n.asarray(x.idImm,dtype=idDtype) for x in immScores ])
         assert isUniqueArray(idImm), "This concatenates non-intersecting sets of Imm IDs"
         idSamp = immScores[0].idSamp.copy()
         lenSamp = immScores[0].lenSamp.copy()

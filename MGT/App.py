@@ -43,8 +43,9 @@ class App:
         optArgs.updateOtherMissing(opt)
         self._instanceOptionsPostBase(opt)
         self.instanceOptionsPost(opt)
-        if opt.optFile is not None:
-            opt = loadObj(opt.optFile)
+        # this is now checked in parseCmdLine
+        #if opt.optFile is not None:
+        #    opt = loadObj(opt.optFile)
         self.opt = opt
 
     def run(self,**kw):
@@ -180,7 +181,10 @@ class App:
         options = Struct(options.__dict__)
         if _explicitOpt is not None:
             options.update(_explicitOpt)
-        klass.parseCmdLinePost(options=options,args=args,parser=parser)
+        if options.optFile is not None:
+            options = loadObj(options.optFile)
+        else:
+            klass.parseCmdLinePost(options=options,args=args,parser=parser)
         return options,args
 
     @classmethod

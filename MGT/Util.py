@@ -591,7 +591,7 @@ def allSame(seq,key=None,comp=None):
         comp = lambda x,y: x == y
     itr = ( key(x) for x in seq )
     try:
-        first = next(itr)
+        first = itr.next()
     except StopIteration:
         raise ValueError("Need non-empty iterable")
     for x in itr:
@@ -599,6 +599,36 @@ def allSame(seq,key=None,comp=None):
             return False
     return True
     
+def diffFiles(fromFile,toFile,showCommon=False,asText=False):
+    """Compare two files line-by-line using difflib module.
+    @param fromFile Diff is computed from this file
+    @param toFile Diff is computed toward this file
+    @param showCommon If False [default], only show lines that changed.
+    difflib by default shows identical lines as well.
+    @param asText If True, return result as a single multiline string; otherwise
+    return as an iterator for lines of output (default).
+    @return A generator for diff strings. See docs on difflib for the format
+    of output lines.
+    @note Currently we use difflib.ndiff()
+    """
+    import difflib
+    def _file_to_lines(f):
+        inp = openCompressed(f,"r")
+        lines = inp.readlines()
+        inp.close()
+        return lines
+    fromLines = _file_to_lines(fromFile)
+    toLines = _file_to_lines(toFile)
+    if not showCommon:
+        filt = lambda line: not line.startswith('  ')
+    else:
+        filt = lambda line: True
+    outIter = ( line for line in difflib.ndiff(fromLines,toLines) if filt(line) )
+    if asText:
+        return ''.join(outIter)
+    else:
+        return outIter
+
 def sameArrays(arrays):
     return allSame(arrays,comp=lambda x,y: n.all(x==y))
 

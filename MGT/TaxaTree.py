@@ -49,21 +49,21 @@ class TaxaNode(object):
             delattr(TaxaNode,'_hookDebugOnUpdate')
             delattr(TaxaNode,'__setattr__')
 
-    def __init__(self,kw**):
-	"""Ctor.
-	All parameters are optional keyword arguments, which will be assigned w/o any further processing.
-	Currently valid arguments:
-	@param id Node unique id
-	@param rank Rank of this node. Describes vertical division of the tree such as with "species,genus,order,class,..."
-	@param divid NCBI division id. Groups nodes, typically horizontally (bacterial, phage,...)
-	@param name official name of the node
-	@param names dict for other names "name type" -> "name"
+    def __init__(self,**kw):
+        """Ctor.
+        All parameters are optional keyword arguments, which will be assigned w/o any further processing.
+        Currently valid arguments:
+        @param id Node unique id
+        @param rank Rank of this node. Describes vertical division of the tree such as with "species,genus,order,class,..."
+        @param divid NCBI division id. Groups nodes, typically horizontally (bacterial, phage,...)
+        @param name official name of the node
+        @param names dict for other names "name type" -> "name"
 
-	This constructor can be used w/o any arguments to create an empty object, which is then initialized by a
-	data loading procedure and linked into the tree with self.setParent(). Alternatively, it can be initialized
-	by the caling code by supplying keyword arguments, and then linked by self.setParent()"""
+        This constructor can be used w/o any arguments to create an empty object, which is then initialized by a
+        data loading procedure and linked into the tree with self.setParent(). Alternatively, it can be initialized
+        by the caling code by supplying keyword arguments, and then linked by self.setParent()"""
         self.children = []
-	self.__dict__.update(kw)
+        self.__dict__.update(kw)
     
     def __str__(self):
         return strAttributes(self,exclude=("children","par"))
@@ -92,10 +92,15 @@ class TaxaNode(object):
         #TODO: is garbage collector going to deal with circular refs?
         self.par = par
         if par is not None:
+            self.idpar = par.id
             par.children.append(self)
+        else:
+            self.idpar = 0
         
     def removeChild(self,child):
+        """Remove a child by clearing both parent and child links"""
         self.children.remove(child)
+        child.setParent(None)
         
     def getParent(self):
         return self.par
@@ -563,7 +568,7 @@ class TaxaTree(object):
         # When this is called as _vecGetNodes(taxidArray) it will return array of nodes
         # with the same shape as input array. Used by getNodes()
         self._vecGetNodes = n.vectorize(lambda taxid: self.nodes[taxid],otypes=["O"])
-    
+
     def write(self,out):
         for id in sorted(self.nodes.iterkeys()):
              out.write(str(self.nodes[id])+'\n')
@@ -611,7 +616,33 @@ class TaxaTree(object):
         nodes = self.nodes
         for id in ids:
             del nodes[id]
-    
+
+    def rebuild(self):
+        """Rebuild auxiliary data structures.
+        Call after adding or removing nodes.
+        This will iterate through tree top-to-bottom and update the nodes dictionary
+        with any new nodes.
+        Then it will delete from the dictionary all nodes that are not connected to anything (nodes
+        that were removed by taxaNode.removeChild()).
+        Then it will call reindex() to rebuild globally defined fields that are internal to the nodes.
+        """
+        nodes = self.nodes
+
+        # add new nodes
+        for node in self.iterDepthTop():
+            #either add node or replace other node with the same id
+            if not nodes.setdefault(node.id,node) is node:
+                nodes[node.id] = node
+
+        # remove deleted nodes
+        rootNode = self.getRootNode()
+        for (id,node) in nodes.iteritems():
+            if node.getParent() is None and not node is rootNode:
+                del nodes[id]
+
+        # update other indices
+        self.reindex()
+
     def getNodesDict(self):
         return self.nodes
     

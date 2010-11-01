@@ -37,6 +37,8 @@ streptophytaTaxid = 35493 #green plants - the only node other than chlorophytaTa
 embryophytaTaxid = 3193 #"land plants", "higher plants" under streptophytaTaxid, includes onion, rice etc
 chordataTaxid = 7711 #euks, animals with chord, includes all vertebrates and some invertebrates
 
+envBacTaxid = 48479 # Bacteria -> Environmental Samples node
+
 viralTaxidLev2 = (\
         35237, #dsDNA
         35325, #dsRNA
@@ -49,10 +51,27 @@ phageTailedTaxid = 28883
 
 ## Main Linnaean ranks, modified with superkingdom in place of domain rank
 linnMainRanks = ("species","genus","family","order","class","phylum","kingdom","superkingdom")
+## @todo add a special linn rank for the root node, so that there is never a no_rank as a min
+## rank in a given lineage.
 ## All Linnaenan ranks, modified as linnMainRanks
 ## @todo add sub- and super-ranks, such as subspecies and superfamily
 linnRanks = linnMainRanks
 viralRanksTemplate = linnMainRanks
 noRank = "no_rank"
 unclassRank = "unclassified"
+
+## Some division IDs from NCBI division.dmp
+dividEnv = 11
+
+## We assert that NCBI taxonomy ID will never exceed this value.
+##
+## The reason for this to assertion is that we will assign our 
+## own taxonomy IDs above that. Max ID as of 2010-10-15 is ~800K.
+## Any estimates on the number of species out where are below 100M.
+## @todo Change the taxonomy ID datatype to string and have a prefix
+## denoting the namespace from which the ID originated (ncbi,mgt etc).
+ncbiTaxidMax = 200000000
+
+## Our own taxonomy IDs are generating starting from this
+mgtTaxidFirst = ncbiTaxidMax + 100
 

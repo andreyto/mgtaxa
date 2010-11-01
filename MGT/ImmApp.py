@@ -26,6 +26,14 @@ class ImmStore(SampStore):
     def listImmIds(self):
         return list(self.fileNames(pattern="*"+self.immSfx,sfxStrip=self.immSfx))
 
+def makeDefaultImmSeqIds(seqDb):
+    """Return a default dict(immId -> [ seqDb-Id, ... ]) to use as opt.immIdToSeqIds in ImmApp.
+    This will create a single IMM for each ID in seqDb.
+    @param seqDb Either instance of SeqDbFasta or path"""
+
+    if isinstance(seqDb,str):
+        seqDb = SeqDbFasta.open(seqDb)
+    return dict( [ (x,[x]) for x in seqDb.getTaxaList() ] )
 
 class ImmApp(App):
     """App-derived class for building collections of IMMs/ICMs and scoring against them"""
@@ -40,16 +48,19 @@ class ImmApp(App):
     @classmethod
     def parseCmdLinePost(klass,options,args,parser):
         opt = options
+        print "DEBUG: ", opt
         opt.setIfUndef("immDb","imm")
         opt.setIfUndef("nImmBatches",10)
+        opt.setIfUndef("immIds",opt.immIdToSeqIds)
+        if not opt.isUndef("outDir"):
+            opt.setIfUndef("outScoreComb",pjoin(opt.outDir,"combined"+klass.scoreSfx))
 
-    def initWork(self):
+    def initWork(self,**kw):
         opt = self.opt
         self.taxaTree = None #will be lazy-loaded
         self.seqDb = None #will be lazy-loaded
         #self.store = SampStore.open(path=self.opt.get("cwd",os.getcwd()))
         self.immStore = ImmStore.open(path=self.opt.immDb)
-   
 
     def doWork(self,**kw):
         opt = self.opt
@@ -66,16 +77,13 @@ class ImmApp(App):
         else:
             raise ValueError("Unknown opt.mode value: %s" % (opt.mode,))
 
-    def getTaxaTree(self):
-        if self.taxaTree is None:
-            self.taxaTree = loadTaxaTree()
-        return self.taxaTree
 
     def getSeqDb(self):
         opt = self.opt
         if self.seqDb is None:
             self.seqDb = SeqDbFasta.open(opt.seqDb) #"r"
-            return self.seqDb
+        return self.seqDb
+
 
     def getImmPath(self,immId):
         return self.immStore.getImmPath(immId)
@@ -102,8 +110,12 @@ class ImmApp(App):
         @param immIdToSeqIds File name that contains a dict (immId->immSeqIds)
         """
         opt = self.opt
+        #We do not generate opt.immIdToSeqIds here even when we can because
+        #in that case it is difficult to make sure when we score that all
+        #IMMs have been successfuly built.
+        immIdToSeqIds = loadObj(opt.immIdToSeqIds)
         jobs = []
-        for (immId,immSeqIds) in sorted(loadObj(opt.immIdToSeqIds).items()):
+        for (immId,immSeqIds) in sorted(immIdToSeqIds.items()):
             immOpt = copy(opt)
             immOpt.mode = "train-one"
             immOpt.immId = immId

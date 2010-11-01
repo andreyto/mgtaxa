@@ -67,6 +67,8 @@ class NodeStorageNcbiDump:
             if node.idpar == node.id:
                 node.idpar = 0
             nodes[node.id] = node
+            assert node.id < ncbiTaxidMax, "We assume that dump file is pristine NCBI file and "+\
+                    "assert that taxonomy ID (%s) < our max limit (%s)" % (node.id,ncbiTaxidMax)
         inp.close()
         self.nodes = nodes
 
@@ -154,13 +156,17 @@ class NodeStorageHypView:
         out.close()
     
 
-class NodeStoragePickle:
+class NodeStoragePickleDict:
+    """
+    Implements NodeStorage interface through Python pickle mechanism.
+    This pickles entire node dict"""
 
     def __init__(self,fileName):
         self.fileName = fileName
 
     def save(self,tree):
         nodes = tree.getNodesDict()
+        # TaxaTreeNode.__getstate__() now takes care of skipping node cross-references
         #for node in nodes.itervalues():
         #    del (node.par, node.children)
         dumpObj(nodes,self.fileName)
@@ -172,13 +178,17 @@ class NodeStoragePickle:
         return nodes
 
 
-class NodeStoragePickleSep:
+class NodeStoragePickle:
+    """
+    Implements NodeStorage interface through Python pickle mechanism.
+    This pickles nodes one-by-one"""
 
     def __init__(self,fileName):
         self.fileName = fileName
 
     def save(self,tree):
         nodes = tree.getNodesDict()
+        # TaxaTreeNode.__getstate__() now takes care of skipping node cross-references
         #for node in nodes.itervalues():
         #    del (node.par, node.children)
         out = openCompressed(self.fileName,"w")
@@ -199,7 +209,7 @@ class NodeStoragePickleSep:
         inp.close()
         return nodes
 
-class LibSeeElement:
+class LibSeaElement:
 
     def __init__(self,out):
         self.out = out
@@ -213,7 +223,7 @@ class LibSeeElement:
         )
 
 
-class LibSeaGraph(LibSeeElement):
+class LibSeaGraph(LibSeaElement):
 
     def open(self,**kw):
         self.out.write(\
@@ -253,7 +263,7 @@ class LibSeaGraph(LibSeeElement):
         """)
         )
 
-class LibSeaLinks(LibSeeElement):
+class LibSeaLinks(LibSeaElement):
 
     def open(self):
         self.out.write(\
@@ -268,7 +278,7 @@ class LibSeaLinks(LibSeeElement):
         self.out.write(comma+"\n{ @source=%(source)i; @destination=%(destination)i; }" % kw)
 
 
-class LibSeaPaths(LibSeeElement):
+class LibSeaPaths(LibSeaElement):
     
     def open(self):
         self.out.write("@paths=;")
@@ -277,7 +287,7 @@ class LibSeaPaths(LibSeeElement):
         pass
      
 
-class LibSeaAttributes(LibSeeElement):
+class LibSeaAttributes(LibSeaElement):
 
     def open(self):
         self.out.write(\
@@ -289,7 +299,7 @@ class LibSeaAttributes(LibSeeElement):
         """)
         )
 
-class LibSeaRootAttribute(LibSeeElement):
+class LibSeaRootAttribute(LibSeaElement):
 
     def open(self,**kw):
         self.out.write(\
@@ -308,7 +318,7 @@ class LibSeaRootAttribute(LibSeeElement):
     def close(self):
         pass
 
-class LibSeaTreeLinkAttribute(LibSeeElement):
+class LibSeaTreeLinkAttribute(LibSeaElement):
 
     def open(self):
         self.out.write(\
@@ -336,7 +346,7 @@ class LibSeaTreeLinkAttribute(LibSeeElement):
         )
 
 
-class LibSeaNodeNamesAttribute(LibSeeElement):
+class LibSeaNodeNamesAttribute(LibSeaElement):
 
     def open(self):
         self.out.write(\
@@ -363,7 +373,7 @@ class LibSeaNodeNamesAttribute(LibSeeElement):
         }""")
         )
 
-class LibSeaQualifiers(LibSeeElement):
+class LibSeaQualifiers(LibSeaElement):
 
     def open(self):
         self.out.write(\
