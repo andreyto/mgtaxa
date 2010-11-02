@@ -1,0 +1,20 @@
+This is a test config for GridWay with SSH MAD.
+Copy the files from this directory to $GW_LOCATION/etc
+(you will overwrite existing gwd.conf).
+Modify the SSH host name if needed.
+Make sure you can ssh to that host from the command line
+w/o problems or password prompts.
+To start GW daemon, type 'gwd'.
+'gwhost' to see that MAD host data is loaded from info-MAD
+To stop GW daemon, type 'pkill gwd'
+To submit job from the command line w/o waiting for it to run, 
+use 'gwsubmit -t job_template_file.jt'
+To see the status of job, use 'gwps'
+The job logs are under $GW_LOCATION/var/xxx where xxx is the GW job ID
+GW daemon logs are under $GW_LOCATION/var
+If a job gets stuck in 'prolog' state, modify the SSH transport MAD by
+removing a separate thread for ssh connection. That will make ssh module
+exceptions visible. Modify the MAD code to log the full MAD protocol strings,
+and test MAD from the command line directly by copying the strings generated
+by GridWay as saved in MAD log.
+
