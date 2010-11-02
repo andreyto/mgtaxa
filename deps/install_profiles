@@ -1,12 +1,17 @@
 #!/bin/bash
-# Run this to setup profile files for a newly created user.
+# Run this with argument NEW to setup profile files for a newly created user.
 # THIS WILL ERASE EXISTING .bashrc and .profile !!!
+# Run this w/o arguments to setup profile files other than .bashrc and .profile
+
 
 CPA="cp -a"
 
 $CPA $DEP_SRC_TOP/config/env_run.sh $HOME/.env_run.sh
 $CPA $DEP_SRC_TOP/config/env_build.sh $HOME/.env_build.sh
 $CPA $DEP_SRC_TOP/config/environ.samp $HOME/.environ
+
+if [[ "$1" == "NEW" ]]; then
 $CPA $DEP_SRC_TOP/config/bashrc.samp $HOME/.bashrc
 $CPA $DEP_SRC_TOP/config/profile.samp $HOME/.profile
+fi
 
