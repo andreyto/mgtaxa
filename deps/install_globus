@@ -11,6 +11,6 @@ cd $BUILD
 make
 ## Reinstall GPT with correct location of perl interpreter 
 ## instead of its default  #!/usr/bin/perl
-(cd gtp; ./gpt_build -with-perl=`which perl` -prefix=$GLOBUS_LOCATION))
+(cd gtp; ./gpt_build -with-perl=`which perl` -prefix=$GLOBUS_LOCATION)
 make install
 
