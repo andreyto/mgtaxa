@@ -89,6 +89,8 @@ class PhageHostApp(App):
             make_option("-m", "--mode",
             action="store", type="choice",choices=optChoicesMode,
             dest="mode",default="predict",help=("What to do, choice of %s, default is %%default" % (optChoicesMode,))),
+            make_option(None, "--taxa-tree-pkl",
+            action="store", type="string",dest="taxaTreePkl",help="Custom taxonomy tree saved in pickle format. If not set, standard NCBI tree is used."),
             make_option(None, "--db-gb-inp",
             action="store", type="string",dest="dbGbInp",help="Input viral GenBank file for phage-host DB construction"),
             make_option(None, "--db-ph",
@@ -132,10 +134,13 @@ class PhageHostApp(App):
         opt.setIfUndef("dbGbInp",pjoin(refSeqDir,"viral.genomic.gbff.gz"))
         opt.setIfUndef("dbSeqInp",[ pjoin(refSeqDir,div+".genomic.fna.gz") for div in ("microbial","viral")])
         opt.setIfUndef("predOutTaxa",pjoin(opt.predOutDir,"pred-taxa"))
+        opt.setIfUndef("predOutTaxaCsv",opt.predOutTaxa+".csv")
+        opt.setIfUndef("predOutAnnot",pjoin(opt.predOutDir,"annot"))
         opt.setIfUndef("outScoreComb",klass._outScoreCombPath(opt))
+        opt.setIfUndef("taxaTreePkl",None)
    
 
-    def initWork(self):
+    def initWork(self,**kw):
         opt = self.opt
         self.taxaTree = None #will be lazy-loaded
         self.taxaLevels = None #will be lazy-loaded
@@ -164,7 +169,7 @@ class PhageHostApp(App):
 
     def getTaxaTree(self):
         if self.taxaTree is None:
-            self.taxaTree = loadTaxaTree()
+            self.taxaTree = loadTaxaTree(pklFile=self.opt.taxaTreePkl)
         return self.taxaTree
 
     def getTaxaLevels(self):
@@ -313,13 +318,21 @@ class PhageHostApp(App):
         idImms = immScores.idImm
         taxaTree = self.getTaxaTree()
         taxaLevels = self.getTaxaLevels()
-        max_linn_levid = taxaLevels.getLevelId("family")
+        max_linn_levid = taxaLevels.getLevelId("order")
         #min_linn_levid = max_linn_levid
-        min_linn_levid = taxaLevels.getLinnLevelIdRange()[0]
+        # Safe to set it to 0, because there is also at least superkingdom above 
+        # min_linn_levid = taxaLevels.getLinnLevelIdRange()[0]
+        min_linn_levid = 0
+        # this still can exclude nodes that are above subtree that has no IMMs but 
+        # below lowest max_lonn_levid (e.g. ref sequence attached directly to sub-species
+        # that has strain nodes w/o sequence, and family node immediately above.
+        # We need to assign is_leaf_imm attribute to taxaTree nodes to do it right.
         for (iCol,idImm) in enumerate(idImms):
             #assume here that idImm is a taxid
             node = taxaTree.getNode(idImm)
-            if not taxaLevels.isNodeInLinnLevelRange(node,min_linn_levid,max_linn_levid):
+            # node.isLeaf() takes care of env sequences and ref strains under family
+            if  (not node.isLeaf()) and \
+                (not taxaLevels.isNodeInLinnLevelRange(node,min_linn_levid,max_linn_levid)):
                 scores[:,iCol] = n.NINF
    
     def _taxaTopScores(self,taxaTree,immScores,topScoreN):
@@ -372,16 +385,21 @@ class PhageHostApp(App):
         #scCellRoot = sc.scores[:,sc.idImm == cellTaxid][:,0]
         #predTaxids[scVirRoot>scCellRoot] = self.rejTaxid
         
-        max_linn_levid = taxaLevels.getLevelId("order")
-        min_linn_levid = taxaLevels.getLinnLevelIdRange()[0]
+        # This not the same as _maskScoresByRanks() above (because this
+        # will actually assign a reject label. Still, we comment it out
+        # because together they are too convoluted and probably do not add
+        # to accuracy.
+        ## @todo this needs benchmarking
+        #max_linn_levid = taxaLevels.getLevelId("order")
+        #min_linn_levid = taxaLevels.getLinnLevelIdRange()[0]
         # Reject predictions to clades outside of certain clade level range,
         # as well as to any viral node
-        for i in xrange(len(predTaxids)):
-            if not taxaLevels.isNodeInLinnLevelRange(taxaTree.getNode(predTaxids[i]),
-                    min_linn_levid,max_linn_levid):
-                predTaxids[i] = self.rejTaxid
-            elif taxaTree.getNode(predTaxids[i]).isUnder(virRoot):
-                predTaxids[i] = self.rejTaxid
+        #for i in xrange(len(predTaxids)):
+        #    if not taxaLevels.isNodeInLinnLevelRange(taxaTree.getNode(predTaxids[i]),
+        #            min_linn_levid,max_linn_levid):
+        #        predTaxids[i] = self.rejTaxid
+        #    elif taxaTree.getNode(predTaxids[i]).isUnder(virRoot):
+        #        predTaxids[i] = self.rejTaxid
 
         pred = TaxaPred(idSamp=sc.idSamp,predTaxid=predTaxids,topTaxid=topTaxids,lenSamp=sc.lenSamp)
         dumpObj(pred,opt.predOutTaxa)
@@ -393,7 +411,7 @@ class PhageHostApp(App):
         taxaTree = self.getTaxaTree()
         taxaLevels = self.getTaxaLevels()
         levNames = taxaLevels.getLevelNames("ascend")
-        out = openCompressed(opt.predOutTaxa+".csv","w")
+        out = openCompressed(opt.predOutTaxaCsv,"w")
         flds = ["id","len","taxid","name","rank"]
         for lev in levNames:
             flds += ["taxid_"+lev,"name_"+lev]
@@ -447,13 +465,14 @@ class PhageHostApp(App):
             print "DEBUG: loading e-values from cache dump file"
             recs = loadObj(evalueCacheFile)
         m = dict( ( ((rec[0],rec[1]),rec[2]) for rec in recs ) )
-        assert len(m) == len(recs)
+        # assertion fails with difference 20K out of 200K; multiple records for query_seq,db_seq
+        #assert len(m) == len(recs)
         return m
 
 
     def compareWithProtAnnot(self,**kw):
         """Compare our predicted host taxonomy with protein level annotations.
-        Anootations are loaded from a tab delimited file that maps hits from
+        Annotations are loaded from a tab delimited file that maps hits from
         various database searches onto predicted peptides, which are mapped
         onto reads, which are in turn mapped onto phage contigs/scaffolds that we
         used as input to predict the bacterial hosts.
@@ -549,13 +568,14 @@ class PhageHostApp(App):
         annot = groupRecArray(annot,"id_contig")
         #pdb.set_trace()
         taxaTree = self.getTaxaTree()
-        outGraphDir="."
+        outGraphDir  = pjoin(opt.predOutAnnot,"gd")
+        makedir(outGraphDir)
         makedir(pjoin(outGraphDir,"long"))
         makedir(pjoin(outGraphDir,"func"))
         makedir(pjoin(outGraphDir,"clade"))
         def _out_graph_root(kind):
             return pjoin(outGraphDir,kind,"ann")
-        pdb.set_trace()
+        #pdb.set_trace()
         for id_contig,annRecs in annot.items():
             annById = groupRecArray(annRecs,"id_ann")
             # take only one (first) annotation with a given id_ann
@@ -585,7 +605,7 @@ class PhageHostApp(App):
                     outGraphFileRoot=_out_graph_root("clade"))
 
     def plotContigAnnotGff(self,annRecs,outGraphFileRoot,gdFormat="pdf"):
-        """Generate GFF files and graphics for CRISPR genes and arrays from one SeqRecord from a pre-processed Genbank file.
+        """Generate GFF files and graphics based on protein annotation for viral contigs.
         @param gdFormat file type for genomic digrams, one of "pdf","png","svg" 
         (svg output in genometools (v.1.3.5) incorrectly clips a lot on the right side of the diagram)"""
 

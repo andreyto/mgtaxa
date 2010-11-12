@@ -1,0 +1,25 @@
+#!/bin/bash
+set -ex
+[ -n "$GW_LOCATION" ] || exit 1
+NAME=gridway_5.6.1
+SOURCE=$NAME.tar.gz
+BUILD=$NAME
+rm -rf $BUILD
+tar -zxf $SOURCE
+cd $BUILD
+## Try to configure, and if that fails, assume it is because we do not have
+## Ruby net-ssh and net-sftp modules installed. Then we try to install them
+## into home dir with Ruby gem system, and configure again.
+## Note: scripts that try to load these gems should run ruby like this (with -r):
+## ruby -r rubygems -e "require 'net/ssh'". The -r stands for "require", so
+## the rubygems module gets loaded first and fixes the ruby module path, so that
+## it now includes user's home gems.
+./configure --enable-prews --enable-debug --enable-ssh --prefix=$GW_LOCATION || \
+( \
+gem install net-ssh --user-install --version '< 2.0.0' && \
+gem install net-sftp --user-install --version '< 2.0.0' && \
+./configure --enable-prews --enable-debug --enable-ssh --prefix=$GW_LOCATION \
+)
+make
+make install
+

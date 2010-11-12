@@ -7,8 +7,7 @@
 
 
 from MGT.Common import *
-from MGT.Taxa import *
-import time
+import time, csv
 
 def dbClose(dbObj):
     print "Running 'atexit()' handler"
@@ -41,7 +40,63 @@ class SqlWatch:
             print "SQL finished in %.3f sec" % (finish-self.start)
             self.start = finish
 
+## Classes that describe definitions of SQL fields and table
+## These are used primarily to construct DDL statements.
+class SqlField:
+    """This class defines SQL table field"""
+
+    def __init__(self,name=None,type=None,null=True):
+        self.name = name
+        self.type = type
+        self.null = null
+
+    def nullSql(self):
+        if self.null:
+            return ""
+        else:
+            return "NOT NULL"
+
+class SqlTable:
+    """This class defines SQL table"""
+
+    def __init__(self,name,fields):
+        self.name = name
+        self.fields = fields
+
+
+    def createSql(self):
+        """Return SQL DDL string that constructs this table"""
+        return """
+        create table %s
+        (
+        %s
+        )
+        """ % (self.name, ",\n".join( [ "%s %s %s" % (field.name,field.type,field.nullSql()) for field in self.fields ] ))
+
+    def insertSql(self):
+        """Return SQL DML string that can be passed to Python DB-API cursor.executemany() method"""
+        return """
+        insert into %s
+        (
+        %s
+        )
+        values
+        (
+        %s
+        )
+        """ % (self.name, ",\n".join( [ field.name for field in self.fields ]), ",\n".join( [ "?" for field in self.fields ]))
+
+
 class DbSql(MGTOptions):
+    """Wrapper around DB-API Connection class with some convenience methods.
+    @todo Convert this to using SQL Alchemy. SQL Alchemy imposed too big abstraction penalty in the past,
+    but this might not be the case anymore assuming carefully following its best use practices.
+    We will still likely to need our bulk loading methods.
+    """
+        
+    ## Default SQL field definition - a fall-back field type to create
+    ## when nothing more specific is provided by the user
+    defField = SqlField(name="fld",type="char(40)")
     
     def __init__(self):
         MGTOptions.__init__(self)
@@ -238,10 +293,11 @@ class DbSql(MGTOptions):
 
 
     def makeBulkInserterFile(self,**kw):
-        k = {}
-        k.update(kw)
-        k.setdefault("tmpDir",self.tmpDir)
-        return BulkInserterFile(self,**k)
+        kw = copy(kw)
+        if hasattr(kw["table"],"name"):
+            kw["table"] = kw["table"].name
+        kw.setdefault("tmpDir",self.tmpDir)
+        return BulkInserterFile(self,**kw)
    
     def makeBulkInserter(self,*l,**kw):
         return BulkInserter(self,*l,**kw)
@@ -284,11 +340,86 @@ class DbSql(MGTOptions):
                 inserter(rec)
             if not returnInserter:
                 inserter.close()
-        if len(indices) > 0:
+        if indices is not None and len(indices) > 0:
             self.createIndices(table=name,**indices)
             self.ddl("analyze table %s" % name,ifDialect="mysql")
         return inserter
 
+    def createTableFromCsv(self,name,csvFile,fieldsMap={},defField=None,hasHeader=False,
+            dialect="excel-tab",dialect_options={},indices=None):
+        """Create and fill a table from CSV file.
+        The intention is to provide a single command to load a CSV file into SQL table
+        where reasonable default values can be generated for all options.
+        @param name The name of the new table
+        @param csv Either a file name, in which case csv.reader(openCompresed(),dialect=dialect) 
+        will be used to open the file, or it should be an existing csv.reader object
+        @param fieldsMap A dictionary that either maps field position to SqlField instances
+        (if hasHeader is False) or maps field names to SqlField instances (if hasHeader is True).
+        In the latter case, each SqlField instance can replace the name from the header, or leave the
+        name as None, in which case the name supplied by the header will be used.
+        @param defField SqlField instance to generate default SQL definitions for fields not
+        mapped by fieldsMap. If hasHeader is False, defField.name will be used as a 
+        prefix, such that the field name becomes prefix_xxx where xxx is the absolute field 
+        position in CSV row. Otherwise, defField.name is ignored, and only the other attributes are
+        used to define default field type etc.
+        @param hasHeader tells whether to treat the first row of CSV file as header
+        @param dialect Dialect string defined in csv module
+        @param dialect_options Passed to csv.reader(**dialect_options)
+        @param indices, if not None, should be a dictionary with arguments to createIndices, 
+        except the 'table' argument, which will be taken from 'name'.
+        """
+        if defField is None:
+            defField = copy(self.defField)
+        if isinstance(csvFile,str):
+            closeCsv = True
+            csvFileInp = openCompressed(csvFile,"r")
+            csvFile = csv.reader(csvFileInp,dialect=dialect,**dialect_options)
+        else:
+            closeCsv = False
+        if not hasHeader:
+            firstRow = csvFile.next()
+            nFields = len(firstRow)
+        else:
+            firstRow = None
+            nFields = 0
+            hdr = csvFile.next()
+            #now fieldsMap is assumed to map names to SqlField, and we convert it
+            #to positional map, checking first that all mapped fields are present
+            #in the header
+            flds_hdr = [ f.strip() for f in hdr ]
+            flds_hdr_set = set(flds_hdr)
+            for fldname in fieldsMap:
+                if not fldname in flds_hdr_set:
+                    raise ValueError,"fieldsMap argument contains field name that is "+\
+                            "not found in the CSV header: %s" % (fldname,)
+            fieldsMapPos = {}
+            for (ifld,fldname) in enumerate(flds_hdr):
+                if fldname in fieldsMap:
+                    fieldsMapPos[ifld] = fieldsMap[fldname]
+                    #if not already set, the field name is taken from the header
+                    if fieldsMapPos[ifld].name is None:
+                        fieldsMapPos[ifld].name = fldname
+                else:
+                    flddef = copy(defField)
+                    flddef.name = fldname
+                    fieldsMapPos[ifld] = flddef
+            fieldsMap = fieldsMapPos
+            # with header, all fields get defined in fieldsMap
+            defField = None
+        fields = buildSqlFields(fieldsMap=fieldsMap,nFields=nFields,defField=defField)
+        table = SqlTable(name=name,fields=fields)
+        self.ddl(table.createSql(),dropList=["table "+table.name])
+        inserter = self.makeBulkInserterFile(table=table)
+        if firstRow is not None:
+            inserter(firstRow)
+        for row in csvFile:
+            inserter(row)
+        inserter.close()
+        if indices is not None and len(indices) > 0:
+            self.createIndices(table=name,**indices)
+            self.ddl("analyze table %s" % name,ifDialect="mysql")
+        if closeCsv:
+            csvFileInp.close()
 
     def selectAsArray(self,sql):
         """Execute SQL select and return the entire result set as Numpy record array."""
@@ -297,23 +428,26 @@ class DbSql(MGTOptions):
         reader.close()
         return ret
 
-    def exportAsCsv(self,sql,out,withHeader=True):
+    def exportAsCsv(self,sql,out,withHeader=True,bufLen=100000,
+            dialect="excel-tab",
+            dialect_options={"lineterminator":"\n"}):
         """Excecute SQL and export the result as CSV file.
-        @todo implement this method by directly saving from result set, w/o the numpy array intermediary."""
-        import csv
-        reader = self.makeBulkReader(sql=sql,format="list")
-        rows = reader.allAsArray()
+        @note We set the default lineterminator to Linux style '\n', as opposed to 
+        Python'd default of Windows style '\r\n'"""
+        reader = self.makeBulkReader(sql=sql,format="list",bufLen=bufLen)
+        chunks = reader.chunks()
         names = reader.fieldNames()
-        reader.close()
         if isinstance(out,str):
             out = openCompressed(out,'w')
             doClose=True
         else:
             doClose=False
-        w = csv.writer(out,delimiter="\t")
+        w = csv.writer(out,dialect=dialect,**dialect_options)
         if withHeader:
             w.writerow(names)
-        w.writerows(rows)
+        for rows in chunks:
+            w.writerows(rows)
+        reader.close()
         if doClose:
             out.close()
 
@@ -322,41 +456,47 @@ def sqlInList(l):
     return "("+','.join(["%s" % x for x in l])+")"
 
 
-# Classes that describe Sql Db objects as Python objects in a portable way
 
-class SqlField:
+def buildSqlFields(fieldsMap={},nFields=0,defField=None):
+    """Build list of SqlField objects using field_index-to-SqlField dict or default values otherwise.
+    This allows to express this pattern: I want describe a table with 10 fields, where the first field
+    has name "key" and type "integer", the third field has name "value" and type varchar(10),
+    and the remaining fields should be named "field_xxx" where "xxx" is a running index, and have
+    type "char(50)".
+    The primary use case is to create a table from CSV file where CSV file does not have the header, and
+    we will only manipulate the data using a few specific fields and care to give them names and types,
+    but want to carry others along as the data payload.
+    @param fieldsMap Dict ( field index -> SqlField instance ) for some set of field index values
+    @param nFields The total number of fields in the table (will be ajusted to the max field index 
+    in fieldsMap plus one)
+    @param defField SqlField instance that will be used to generate SqlField objects for field positions
+    not present in fieldsMap. defField.name will be used as a prefix for new fields. If defField is None,
+    SqlField(name="fld",type=char(40)) will be used.
+    """
+    nFields = max(list(fieldsMap.keys())+[nFields-1]) + 1
+    if defField is None:
+        defField = SqlField(name="fld",type="char(40)")
+    fields = [] 
+    for ifld in xrange(nFields): 
+        fld = copy(defField)
+        fld.name = "%s_%00i" % (fld.name,ifld)
+        fields.append(fld)
+    for (ifld,fld) in fieldsMap.items():
+        fields[ifld] = fld
+    return fields
 
-    def __init__(self,name,type,null=True):
-        self.name = name
-        self.type = type
-        self.null = null
 
-    def nullSql(self):
-        if self.null:
-            return ""
-        else:
-            return "NOT NULL"
-
-class SqlTable:
-
-    def __init__(self,name,fields):
-        self.name = name
-        self.fields = fields
-
-
-    def createSql(self):
-        return """
-        create table %s
-        (
-        %s
-        )
-        """ % (self.name,',\n'.join( [ "%s %s %s" % (field.name,field.type,field.nullSql()) for field in self.fields ] ))
 
 
 class DbSqlLite(DbSql):
+    """Derivative of DbSql specific for SQLite DB engine"""
+    
+    defField = SqlField(name="fld",type="text")
     
     def __init__(self,dbpath,strType=str,dryRun=False):
-        from pysqlite2 import dbapi2 as dbmod
+        #from pysqlite2 import dbapi2 as dbmod
+        #it is a standard Python module since python 2.5:
+        import sqlite3 as dbmod
         self.dbmod = dbmod
         DbSql.__init__(self)
         self.strType = strType
@@ -371,8 +511,17 @@ class DbSqlLite(DbSql):
         if hasattr(self,'con'):
             self.con.close()
 
+    def makeBulkInserterFile(self,**kw):
+        k = {}
+        if kw.has_key("bufLen"):
+            k = kw["bufLen"]
+        k["sql"] = kw["table"].insertSql()
+        return self.makeBulkInserter(**k)
+   
+
 
 class DbSqlMy(DbSql):
+    """Derivative of DbSql specific for MySQL DB engine"""
     
     def __init__(self,dryRun=False,**kw):
         import MySQLdb as dbmod
@@ -430,8 +579,11 @@ class DbSqlMy(DbSql):
                 print "%s rows created in table %s" % (curs.fetchall(),name)
                 curs.close()
 
-    def makeBulkInserterFile(self,*l,**kw):
-        return BulkInserterFileMy(self,*l,**kw)
+    def makeBulkInserterFile(self,**kw):
+        kw = copy(kw)
+        if hasattr(kw["table"],"name"):
+            kw["table"] = kw["table"].name
+        return BulkInserterFileMy(self,**kw)
 
     def createIndices(self,table,names=None,primary=None,compounds=None,attrib={}):
         """This is a specialization for MySQL, which supports ALTER TABLE ... ADD INDEX ... ADD INDEX.
@@ -495,6 +647,7 @@ class DbSqlMy(DbSql):
 
 
 class DbSqlMonet(DbSql):
+    """Derivative of DbSql specific for MonetDB DB engine"""
     
 #sql>CREATE USER "root" WITH PASSWORD 'OrangeN0' NAME 'Main User' SCHEMA "sys";
 #sql>CREATE SCHEMA "mgtaxa" AUTHORIZATION "root";
@@ -571,7 +724,7 @@ class IntIdGenerator(object):
 
 class BulkInserter:
     
-    def __init__(self,db,sql,bufLen):
+    def __init__(self,db,sql,bufLen=100000):
         self.db = db
         self.bufLen = bufLen
         self.sql = sql
@@ -579,7 +732,7 @@ class BulkInserter:
         
     def __call__(self,record):
         self.buf.append(record)
-        if len(self.buf) == self.bufLen:
+        if len(self.buf) >= self.bufLen:
             self.flush()
 
     def __del__(self):
@@ -590,12 +743,14 @@ class BulkInserter:
             self.db.executemany(self.sql,self.buf)
             self.buf = []
 
+    def close(self):
+        self.flush()
 
 class BulkInserterFile(object):
     
     def __init__(self,db,table,bufLen=500000,workDir="."):
         """Bulk loading from files is not part of SQL standard.
-        However, every DBMS seems to have a way to do it, and it is very fast
+        However, every DBMS with a server process seems to have a way to do it, and it is very fast
         (100x for MonetDB) compared to plain 'insert' from 'executemany'.
         This implementation should work for MonetDB and possibly PostgreSQL"""
         from cStringIO import StringIO
@@ -689,7 +844,7 @@ class BulkInserterFile(object):
             self.n = 0
 
 
-def debugTaxaCount(db):
+def _debugTaxaCount(db):
     cursor = db.execute("""
     select count(*) from (select taxid from seq group by taxid) a
     """)

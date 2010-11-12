@@ -111,7 +111,9 @@ class RangeSet(object):
 class CrisprApp(App):
     """App-derived base class for CRISPR array processing"""
 
-    batchDepModes = ("blastcr","pilercr")
+    batchDepModes = ("blastcr","pilercr","findcr")
+
+    BaseApp = App
 
     maxSeqIdLen = UUID.maxIdLen
     maxSeqPartIdLen = UUID.maxIdLen
@@ -125,12 +127,12 @@ class CrisprApp(App):
     def parseCmdLinePost(klass,options,args,parser):
         globOpt = globals()["options"]
         opt = options
-        opt.sqlHost = "atovtchi1-lx.jcvi.org"
+        opt.setIfUndef("sqlHost","mgtaxa-dev.jcvi.org")
+        opt.setIfUndef("sqlDb","crispr")
         opt.minSpacerLen = 20
         opt.maxSpacerLen = 60
         opt.minSpacerNum = 3
-        workDir = globOpt.dataDir #os.environ["GOS_WORK"]
-        opt.topWorkDir = workDir
+        workDir = opt.setIfUndef("topWorkDir",globOpt.dataDir) #os.environ["GOS_WORK"]
         opt.crArrSeqDir = pjoin(workDir,"scaf-crispr")
         opt.crArrDir = pjoin(workDir,"scaf-piler")
         opt.gosBlastDbDir = pjoin(workDir,"reads-blast")
@@ -140,13 +142,13 @@ class CrisprApp(App):
         opt.MEM = 6000
         ## Combine all viral tracks and all microbial tracks for BLAST array hits
         opt.virMicTracksUnion = True
-        ## Only output tracks if viral hist are present for BLAST array hits
+        ## Only output tracks if viral hits are present for BLAST array hits
         opt.virArrHitsOnly = True
    
     def getDbSql(self):
         """Allocate (if necessary) and return a connection to SQL server"""
         if not hasattr(self,"dbSql"):
-            self.dbSql = DbSqlMy(db="crispr",host=self.opt.sqlHost)
+            self.dbSql = DbSqlMy(db=self.opt.sqlDb,host=self.opt.sqlHost)
         return self.dbSql
 
     def delDbSql(self):
@@ -155,17 +157,19 @@ class CrisprApp(App):
             self.dbSql.close()
             del self.dbSql
 
-    def initWork(self):
+    def initWork(self,**kw):
+        self.BaseApp.initWork(self,**kw)
         opt = self.opt
         self.taxaTree = None #will be lazy-loaded
-        self.store = SampStore.open(path=self.opt.get("cwd",os.getcwd()))
-        self.tmpDir = self.store.getFilePath("tmp")
+        makedirs((opt.topWorkDir,opt.crArrSeqDir,opt.crArrDir,opt.crBlastDir,opt.crAnnotDir,opt.crGraphDir))
+        self.tmpDir = pjoin(opt.topWorkDir,"tmp")
         makedir(self.tmpDir)
-        self.crArrSeqFile = self.store.getFilePath("arr.fasta")
-        self.crArrBlastFileRoot = self.store.getFilePath("arr.blast")
-        self.crArrBlastTxtFile = self.store.getFilePath("arr.blast.txt")
-        self.crArrBlastPerMatchTxtFile = self.store.getFilePath("arr.blast.match.txt")
-        self.crArrBlastMatchFile = self.store.getFilePath("arr.blast.match.fasta")
+        storeBlast = SampStore.open(path=opt.crBlastDir)
+        self.crArrSeqFile = storeBlast.getFilePath("arr.fasta")
+        self.crArrBlastFileRoot = storeBlast.getFilePath("arr.blast")
+        self.crArrBlastTxtFile = storeBlast.getFilePath("arr.blast.txt")
+        self.crArrBlastPerMatchTxtFile = storeBlast.getFilePath("arr.blast.match.txt")
+        self.crArrBlastMatchFile = storeBlast.getFilePath("arr.blast.match.fasta")
         self.initBlastJobs()
         self.crScafRoot = "inp"
    
@@ -194,7 +198,13 @@ class CrisprApp(App):
 
     def doWork(self,**kw):
         opt = self.opt
-        if opt.mode == "loadcr":
+        if opt.mode == "findcr":
+            return self.findCr(**kw)
+        elif opt.mode == "pilercr":
+            return self.pilerCr(**kw)
+        elif opt.mode == "pilercr-one":
+            return self.pilerCrOne(**kw)
+        elif opt.mode == "loadcr":
             return self.loadCrispr()
         elif opt.mode == "exportcr":
             return self.exportCr()
@@ -204,10 +214,6 @@ class CrisprApp(App):
             return self.blastCr(**kw)
         elif opt.mode == "blastcr-one":
             return self.blastCrOne(**kw)
-        elif opt.mode == "pilercr":
-            return self.pilerCr(**kw)
-        elif opt.mode == "pilercr-one":
-            return self.pilerCrOne(**kw)
         elif opt.mode == "loadbl":
             return self.loadBlast()
         elif opt.mode == "stats":
@@ -215,11 +221,26 @@ class CrisprApp(App):
         else:
             raise ValueError("Unknown opt.mode value: %s" % (opt.mode,))
 
+    def findCr(self,**kw):
+        """Run full pipeline for CRISPR loci detection - from finder to SQL load and FASTA export"""
+        opt = self.opt.copy()
+        opt.mode = "pilercr"
+        app = self.factory(opt=opt)
+        jobs = app.run(**kw)
+        opt = self.opt.copy()
+        opt.mode = "loadcr"
+        app = self.factory(opt=opt)
+        jobs = app.run(depend=jobs)
+        opt = self.opt.copy()
+        opt.mode = "exportcr"
+        app = self.factory(opt=opt)
+        jobs = app.run(depend=jobs)
+        return jobs
+
+
     def loadCrispr(self):
         """Import and filter original PILERCR output files and convert them into SQL tables"""
         arr = self.importPiler()
-        #self.store.saveObj(arr,"crispr_dict")
-        #arr = self.store.loadObj("crispr_dict")
         self.pilerToSql(arr)
 
     def exportCr(self):
@@ -273,7 +294,6 @@ class CrisprApp(App):
     def pilerCr(self,**kw):
         """Find CRISPR arrays with PilerCr within several partitions of the input sequence in parallel"""
         opt = self.opt
-        #pandaDbs = ["Phage.fasta"]
         inpFiles = self.listPilerIoFiles(input=True)
         jobs = []
         for inpFile in inpFiles:
@@ -291,7 +311,7 @@ class CrisprApp(App):
     def pilerCrOne(self,**kw):
         """One job launched by pilerCrOne()"""
         opt = self.opt
-        plOutPath = opt.plInpPath+".piler"
+        plOutPath = pjoin(opt.crArrDir,os.path.basename(opt.plInpPath)+".piler")
         run(("/home/atovtchi/work/distros/CRISPR/PILERCR/src/pilercr -minrepeat 22 -in %s -out %s -outtab %s.csv" % \
                 (opt.plInpPath,plOutPath,plOutPath)).split())
     
@@ -634,7 +654,7 @@ class CrisprApp(App):
         opt = self.opt
         if input:
             pilerSfx = ".fasta-*"
-            return ( f for f in iglob(pjoin(opt.crArrDir,"*"+pilerSfx)) if re.match(r'.*-[0-9]+$',f) )
+            return ( f for f in iglob(pjoin(opt.crArrSeqDir,"*"+pilerSfx)) if re.match(r'.*-[0-9]+$',f) )
         else:
             pilerSfx = ".piler.csv"
             return iglob(pjoin(opt.crArrDir,"*"+pilerSfx))

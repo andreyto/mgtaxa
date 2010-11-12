@@ -1,0 +1,16 @@
+#!/bin/bash
+set -ex
+[ -n "$GLOBUS_LOCATION" ] || exit 1
+NAME=gt4.2.1-all-source-installer
+SOURCE=$NAME.tar.gz
+BUILD=$NAME
+rm -rf $BUILD
+tar -zxf $SOURCE
+cd $BUILD
+./configure --prefix=$GLOBUS_LOCATION
+make
+## Reinstall GPT with correct location of perl interpreter 
+## instead of its default  #!/usr/bin/perl
+pushd gpt; ./build_gpt -with-perl=`which perl` -prefix=$GLOBUS_LOCATION; popd
+make install
+

@@ -236,6 +236,15 @@ def isSamePath(path1,path2):
     paths = [ os.path.abspath(os.path.realpath(p)) for p in (path1,path2) ]
     return paths[0] == paths[1]
 
+def editSymlink(source,link_name):
+    """Create the new symlink or change existing symlink.
+    @param source What symlink will point to
+    @param link_name Path to symlink itself
+    """
+    if os.path.islink(link_name):
+        os.remove(link_name)
+    os.symlink(source,link_name)
+
 def openCompressed(filename,mode,compressFormat=None,**kw):
     """Open a filename which can be either compressed or plain file.
     @param compressFormat if None, an attempt will be made to autodetect format 
@@ -452,7 +461,7 @@ def readFastaRecords(infile,readSeq=True):
         yield FastaRecord(title, seq)
 
 def splitFastaFile(inpFile,outBase,maxChunkSize):
-    inpFile = open(inpFile,'r')
+    inpFile = openCompressed(inpFile,'r')
     inp = readFastaRecords(inpFile)
     out = None
     iChunk = 0
@@ -564,6 +573,63 @@ def logicalAnd(*arrays):
     for a in arrays[2:]:
         res = n.logical_and(res,a)
     return res
+
+def allSame(seq,key=None,comp=None):
+    """Return True if all elements of iterable are equal.
+    @param seq Any iterable
+    @param key Unary operator that gives the key to compare as key(x) for x in seq. None means identity.
+    @param comp Comparison equality binary operator (transitivity holds). None means ==.
+    @note Will raise ValueError on empty iterable
+    @note It assumes transitivity of equality comparison, and only checks first element with all others
+    @note Use case: allSame(arrays,key=len) will check that all arrays have the same length
+    @note Use case: allSame(arrays,comp=lambda x,y: numpy.all(x==y))
+    """
+    if key is None:
+        key = lambda x: x
+    if comp is None:
+        comp = lambda x,y: x == y
+    itr = ( key(x) for x in seq )
+    try:
+        first = itr.next()
+    except StopIteration:
+        raise ValueError("Need non-empty iterable")
+    for x in itr:
+        if not comp(first,x):
+            return False
+    return True
+    
+def diffFiles(fromFile,toFile,showCommon=False,asText=False):
+    """Compare two files line-by-line using difflib module.
+    @param fromFile Diff is computed from this file
+    @param toFile Diff is computed toward this file
+    @param showCommon If False [default], only show lines that changed.
+    difflib by default shows identical lines as well.
+    @param asText If True, return result as a single multiline string; otherwise
+    return as an iterator for lines of output (default).
+    @return A generator for diff strings. See docs on difflib for the format
+    of output lines.
+    @note Currently we use difflib.ndiff()
+    """
+    import difflib
+    def _file_to_lines(f):
+        inp = openCompressed(f,"r")
+        lines = inp.readlines()
+        inp.close()
+        return lines
+    fromLines = _file_to_lines(fromFile)
+    toLines = _file_to_lines(toFile)
+    if not showCommon:
+        filt = lambda line: not line.startswith('  ')
+    else:
+        filt = lambda line: True
+    outIter = ( line for line in difflib.ndiff(fromLines,toLines) if filt(line) )
+    if asText:
+        return ''.join(outIter)
+    else:
+        return outIter
+
+def sameArrays(arrays):
+    return allSame(arrays,comp=lambda x,y: n.all(x==y))
 
 def binCount(seq,format="dict"):
     cnt = defdict(int)

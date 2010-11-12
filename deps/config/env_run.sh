@@ -47,6 +47,29 @@ export MGT_MYSQL_HOST=mgtaxa-dev.jcvi.org
 export MGT_MYSQL_PORT=13306
 export MGT_MYSQL_TMPDIR=$SCRATCH
 
+# Globus Toolkit
+export GLOBUS_LOCATION=$INSTMACH/globus
+export PATH=$GLOBUS_LOCATION/bin:$PATH
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$GLOBUS_LOCATION/lib
+
+# GridWay
+export GW_LOCATION=$INSTMACH/gridway
+export PATH=$GW_LOCATION/bin:$PATH
+## We use compile-time linker flags instead:
+#export LD_LIBRARY_PATH="${GW_LOCATION}/lib:${LD_LIBRARY_PATH}"
+
+# GridWay DRMAA Python (also needs LD_LIBRARY_PATH to include 
+export PYTHONPATH=$GW_LOCATION/lib/python:${PYTHONPATH}
+
+# Ruby stuff
+# We need to have rubygems module loaded ("require") on every start of ruby,
+# because that adds into Ruby's library path the gems installed by 'gem install --user-install'
+# into user's home dir.
+# Otherwise Ruby cannot find them.
+# @todo We probably need to add GEM_HOME=$INSTMACH/ruby/gem so that --user-install puts gems
+# where instead of default ~/.gem
+export RUBYOPT="-rrubygems"
+
 export AT_ENV_RUN_DONE=1
 
 fi # [ -z "$AT_ENV_RUN_DONE" ]

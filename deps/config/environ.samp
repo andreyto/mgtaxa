@@ -16,6 +16,11 @@ source /usr/local/sge_current/jcvi/common/settings.sh
 
 export LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib:$LD_LIBRARY_PATH
 
+export JAVA_HOME=/usr/local/java/current
+## ANT (the Java make) is installed at JCVI, but ANT_HOME has to be defined,
+## otherwise Globus Toolkit build fails when ant cannot find xmlvalidate module ("task")
+export ANT_HOME=/usr/local/packages/apache-ant
+
 #echo "Sourcing .environ"
 # absolute path to the user HOME under which everything is installed (by default - self)
 export AHOME=$HOME

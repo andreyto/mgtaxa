@@ -1,0 +1,19 @@
+#!/bin/bash
+set -ex
+[ -n "$GW_LOCATION" ] || exit 1
+NAME=gw-drmaa-python-0.1
+SOURCE=$NAME.tar.gz
+BUILD=$NAME
+## We need to hard-wire the libdrmaa.so location when compiling
+## Python extension module, so that it can be loaded w/o 
+## modifying LD_LIBRARY_PATH. The latter way could confuse
+## SGE DRMAA interfaces if used within the same environment.
+export LDFLAGS="$LDFLAGS -Wl,-R$GW_LOCATION/lib"
+rm -rf $BUILD
+tar -zxf $SOURCE
+cd $BUILD
+$PYTHON setup.py install --install-lib=$GW_LOCATION/lib/python
+[ -n "$DEP_SRC_TOP" ] || exit 1
+cd $DEP_SRC_TOP/config/gridway/gw-drmaa-py-wrapper
+$PYTHON setup.py install --prefix=$INST --exec-prefix=$INSTMACH
+

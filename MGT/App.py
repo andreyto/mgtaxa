@@ -43,8 +43,9 @@ class App:
         optArgs.updateOtherMissing(opt)
         self._instanceOptionsPostBase(opt)
         self.instanceOptionsPost(opt)
-        if opt.optFile is not None:
-            opt = loadObj(opt.optFile)
+        # this is now checked in parseCmdLine
+        #if opt.optFile is not None:
+        #    opt = loadObj(opt.optFile)
         self.opt = opt
 
     def run(self,**kw):
@@ -180,7 +181,10 @@ class App:
         options = Struct(options.__dict__)
         if _explicitOpt is not None:
             options.update(_explicitOpt)
-        klass.parseCmdLinePost(options=options,args=args,parser=parser)
+        if options.optFile is not None:
+            options = loadObj(options.optFile)
+        else:
+            klass.parseCmdLinePost(options=options,args=args,parser=parser)
         return options,args
 
     @classmethod
@@ -210,11 +214,14 @@ class App:
 
     @classmethod
     def fillWithDefaultOptions(klass,options):
-        """Fill with default values those options that are not already set."""
+        """Fill with default values those options that are not already set.
+        @param options Existing options object - will be modified in place and also returned
+        @return Modified options parameter"""
         #we use _explicitOpt to override any default options with those from 'options'
         #BEFORE parseCmdLinePost() is called
         optArgs,args = klass.defaultOptions(_explicitOpt=options)
         optArgs.updateOtherMissing(options)
+        return options
 
     def _instanceOptionsPostBase(self,opt):
         """Set (in place) instance-specific options.

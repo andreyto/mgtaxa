@@ -1,0 +1,7 @@
+#
+## Unix cat and stag-in/stage-out files
+EXECUTABLE=test-cat.sh
+ARGUMENTS=test-cat.input test-cat.output
+INPUT_FILES=test-cat.input
+OUTPUT_FILES=test-cat.output
+

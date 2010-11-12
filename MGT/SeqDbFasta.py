@@ -40,9 +40,19 @@ class SeqDbFasta(DirStore):
         return self.getFilePath("%s%s" % (id,self.fastaSfx))
 
     def fastaReader(self,id):
+        """Return FastaReader to read from the DB for a given ID"""
         return FastaReader(self.getFilePathById(id))
 
+    def fastaWriter(self,id,lineLen=None,mode="w"):
+        """Return FastaWriter to write INTO the DB for a given ID.
+        @param id ID of the record
+        @param lineLen Length of FASTA lines
+        @param mode String with the same semantics as 'mode' supplied to built-in open() method
+        """
+        return FastaWriter(out=self.getFilePathById(id),lineLen=lineLen,mode=mode)
+
     def writeFasta(self,ids,out):
+        """Write FASTA stream for given sequence of IDs from DB into output file-like object"""
         for id in ids:
             reader = self.fastaReader(id)
             for rec in reader.records():
