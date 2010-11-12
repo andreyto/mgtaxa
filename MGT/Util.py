@@ -93,8 +93,7 @@ class PickleWriter(object):
         self.pkl.dump(x)
     
     def close(self):
-        if self.closeOut:
-            self.out.close()
+        self.out.close()
 
 def allChr():
     """Return a string with all characters in C local [0-255]"""
