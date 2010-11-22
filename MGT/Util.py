@@ -69,14 +69,16 @@ def PickleReader(inp,**kw):
     else:
         closeInp = False
     pkl = Unpickler(inp)
-    while True:
-        try:
-            x = pkl.load()
-        except EOFError:
-            break
-        yield x
-    if closeInp:
-        inp.close()
+    try:
+        while True:
+            try:
+                x = pkl.load()
+            except EOFError:
+                break
+            yield x
+    finally:
+        if closeInp:
+            inp.close()
 
 class PickleWriter(object):
 
@@ -1074,4 +1076,18 @@ def runsOfOnesArray(bits):
     #run_starts -= 1
     #run_ends -= 1
     return n.column_stack([run_starts,run_ends])
+
+def printAliSeqs(seqs,lineLen,out,seqNames=None,emptySymb=' '):
+    """Print two aligned strings side-by-side"""
+    maxLen = max((len(s) for s in seqs))
+    if seqNames is None:
+        seqNames = ['']*len(seqs)
+    seqs = [ s.ljust(maxLen,emptySymb) for s in seqs ]
+    maxNameLen = max((len(s) for s in seqNames))
+    for x in range(0,maxLen,lineLen):
+        for (s,sName) in it.izip(seqs,seqNames):
+            out.write(sName.ljust(maxNameLen+1))
+            out.write(s[x:x+lineLen])
+            out.write("\n")
+        out.write("\n")
 
