@@ -1,6 +1,11 @@
 This is a test config for GridWay with SSH MAD.
 Copy the files from this directory to $GW_LOCATION/etc
 (you will overwrite existing gwd.conf).
+If you want to run several gwd instances on the same host (such as
+development testing under different accounts), you need to
+set the PORT in etc/gwd.conf to a unique value. Make sure that you
+the file gridway/var/gwd.port reflects your new port value after you
+restarted the gwd (it does not remove that file when you terminate it).
 Modify the SSH host name if needed.
 Make sure you can ssh to that host from the command line
 w/o problems or password prompts.
