@@ -1,0 +1,13 @@
+This configures a new MAD, created as a renamed copy
+of SSH MAD.
+Installation:
+1. pkill gwd
+1. Copy subdirectories into GW_LOCATION, overwriting existing files
+2. Remove all job directories under GW_LOCATION/var, otherwise your
+new jobs will be stuck in 'pending' state because GW cannot load
+MADs (why it tries to load them) for previous jobs, because the new
+config removes references to previous MADs (such as SSH MADs)
+3. gwd
+The tests that ran with SSH MADS should run unchanged with this 
+"new" MAD. The new MADs config renames evrything 'ssh' into 
+'lrm_proxy'.
