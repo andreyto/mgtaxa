@@ -79,19 +79,6 @@ def crisprHasSimilarSpacers(arr,nLookAhead=3,maxIdentity=0.6,maxSimilarRatio=0.2
 def crisprSeqAliToRaw(seq_ali):
     return seq_ali.replace("-","")
 
-def printAliSeqs(seqs,lineLen,out,seqNames=None,emptySymb=' '):
-    maxLen = max((len(s) for s in seqs))
-    if seqNames is None:
-        seqNames = ['']*len(s)
-    seqs = [ s.ljust(maxLen,emptySymb) for s in seqs ]
-    maxNameLen = max((len(s) for s in seqNames))
-    for x in range(0,maxLen,lineLen):
-        for (s,sName) in it.izip(seqs,seqNames):
-            out.write(sName.ljust(maxNameLen+1))
-            out.write(s[x:x+lineLen])
-            out.write("\n")
-        out.write("\n")
-
 class RangeSet(object):
     """Class that converts ranges (same as intervals) into sets in order to find intersections and coverage"""
     

@@ -7,6 +7,7 @@
 
 
 from MGT.Kmers import *
+from MGT.Common import *
 
 kmerLen = 4
 

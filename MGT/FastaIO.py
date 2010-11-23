@@ -109,6 +109,8 @@ class FastaReader(object):
         seq.close()
         if format == 'array':
             s = numpy.fromstring(s,dtype='S1')
+        elif format != 'str':
+            raise ValueError("Unknown format value: %s" % (format,))
         return s
 
     def seqLen(self):
