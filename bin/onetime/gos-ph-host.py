@@ -25,7 +25,7 @@ elif stage == "gos":
 
     opt = Struct()
     opt.runMode = "inproc" #"inproc" #"batchDep"
-    modes = ["proc-scores"] #"score-imms-gos"] #"train-imms-gos"] #"make-custom-seq"]
+    modes = ["proc-scores"] #"export-pred" "proc-scores" "score-imms-gos"] #"train-imms-gos"] #"make-custom-seq"]
     jobs = []
     for mode in modes:
         opt.mode = mode

@@ -323,14 +323,18 @@ for line in sys.stdin:
 def ioFilter(inp,code,mode="stream",lineInitCode=""):
     """Pipe input stream through Python code and return in the output stream.
     @param inp Input file object
-    @param code Python code (possibly as multi-line) string that will be executed under a separate Python instance,
-    it should read from standard input and write to standard output
-    @param mode if "line", then code accepts one line and returns one or more lines, e.g. "lambda x: x.replace(',','\n')";
+    @param code Python code (possibly as multi-line) string that will be 
+    executed under a separate Python instance; it should read from standard input 
+    and write to standard output
+    @param mode if "line", then code accepts one line and returns one or more lines, 
+    e.g. "lambda x: x.replace(',','\n')";
     if "stream", then code reads from standard input and writes to standard output.
     @return Input file object connected to the standard output of the filter
-    @param lineInitCode if mode == "line", code will be passed to eval() to prepare a callable object, and thus must conform
-    to eval()'s restrictions (the main in this context would be inability to use 'import'). Therefore, and optional 
-    argument lineInitCode will be inserted before the main loop and can contain module imports or method definitions.
+    @param lineInitCode if mode == "line", code will be passed to eval() to 
+    prepare a callable object, and thus must conform to eval()'s restrictions 
+    (the main in this context would be inability to use 'import'). To address 
+    this restriction, and optional argument lineInitCode can be inserted before 
+    the main loop and can contain module imports or method definitions.
     """
     assert mode in ("stream","line"),"Unknown stream parameter value: %s" % (mode,)
     codeS,codeFileName = makeTmpFile(prefix="iofilt",withTime=True)

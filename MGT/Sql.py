@@ -56,6 +56,9 @@ class SqlField:
         else:
             return "NOT NULL"
 
+    def tableDef(self):
+        return " ".join( [ (attr if attr else "") for attr in (self.name,self.type, self.nullSql()) ] )
+
 class SqlTable:
     """This class defines SQL table"""
 
@@ -71,7 +74,7 @@ class SqlTable:
         (
         %s
         )
-        """ % (self.name, ",\n".join( [ "%s %s %s" % (field.name,field.type,field.nullSql()) for field in self.fields ] ))
+        """ % (self.name, ",\n".join( [ field.tableDef() for field in self.fields ] ))
 
     def insertSql(self):
         """Return SQL DML string that can be passed to Python DB-API cursor.executemany() method"""
@@ -201,24 +204,36 @@ class DbSql(MGTOptions):
     def executeAndAssertZero(self,sql,**kw):
         self.executeAndAssert(sql,((0,),),**kw)
 
-    def selectScalar(self,sql,**kw):
-        """Execute sql that must return a single row with a single column and return result as scalar value."""
+    def selectAll(self,sql,**kw):
+        """Convenience method that does for select statement and execute+fetchall in one step.
+        Use for statements with small result set.
+        @param sql SQL SELECT statement
+        @return result of cursor.fetchall (sequence of tuples)"""
         curs = self.execute(sql,**kw)
         ret = curs.fetchall()
+        curs.close()
+        return ret
+    
+    def selectScalar(self,sql,**kw):
+        """Execute sql that must return a single row with a single column and return result as scalar value."""
+        ret = self.selectAll(sql=sql,**kw)
         assert len(ret) == 1 and len(ret[0]) == 1,"Non-scalar value obtained in 'selectScalar()'"
         ret = ret[0][0]
-        curs.close()
         return ret
 
     def selectAsNx1Dict(self,sql,**kw):
         """Execute sql that must return two columns with Nx1 relation and return result as dict(first->second)."""
-        curs = self.execute(sql,**kw)
-        ret = curs.fetchall()
+        ret = self.selectAll(sql=sql,**kw)
         assert len(ret) == 0 or len(ret[0]) == 2,"Result set must be two columns"
-        curs.close()
         dret = dict(ret)
         assert len(ret) == len(dret),"Result set must be Nx1 relation. Multi-valued keys were found."
         return dret
+    
+    def selectAs1Col(self,sql,**kw):
+        """Execute sql that must return one column and return result as 1D sequence."""
+        ret = self.selectAll(sql=sql,**kw)
+        assert len(ret) == 0 or len(ret[0]) == 1,"Result set must have one column"
+        return [ row[0] for row in ret ]
     
     def dropTables(self,names):
        for name in names:
@@ -274,15 +289,17 @@ class DbSql(MGTOptions):
         self.ddl("ANALYZE TABLE " + table,ifDialect="mysql")
 
     def createTableAs(self,name,select):
-        """Insulate 'create table as (select ...) [order by ...] with data' from SQL dialect differences.
-        @param name - name of table to (re-)create
-        @param select - everything that should go between 'create table as' and 'with data'
-        Rational: MonetDB Feb2008 requires 'with data' at the end, MySQL 5 does not recognize 'with data'"""
+        """Save the results of SQL SELECT as a new table.
+        @param name - name of table to (re-)create - existing table will be replaced
+        @param select - SQL select statement
+        This abstracts "create ... as ..." operation from minor differences in SQL dialects.
+        For example, MonetDB Feb2008 required 'with data' at the end, MySQL 5 and SQLite do 
+        not recognize 'with data'
+        Override in derived classes if necessary."""
 
         self.ddl("""
         CREATE TABLE %s AS
         """ % (name,) + select + """
-        WITH DATA
         """,
         dropList=["table %s" % (name,)])
         if self.debug:
@@ -290,7 +307,7 @@ class DbSql(MGTOptions):
             if curs is not None:
                 print "%s rows created in table %s" % (curs.fetchall(),name)
                 curs.close()
-
+    
 
     def makeBulkInserterFile(self,**kw):
         kw = copy(kw)
@@ -346,13 +363,14 @@ class DbSql(MGTOptions):
         return inserter
 
     def createTableFromCsv(self,name,csvFile,fieldsMap={},defField=None,hasHeader=False,
-            dialect="excel-tab",dialect_options={},indices=None):
+            dialect="excel-tab",dialect_options={},indices=None,preProc=None):
         """Create and fill a table from CSV file.
         The intention is to provide a single command to load a CSV file into SQL table
         where reasonable default values can be generated for all options.
         @param name The name of the new table
         @param csv Either a file name, in which case csv.reader(openCompresed(),dialect=dialect) 
-        will be used to open the file, or it should be an existing csv.reader object
+        will be used to open the file, or it should be an existing file stream, or csv.reader object
+        (in the latter case dialect and dialect_options parameters are ignored).
         @param fieldsMap A dictionary that either maps field position to SqlField instances
         (if hasHeader is False) or maps field names to SqlField instances (if hasHeader is True).
         In the latter case, each SqlField instance can replace the name from the header, or leave the
@@ -366,8 +384,25 @@ class DbSql(MGTOptions):
         @param dialect Dialect string defined in csv module
         @param dialect_options Passed to csv.reader(**dialect_options)
         @param indices, if not None, should be a dictionary with arguments to createIndices, 
-        except the 'table' argument, which will be taken from 'name'.
+        except the 'table' argument, which will be taken from 'name'
+        @param preProc If specified, this should be a method that will be applied to each
+        row returned by csv.reader. The method must return a sequence (possibly empty) of new
+        rows, which will be inserted into SQL table instead of the original row. Their size and
+        types must match the original row. The preProc must have this signature:
+        preProc(row,fields,nameToInd) where row is returned by csv.reader.next(); fields is a list
+        of SqlField objects matching the row fields; nameToInd is a dictionary mapping field names
+        to indexes of fields in the row. The last two parameters allow preProc's code to access row
+        elements by field names, e.g. row[nameToInd["seqid"]]. The preProc parameter addresses a common
+        use case where the input file is very large but we need to load into the SQL DB only a small
+        subset of it for which a simple filter condition exists such as set membership. It also covers
+        simple manipulation of input data such as various string substitutions.
+        Example:
+        preProc = lambda row,fields,nameToInd,idSet=set(1,2,3): \
+                ( row, ) if row[namesToInd["seqId"]] in idSet else (,)
+        createTableFromCsv(...,preProc=preProc)
         """
+        if preProc is None:
+            preProc = lambda row,fields,nameToInd: ( row, )
         if defField is None:
             defField = copy(self.defField)
         if isinstance(csvFile,str):
@@ -376,6 +411,16 @@ class DbSql(MGTOptions):
             csvFile = csv.reader(csvFileInp,dialect=dialect,**dialect_options)
         else:
             closeCsv = False
+            #Here we need to figure out if csvFile is just a file stream, or
+            #a CSV reader already. Unfortunately, csv module does not specify
+            #any common base class for CSV readers, so we have to rely on
+            #tests for attribute presence
+            if not (hasattr(csvFile,"dialect") and hasattr(csvFile,"line_num")):
+                #this is NOT a result of calling csv.reader() or compatible interface,
+                #so we assume it to be a file stream object, and call csv.reader
+                #on it to create a CSV reader
+                csvFile = csv.reader(csvFile,dialect=dialect,**dialect_options)
+
         if not hasHeader:
             firstRow = csvFile.next()
             nFields = len(firstRow)
@@ -410,10 +455,16 @@ class DbSql(MGTOptions):
         table = SqlTable(name=name,fields=fields)
         self.ddl(table.createSql(),dropList=["table "+table.name])
         inserter = self.makeBulkInserterFile(table=table)
+        nameToFieldInd = dict( ( (field.name,iField) for (iField,field) \
+                in enumerate(fields) ) )
         if firstRow is not None:
-            inserter(firstRow)
+            newRows = preProc(firstRow,fields,nameToFieldInd)
+            for newRow in newRows:
+                inserter(newRow)
         for row in csvFile:
-            inserter(row)
+            newRows = preProc(row,fields,nameToFieldInd)
+            for newRow in newRows:
+                inserter(newRow)
         inserter.close()
         if indices is not None and len(indices) > 0:
             self.createIndices(table=name,**indices)
@@ -432,17 +483,29 @@ class DbSql(MGTOptions):
             dialect="excel-tab",
             dialect_options={"lineterminator":"\n"}):
         """Excecute SQL and export the result as CSV file.
+        @param sql SQL select statement to export results of
+        @param out Either file name, or file stream object, or CSV writer object
+        @param withHeader If True, write the field names as the header
+        @param bufLen Size (in number of records) of the internal memory buffer
+        used when moving SQL result set into the output file
+        @param dialect Dialect string defined in csv module
+        @param dialect_options Passed to csv.writer(**dialect_options)
         @note We set the default lineterminator to Linux style '\n', as opposed to 
-        Python'd default of Windows style '\r\n'"""
+        Python's default of Windows style '\r\n'"""
         reader = self.makeBulkReader(sql=sql,format="list",bufLen=bufLen)
         chunks = reader.chunks()
         names = reader.fieldNames()
         if isinstance(out,str):
             out = openCompressed(out,'w')
             doClose=True
+            w = csv.writer(out,dialect=dialect,**dialect_options)
         else:
             doClose=False
-        w = csv.writer(out,dialect=dialect,**dialect_options)
+            if not (hasattr(out,"dialect") and hasattr(out,"writerows")):
+                #this is NOT a result of calling csv.writer() or compatible interface,
+                #so we assume it to be a file stream object, and call csv.writer()
+                #on it to create a CSV writer
+                w = csv.writer(out,dialect=dialect,**dialect_options)
         if withHeader:
             w.writerow(names)
         for rows in chunks:
@@ -510,8 +573,16 @@ class DbSqlLite(DbSql):
         self.commit()
         if hasattr(self,'con'):
             self.con.close()
+            delattr(self,'con')
 
     def makeBulkInserterFile(self,**kw):
+        #@todo There is a lot of room for optimizing bulk insertion
+        #in SQLite. E.g. this
+        #$echo "create table mytable ( col1 int, col2 int);" | sqlite3 foo.sqlite
+        #$echo ".import demotab.txt mytable"  | sqlite3 foo.sqlite
+        #or other methods that use true sql insert but wrap many of them in a 
+        #single transction as well as play with memory settings, described e.g.
+        #here: http://stackoverflow.com/questions/364017/faster-bulk-inserts-in-sqlite3
         k = {}
         if kw.has_key("bufLen"):
             k = kw["bufLen"]
@@ -564,20 +635,6 @@ class DbSqlMy(DbSql):
     def dialectMatch(self,dialect):
         return dialect is None or dialect == "mysql"
 
-    def createTableAs(self,name,select):
-        """Specialization.
-        MySQL does not recognize 'with data' suffix"""
-
-        self.ddl("""
-        CREATE TABLE %s AS
-        """ % (name,) + select + """
-        """,
-        dropList=["table %s" % (name,)])
-        if self.debug:
-            curs = self.execute("select count(*) from %s" % (name,))
-            if curs is not None:
-                print "%s rows created in table %s" % (curs.fetchall(),name)
-                curs.close()
 
     def makeBulkInserterFile(self,**kw):
         kw = copy(kw)
@@ -702,7 +759,25 @@ class DbSqlMonet(DbSql):
             pass
 
     def createIndices(self,names,table):
+        """This columnar RDBMS has not explicit indices"""
         pass
+
+    def createTableAs(self,name,select):
+        """Specialization.
+        MonetDB requires 'with data' suffix"""
+
+        self.ddl("""
+        CREATE TABLE %s AS
+        """ % (name,) + select + """
+        WITH DATA
+        """,
+        dropList=["table %s" % (name,)])
+        if self.debug:
+            curs = self.execute("select count(*) from %s" % (name,))
+            if curs is not None:
+                print "%s rows created in table %s" % (curs.fetchall(),name)
+                curs.close()
+
 
 def createDbSql(**kw):
     #db = DbSqlLite("/export/atovtchi/test_seq.db")
