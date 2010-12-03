@@ -6,7 +6,8 @@
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
 
-"""Read a file with sequence features and create a file with sparse real features based on word distance histogram."""
+"""Pull sequences from NCBI split along genus boundaries.
+Output is in SVM string features format."""
 from MGT.Taxa import *
 from MGT.Svm import *
 from MGT.FastaIO import *
