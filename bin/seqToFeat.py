@@ -6,7 +6,7 @@
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
 
-"""Read a file with sequence features and create a file with sparse real features based on word distance histogram."""
+"""Redirects to SeqFeaturesApp scripting interface"""
 
 from MGT.App import *
 from MGT.SeqFeaturesApp import SeqFeaturesApp

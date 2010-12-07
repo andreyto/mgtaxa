@@ -1,0 +1,17 @@
+#!/bin/bash
+topdir=$(pwd)
+cd umfpack
+patch UFconfig/UFconfig.mk < UFconfig.patch
+cd UMFPACK
+make clean
+make
+cp Lib/*.a $INSTMACH/lib/
+cp -a UMFPACK/Include/* $INSTMACH/include/ #scipy swig will look for it here
+cp UFconfig/UFconfig.h $INSTMACH/include/
+cp AMD/Include/* $INSTMACH/include/
+cp ../AMD/Lib/*.a $INSTMACH/lib/
+cd $topdir/scipy
+#numpy/scipy forgets to set -shared when building an extension module with fortran
+rm -rf build
+LDFLAGS="$LDFLAGS -shared" python setup.py build --fcompiler=gnu95 install --prefix=$INST --exec-prefix=$INSTMACH
+

@@ -6,7 +6,9 @@
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
 
-"""Load and pickle Doug's scaffold-level taxonomy assignment file."""
+"""Combine and shred prepared sequence samples from GOS and NCBI.
+Input sequences are in pre-defined subdirectories as SVM string features."""
+
 from MGT.Taxa import *
 from MGT.Common import *
 from MGT.Shogun.Util import *
