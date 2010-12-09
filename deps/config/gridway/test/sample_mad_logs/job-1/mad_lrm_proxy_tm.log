@@ -1,0 +1,41 @@
+INIT;200;-;-;-;-
+INIT - - SUCCESS -
+START;0;-;-;-;-
+START 0 - SUCCESS -
+RMDIR;0;-;-;gsiftp://mgtaxa-app/~/.gw_atovtchi_0/;-
+mgtaxa-app ~/.gw_atovtchi_0/
+RMDIR 0 - SUCCESS -
+MKDIR;0;-;-;gsiftp://mgtaxa-app/~/.gw_atovtchi_0/;-
+mgtaxa-app ~/.gw_atovtchi_0/
+MKDIR 0 - SUCCESS gsiftp://mgtaxa-app/~/.gw_atovtchi_0/
+CP;0;0;-;file:///local/bioinfowork/data/phyla/mgtaxa/deps/config/gridway/test/test-cat.input;gsiftp://mgtaxa-app/~/.gw_atovtchi_0/test-cat.input
+CP;0;1;-;file:///home/atovtchi/work/packages/x86_64-rhel5/gridway/var/0/job.env;gsiftp://mgtaxa-app/~/.gw_atovtchi_0/job.env
+CP;0;2;X;file:///local/bioinfowork/data/phyla/mgtaxa/deps/config/gridway/test/test-cat.sh;gsiftp://mgtaxa-app/~/.gw_atovtchi_0/test-cat.sh
+CP;0;4;X;file:///home/atovtchi/work/packages/x86_64-rhel5/gridway/libexec/gw_wrapper.sh;gsiftp://mgtaxa-app/~/.gw_atovtchi_0/.wrapper
+CP 0 1 SUCCESS (file:///home/atovtchi/work/packages/x86_64-rhel5/gridway/var/0/job.env->gsiftp://mgtaxa-app/~/.gw_atovtchi_0/job.env)
+CP 0 0 SUCCESS (file:///local/bioinfowork/data/phyla/mgtaxa/deps/config/gridway/test/test-cat.input->gsiftp://mgtaxa-app/~/.gw_atovtchi_0/test-cat.input)
+CP 0 4 SUCCESS (file:///home/atovtchi/work/packages/x86_64-rhel5/gridway/libexec/gw_wrapper.sh->gsiftp://mgtaxa-app/~/.gw_atovtchi_0/.wrapper)
+CP 0 2 SUCCESS (file:///local/bioinfowork/data/phyla/mgtaxa/deps/config/gridway/test/test-cat.sh->gsiftp://mgtaxa-app/~/.gw_atovtchi_0/test-cat.sh)
+END;0;-;-;-;-
+END 0 - SUCCESS -
+START;0;-;-;-;-
+START 0 - SUCCESS -
+CP;0;0;-;gsiftp://mgtaxa-app/~/.gw_atovtchi_0/stdout.wrapper;file:///home/atovtchi/work/packages/x86_64-rhel5/gridway/var/0/stdout.wrapper.0
+CP;0;1;-;gsiftp://mgtaxa-app/~/.gw_atovtchi_0/stderr.wrapper;file:///home/atovtchi/work/packages/x86_64-rhel5/gridway/var/0/stderr.wrapper.0
+CP 0 0 SUCCESS (gsiftp://mgtaxa-app/~/.gw_atovtchi_0/stdout.wrapper->file:///home/atovtchi/work/packages/x86_64-rhel5/gridway/var/0/stdout.wrapper.0)
+CP 0 1 SUCCESS (gsiftp://mgtaxa-app/~/.gw_atovtchi_0/stderr.wrapper->file:///home/atovtchi/work/packages/x86_64-rhel5/gridway/var/0/stderr.wrapper.0)
+END;0;-;-;-;-
+END 0 - SUCCESS -
+START;0;-;-;-;-
+START 0 - SUCCESS -
+CP;0;0;-;gsiftp://mgtaxa-app/~/.gw_atovtchi_0/test-cat.output;file:///local/bioinfowork/data/phyla/mgtaxa/deps/config/gridway/test/test-cat.output
+CP;0;1;-;gsiftp://mgtaxa-app/~/.gw_atovtchi_0/stdout.execution;file:///local/bioinfowork/data/phyla/mgtaxa/deps/config/gridway/test/stdout.0
+CP;0;2;-;gsiftp://mgtaxa-app/~/.gw_atovtchi_0/stderr.execution;file:///local/bioinfowork/data/phyla/mgtaxa/deps/config/gridway/test/stderr.0
+CP 0 0 SUCCESS (gsiftp://mgtaxa-app/~/.gw_atovtchi_0/test-cat.output->file:///local/bioinfowork/data/phyla/mgtaxa/deps/config/gridway/test/test-cat.output)
+CP 0 2 SUCCESS (gsiftp://mgtaxa-app/~/.gw_atovtchi_0/stderr.execution->file:///local/bioinfowork/data/phyla/mgtaxa/deps/config/gridway/test/stderr.0)
+CP 0 1 SUCCESS (gsiftp://mgtaxa-app/~/.gw_atovtchi_0/stdout.execution->file:///local/bioinfowork/data/phyla/mgtaxa/deps/config/gridway/test/stdout.0)
+RMDIR;0;-;-;gsiftp://mgtaxa-app/~/.gw_atovtchi_0/;-
+mgtaxa-app ~/.gw_atovtchi_0/
+RMDIR 0 - SUCCESS -
+END;0;-;-;-;-
+END 0 - SUCCESS -

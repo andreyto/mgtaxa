@@ -1,0 +1,6 @@
+MAD logs and gwd log for an actual job.
+Job was submitted by test-cat-submit.sh.
+GW ran it through mad_lrm_proxy MADs.
+Job has completed and created a correct output file in
+the directory where it was submitted.
+

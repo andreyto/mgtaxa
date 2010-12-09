@@ -1,0 +1,4 @@
+INIT;200;-;-
+INIT - SUCCESS -
+SUBMIT;0;mgtaxa-app/jobmanager-lrm_proxy;/home/atovtchi/work/packages/x86_64-rhel5/gridway/var/0/job.rsl.0
+SUBMIT 0 SUCCESS ssh://atovtchi@mgtaxa-app/d4242d49d657bafaecf8fb64b92f69f2
