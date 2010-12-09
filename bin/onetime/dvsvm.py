@@ -5,7 +5,7 @@
 #
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
-
+"""Convert file in SVMLight format which has all features present into dense format"""
 
 from MGT.PredProcessor import *
 from MGT.Svm import SvmDenseFeatureWriterTxt

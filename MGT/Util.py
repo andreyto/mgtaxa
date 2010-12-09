@@ -258,10 +258,15 @@ def openCompressed(filename,mode,compressFormat=None,**kw):
         if filename.endswith('.gz'):
             cform = "gzip"
     #print "DEBUG: openCompressed(%s,%s,%s)" % (filename,mode,cform)
+    k = kw.copy()
     if cform == "gzip":
+        if "buffering" in k:
+            k["bufsize"] = k["buffering"]
+            del k["buffering"]
         return openGzip(filename,mode,**kw)
     elif cform == "none":
-        return open(filename,mode,2**20,**kw)
+        k.setdefault("buffering",2**20)
+        return open(filename,mode,**kw)
     else:
         raise ValueError(compressFormat)
 

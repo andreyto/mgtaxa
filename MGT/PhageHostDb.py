@@ -469,7 +469,7 @@ class PhageHostSeqPicker:
         picks = self.picks
         mics = set( ( x[0] for x in picks ) )
         virs = set( ( x[1] for x in picks ) )
-        nodes = mics + virs
+        nodes = mics | virs
         seqIds = []
         for node in nodes:
             seqIds += node.seqPick

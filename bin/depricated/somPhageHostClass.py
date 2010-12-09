@@ -6,7 +6,8 @@
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
 
-"""Graphics for SOM model."""
+"""Phage-host assignments based on pre-trained SOM model"""
+
 from MGT.Taxa import *
 from MGT.Common import *
 from MGT.GHSOM import *

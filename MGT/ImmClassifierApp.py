@@ -59,7 +59,7 @@ class ImmClassifierApp(App):
         opt.setIfUndef("immIds",opt.immIdToSeqIds)
         opt.setIfUndef("outScoreComb",pjoin(opt.outDir,"combined"+ImmApp.scoreSfx))
     
-    def initWork(self):
+    def initWork(self,**kw):
         opt = self.opt
         self.taxaTree = None #will be lazy-loaded
         self.seqDb = None #will be lazy-loaded

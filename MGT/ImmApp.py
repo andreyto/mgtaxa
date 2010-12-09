@@ -49,9 +49,11 @@ class ImmApp(App):
     def parseCmdLinePost(klass,options,args,parser):
         opt = options
         print "DEBUG: ", opt
+        opt.setIfUndef("incrementalWork",False)
         opt.setIfUndef("immDb","imm")
         opt.setIfUndef("nImmBatches",10)
-        opt.setIfUndef("immIds",opt.immIdToSeqIds)
+        if not opt.isUndef("immIdToSeqIds"):
+            opt.setIfUndef("immIds",opt.immIdToSeqIds)
         if not opt.isUndef("outDir"):
             opt.setIfUndef("outScoreComb",pjoin(opt.outDir,"combined"+klass.scoreSfx))
 
@@ -61,6 +63,10 @@ class ImmApp(App):
         self.seqDb = None #will be lazy-loaded
         #self.store = SampStore.open(path=self.opt.get("cwd",os.getcwd()))
         self.immStore = ImmStore.open(path=self.opt.immDb)
+        if opt.mode == "score":
+            if opt.isUndef("immIds"):
+                opt.immIds = pjoin(opt.cwd,"imm-ids.pkl")
+                dumpObj(self.immStore.listImmIds(),opt.immIds)
 
     def doWork(self,**kw):
         opt = self.opt
@@ -88,6 +94,9 @@ class ImmApp(App):
     def getImmPath(self,immId):
         return self.immStore.getImmPath(immId)
 
+    def getScorePath(self,immId):
+        return pjoin(self.opt.outDir,"%s%s" % (immId,self.scoreSfx))
+    
     def trainOne(self,**kw):
         """Train and save one IMM.
         Parameters are taken from self.opt
@@ -98,11 +107,19 @@ class ImmApp(App):
         immId = opt.immId
         immSeqIds = opt.immSeqIds
         seqDb = self.getSeqDb()
-        imm = Imm(path=self.getImmPath(immId))
-        inp = imm.train()
-        seqDb.writeFastaBothStrains(ids=immSeqIds,out=inp)
-        inp.close()
-        imm.flush()
+        immPath = self.getImmPath(immId)
+        imm = Imm(path=immPath)
+        try:
+            inp = imm.train()
+            seqDb.writeFastaBothStrands(ids=immSeqIds,out=inp)
+            inp.close()
+            imm.flush()
+        except:
+            # remove any unfinished ICM file if anything went wrong
+            ##@todo modify Imm to build in a temp file which gets
+            ##renamed in flush()
+            rmf(immPath)
+            raise
 
     def trainMany(self,**kw):
         """Train many IMMs.
@@ -114,14 +131,18 @@ class ImmApp(App):
         #in that case it is difficult to make sure when we score that all
         #IMMs have been successfuly built.
         immIdToSeqIds = loadObj(opt.immIdToSeqIds)
+        if not opt.incrementalWork:
+            rmfMany([ self.getImmPath(immId) for immId in immIdToSeqIds.keys() ])
         jobs = []
         for (immId,immSeqIds) in sorted(immIdToSeqIds.items()):
-            immOpt = copy(opt)
-            immOpt.mode = "train-one"
-            immOpt.immId = immId
-            immOpt.immSeqIds = immSeqIds
-            immApp = ImmApp(opt=immOpt)
-            jobs += immApp.run(**kw)
+            #if it was not incrementalWork, output was already cleaned above
+            if not os.path.exists(self.getImmPath(immId)):
+                immOpt = copy(opt)
+                immOpt.mode = "train-one"
+                immOpt.immId = immId
+                immOpt.immSeqIds = immSeqIds
+                immApp = ImmApp(opt=immOpt)
+                jobs += immApp.run(**kw)
         return jobs
 
     def scoreBatch(self,**kw):
@@ -135,7 +156,7 @@ class ImmApp(App):
         immIds = opt.immIds
         inpFastaFile = opt.inpSeq
         for immId in immIds:
-            outScoreFile = pjoin(opt.outDir,"%s%s" % (immId,self.scoreSfx))
+            outScoreFile = self.getScorePath(immId)
             imm = Imm(path=self.getImmPath(immId))
             scores = imm.score(inp=inpFastaFile)
             dumpObj(scores,outScoreFile)
@@ -152,9 +173,14 @@ class ImmApp(App):
         """
         opt = self.opt
         makedir(opt.outDir)
-        rmf(pjoin(opt.outDir,"*"+self.scoreSfx))
         jobs = []
-        immIds = n.asarray(sorted(loadObj(opt.immIds)),dtype="O")
+        immIds = sorted(loadObj(opt.immIds))
+        if opt.incrementalWork:
+            immIds = [ immId for immId in immIds  if not os.path.exists(self.getScorePath(immId)) ]
+        else:
+            rmfMany([ self.getScorePath(immId) for immId in immIds ])
+        rmf(opt.outScoreComb)
+        immIds = n.asarray(immIds,dtype="O")
         for immIdsBatch in n.array_split(immIds,min(opt.nImmBatches,len(immIds))):
             immOpt = copy(opt)
             immOpt.mode = "score-batch"

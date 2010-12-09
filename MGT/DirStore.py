@@ -51,11 +51,21 @@ class DirStore:
             raise ValueError("%s - unknown mode value" % mode)
         return o
 
-    def __init__(self,path,opt=None):
+    def __init__(self,path,opt=None,save=False):
+        """Constructor.
+        @param save If False [default], this only creates in-memory instance but does not touch
+        the file system in any way. This is an intented behavior, so that
+        the suer code could create a hierarchy of these objects w/o commiting
+        anything to disk (if it only needs to get to the leaves, for instance).
+        To commit the object to dosk, pass save as True. Alternatively, you ca call save() 
+        on this instance, or create the instance with a factory class method open().
+        """
         self.path = path
         if opt is None:
             opt = Struct()
         self.opt = opt
+        if save:
+            self.save()
 
     def save(self):
         mDir = self._metaPath(self.path)

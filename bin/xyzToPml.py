@@ -5,6 +5,9 @@
 #
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
+"""Renders dataset of 3D points with associated class lables in Pymol.
+Import this from within Pymol shell and use PropertyMapper class to
+load and display the dataset file available in XYZ format."""
 
 from MGT.Svm import *
 from pymol import cmd, stored

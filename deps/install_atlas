@@ -41,6 +41,10 @@
 
 set -ex #abort if any command fails and echo all commands
 
+##@todo Supposedly now it should be as simple as described
+##in the following link, but I did not check it yet
+##http://scipy.org/Installing_SciPy/Linux#head-bfec1665faa2c3686b5b56162bb2ddc36c47a9ba
+
 source $DEP_SRC_TOP/config/functions.sh
 
 curdir=`pwd`

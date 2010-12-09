@@ -171,7 +171,7 @@ class App:
             action="store", type="string",dest="optFile",default=None,
             help="Load all program otions from this pickled file"),
             make_option(None, "--run-mode",
-            action="store", type="choice",choices=("batch","inproc"),dest="runMode",default="inproc",
+            action="store", type="choice",choices=("batch","inproc","batchDep"),dest="runMode",default="inproc",
             help="Choose to batch-run or in-process"),
         ]
         parseArgs = klass.makeOptionParserArgs()

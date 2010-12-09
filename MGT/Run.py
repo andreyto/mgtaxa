@@ -95,6 +95,14 @@ rmrf = rmdir
 def rmf(path,dryRun=False):
     for f in glob.iglob(path):
         try:
+            if os.path.exists(f):
+                os.remove(f)
+        except OSError:
+            pass
+
+def rmfMany(paths,dryRun=False):
+    for f in paths:
+        try:
             os.remove(f)
         except OSError:
             pass

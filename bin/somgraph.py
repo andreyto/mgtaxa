@@ -6,7 +6,8 @@
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
 
-"""Graphics for SOM model."""
+"""Make graphics for the pre-built SOM of a mix of NCBI and metagenomic sequences."""
+
 from MGT.Taxa import *
 from MGT.Common import *
 from MGT.GHSOM import *
@@ -114,7 +115,7 @@ print "Match counts for each phage\n"
 for (node,matches) in aCnt.items():
     print "Phage: ", node.name
     print "    Microbes: %s\n" % ", ".join(["%s:%s" % (nodeM.name,cnt) for (cnt,nodeM) in matches])
-sys.exit(0)
+
 #print lab
 #col = n.arange(len(lab),dtype=float) + 10
 col = [ labMapper.color(l) for l in lab ]

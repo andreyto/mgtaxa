@@ -61,7 +61,7 @@ class SeqDbFasta(DirStore):
                     out.write(line)
             reader.close()
 
-    def writeFastaBothStrains(self,ids,out):
+    def writeFastaBothStrands(self,ids,out):
         fsout = None # create after lineLen is known
         for id in ids:
             reader = self.fastaReader(id)

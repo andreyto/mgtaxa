@@ -40,6 +40,7 @@ class MGTOptions:
         self.confDir = pjoin(self.instDir,"etc")
         self.envRc = os.environ["MGT_RC"]
         self.testDataDir = os.path.join(self.srcDir,"test_data")
+        self.testRunDir = os.path.join(self.srcDir,"test_run")
         self.refSeqDataDir = _pdata_ncbi("refseq")
         # Max length to store for a full header. It is stored in a separate table,
         # so size does not matter that much
@@ -116,7 +117,7 @@ class MGTOptions:
                 MEM = 2000,
                 ARCH = "lx*64",
                 maxQueued = 50,
-                LENGTH = "fast", #fast
+                LENGTH = "medium", #fast
                 ENVRC = self.envRc)
         self.app = Options(
                 runMode = "default"#override App.opt.runMode value if not "default" here. Other choices are "inproc"

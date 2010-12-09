@@ -5,6 +5,7 @@
 #
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
+"""Output NCBI taxonomic tree as a LibSea hypebolic graph format file"""
 
 from MGT.Taxa import *
 

@@ -17,6 +17,7 @@ import UUID
 from MGT.SeqImportApp import *
 from MGT.ImmClassifierApp import *
 from MGT.ImmApp import *
+from MGT.Sql import *
 import csv
 
 from MGT.GFF import GFF3Record, GFF3Attributes
@@ -107,7 +108,7 @@ class PhageHostApp(App):
             action="store", type="string",default="ph-pairs-seq",dest="dbPhPairsSeq",help="Sequences for db-ph-pairs in our "+\
                     "internal format"),
             make_option(None, "--shred-size-vir-test",
-            action="store", type="int",default=400,dest="shredSizeVirTest",help="Shred DB viral samples into this size for testing"),
+            action="store", type="int",default=5000,dest="shredSizeVirTest",help="Shred DB viral samples into this size for testing"),
             make_option(None, "--db-imm",
             action="store", type="string",default="imm",dest="immDb",help="Path to a collection of IMMs"),
             make_option(None, "--pred-seq",
@@ -135,6 +136,7 @@ class PhageHostApp(App):
         opt.setIfUndef("dbSeqInp",[ pjoin(refSeqDir,div+".genomic.fna.gz") for div in ("microbial","viral")])
         opt.setIfUndef("predOutTaxa",pjoin(opt.predOutDir,"pred-taxa"))
         opt.setIfUndef("predOutTaxaCsv",opt.predOutTaxa+".csv")
+        opt.setIfUndef("predOutDbSqlite",opt.predOutTaxa+".sqlite")
         opt.setIfUndef("predOutAnnot",pjoin(opt.predOutDir,"annot"))
         opt.setIfUndef("outScoreComb",klass._outScoreCombPath(opt))
         opt.setIfUndef("taxaTreePkl",None)
@@ -182,14 +184,14 @@ class PhageHostApp(App):
         """Load and map Phage-Host DB into the taxaTree"""
         loadHosts(inpFile=self.store.getObjPath(self.opt.dbPh),taxaTree=self.getTaxaTree())
     
-    def buildDbPhageHost(self):
+    def buildDbPhageHost(self,**kw):
         """Collect and save data about phage-host associations in RefSeq"""
         opt = self.opt
         taxaTree = self.getTaxaTree()
         vhParser = VirHostParser(taxaTree=taxaTree)
         vhParser.assignHostsAndSave(gbFile=opt.dbGbInp,outFile=self.store.getObjPath(opt.dbPh))
 
-    def selectPhageHostPairsTmp(self):
+    def selectPhageHostPairs(self,**kw):
         """Pick pairs of phages and hosts from p-h DB stratified at a genus level"""
         opt = self.opt
 
@@ -227,10 +229,6 @@ class PhageHostApp(App):
         seqImpApp = SeqImportApp(opt=siOpt)
         seqImpApp.run()
     
-    def selectPhageHostPairs(self):
-        """Pick pairs of phages and hosts from p-h DB stratified at a genus level"""
-        opt = self.opt
-        taxaTree = self.getTaxaTree()
         seqPicker = PhageHostSeqPicker(taxaTree=taxaTree)
         dbPhPairsFile = self.store.getObjPath(opt.dbPhPairs)
         seqPicker.load(dbPhPairsFile)
@@ -266,7 +264,7 @@ class PhageHostApp(App):
                 shredOpt=dict(sampLen=shredSize,sampNum=10)) #TMP
         shredStore.exportFasta(name="samp.fas",lineLen=1000)
 
-    def shredVirTest(self):
+    def shredVirTest(self,**kw):
         opt = self.opt
         self.exportVirSamplesShreds(shredSize=opt.shredSizeVirTest)
 
@@ -355,51 +353,85 @@ class PhageHostApp(App):
 
     rejTaxid = 0
 
+    def _normalizeScores(self,immScores,immScoresRnd):
+        sc = immScores
+        scRand = immScoresRnd
+        scoreRand = scRand.scores
+        baseScoreRand = (scoreRand.T/scRand.lenSamp).T
+        meanRand = baseScoreRand.mean(0)
+        stdRand = baseScoreRand.std(0)
+        normScoreRand = (baseScoreRand - meanRand)/stdRand
+        baseScores = (sc.scores.T/sc.lenSamp).T
+        assert n.all(scRand.lenSamp==scRand.lenSamp[0])
+        ratLen = sc.lenSamp.astype(float)/scRand.lenSamp[0]
+        # base score is an average of N random variables,
+        # and therefore has a variance var(1-base)/N
+        normScore = (baseScores - meanRand)/stdRand
+        normScore = (normScore.T * ratLen**0.5).T
+        #normScore = baseScores/meanRand
+        #normScore = baseScores
+        #pdb.set_trace()
+        # we could also return dot(stdRand,ratLen**0.5) to give
+        # avg base score std per given sample length by a given IMM on random
+        # sequence, but the distribution on our random set is virtually normal,
+        # and it is much to the left from the distribution of actual samples,
+        # so there is no sense in using percentile cutoffs like 95%, which is
+        # at about 1.645 z-score for standard normal distribution
+        return normScore
+
+
     def processImmScores(self,**kw):
         """Process raw IMM scores to predict host taxonomy for viral sequences.
         Parameters are taken from self.opt.
         @param outScoreComb File with ImmScores object
+        @param rndScoreComb File with ImmScores object for random query sequences
         @param predOutTaxa Output file with predicted taxa
         """
+        import scipy.stats
         opt = self.opt
         sc = loadObj(opt.outScoreComb)
         #assume idImm are str(taxids):
         sc.idImm = n.asarray(sc.idImm,dtype=int)
+        #scRnd = loadObj(opt.rndScoreComb)
+        #sc.scores = self._normalizeScores(sc,scRnd)
         taxaTree = self.getTaxaTree()
         taxaLevels = self.getTaxaLevels()
         scores = sc.scores
         idImms = sc.idImm
         micRoots = tuple([ taxaTree.getNode(taxid) for taxid in micTaxids ])
         virRoot = taxaTree.getNode(virTaxid)
+        #scVirRoot = scores[:,idImms == virTaxid][:,0]
+        #scCellRoot = scores[:,idImms == cellTaxid][:,0]
         self._maskScoresNonSubtrees(taxaTree,immScores=sc,posRoots=micRoots)
-        self._maskScoresByRanks(taxaTree,immScores=sc)
+        #self._maskScoresByRanks(taxaTree,immScores=sc)
         topTaxids = self._taxaTopScores(taxaTree,immScores=sc,topScoreN=10)
-        predTaxids = idImms[scores.argmax(1)]
+        argmaxSc = scores.argmax(1)
+        maxSc = scores.max(1)
+        predTaxids = idImms[argmaxSc]
+        #predTaxids[maxSc<10] = self.rejTaxid
         # this will reject any sample that has top level viral score more
         # that top level cellular org score, on the assumption that easily
         # assignbale viruses should be closer to cellular orgs than to other
         # viruses.
         # Result: removed 90 out of 250 samples, with no change in specificity.
-        #sc = self._getImmScores(reload=True)
-        #scVirRoot = sc.scores[:,sc.idImm == virTaxid][:,0]
-        #scCellRoot = sc.scores[:,sc.idImm == cellTaxid][:,0]
         #predTaxids[scVirRoot>scCellRoot] = self.rejTaxid
+        # this excluded 10 out of 430, no change in specificity
+        #predTaxids[scVirRoot>=maxSc] = self.rejTaxid
         
         # This not the same as _maskScoresByRanks() above (because this
-        # will actually assign a reject label. Still, we comment it out
-        # because together they are too convoluted and probably do not add
-        # to accuracy.
-        ## @todo this needs benchmarking
-        #max_linn_levid = taxaLevels.getLevelId("order")
-        #min_linn_levid = taxaLevels.getLinnLevelIdRange()[0]
+        # will actually assign a reject label.
+        max_linn_levid = taxaLevels.getLevelId("order")
+        min_linn_levid = taxaLevels.getLinnLevelIdRange()[0]
         # Reject predictions to clades outside of certain clade level range,
         # as well as to any viral node
+        # This rejected 36 out of 450 and resulted in 2% improvement in specificity
         #for i in xrange(len(predTaxids)):
-        #    if not taxaLevels.isNodeInLinnLevelRange(taxaTree.getNode(predTaxids[i]),
-        #            min_linn_levid,max_linn_levid):
-        #        predTaxids[i] = self.rejTaxid
-        #    elif taxaTree.getNode(predTaxids[i]).isUnder(virRoot):
-        #        predTaxids[i] = self.rejTaxid
+        #    if not predTaxids[i] == self.rejTaxid:
+        #        if not taxaLevels.isNodeInLinnLevelRange(taxaTree.getNode(predTaxids[i]),
+        #                min_linn_levid,max_linn_levid):
+        #            predTaxids[i] = self.rejTaxid
+        #        elif taxaTree.getNode(predTaxids[i]).isUnder(virRoot):
+        #            predTaxids[i] = self.rejTaxid
 
         pred = TaxaPred(idSamp=sc.idSamp,predTaxid=predTaxids,topTaxid=topTaxids,lenSamp=sc.lenSamp)
         dumpObj(pred,opt.predOutTaxa)
@@ -431,6 +463,13 @@ class PhageHostApp(App):
                     row["taxid_"+ln.level] = ln.id
             w.writerow(row)
         out.close()
+
+        db = DbSqlLite(dbpath=opt.predOutDbSqlite)
+        db.createTableFromCsv(name="scaff_pred",
+                csvFile=opt.predOutTaxaCsv,
+                hasHeader=True,
+                indices={"names":("name",)})
+        db.close()
 
     def _loadBlastAnnotEvalues(self,hitKeys):
         """A quick fix to add e-values to peptide annotation table loaded by compareWithProtAnnot"""
@@ -682,10 +721,16 @@ class PhageHostApp(App):
         lcs_lc_linn[-1:] = lcs_lc[lcs_lc["lev"] == "no_rank"]
         lcs_lc_cum = lcs_lc_linn.copy()
         lcs_lc_cum["cnt"] = lcs_lc_linn["cnt"].cumsum()
+        print "Cumulative counts of correctly predicted hosts up to each level"
         print lcs_lc_cum
+        lcs_lc_cum_rt = lcs_lc_cum.copy()
+        lcs_lc_cum_rt["cnt"] = lcs_lc_cum["cnt"].astype(float)/lcs_lc_cum["cnt"][-1]*100
+        print "Cumulative ratios of correctly predicted hosts up to each level (accuracy)"
+        print lcs_lc_cum_rt
         print "Rejected: %s" % (rejCnt,)
+        pdb.set_trace()
 
-        topPredHostNodes = taxaTree.getNodes(pr.topTaxids)
+        topPredHostNodes = taxaTree.getNodes(pr.topTaxid)
         fmt = lambda node: "%s %s" % (node.linn_level,node.name)
         for testHostNode,predHostNodes in it.izip(testHostNodes,topPredHostNodes):
             lcs = testHostNode.lcsNodeMany(predHostNodes[:3])
@@ -694,7 +739,6 @@ class PhageHostApp(App):
             print "***"
             print "\n".join([(fmt(node)+" <> "+fmt(node.lcsNode(testHostNode))) for node in predHostNodes])
             print "\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
-        pdb.set_trace()
 
     def getVirToHostPicked(self):
         """Return {virNode->host} map from a DB of picked vir-host pairs"""

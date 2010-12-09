@@ -14,7 +14,8 @@ from MGT.Svm import *
 from MGT.App import *
 import functools as fn
 
-__all__ = ["SeqRandomApp"]
+__all__ = ["SeqRandomApp","RandomSeqGen","RandomSeqGenShuffle","RandomSeqGenGcFixed","RandomSeqGenGcFixedRepl",
+        "RandomSeqGenGcMnom"]
 
 
 class RandomSeqGen:

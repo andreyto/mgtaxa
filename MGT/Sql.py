@@ -288,15 +288,16 @@ class DbSql(MGTOptions):
     def analyze(self,table):
         self.ddl("ANALYZE TABLE " + table,ifDialect="mysql")
 
-    def createTableAs(self,name,select):
+    def createTableAs(self,name,select,indices=None):
         """Save the results of SQL SELECT as a new table.
-        @param name - name of table to (re-)create - existing table will be replaced
-        @param select - SQL select statement
         This abstracts "create ... as ..." operation from minor differences in SQL dialects.
         For example, MonetDB Feb2008 required 'with data' at the end, MySQL 5 and SQLite do 
         not recognize 'with data'
-        Override in derived classes if necessary."""
-
+        Override in derived classes if necessary.
+        @param name name of table to (re-)create - existing table will be replaced
+        @param select SQL select statement
+        @param indices if present, will be passed to createIndices() method
+        """
         self.ddl("""
         CREATE TABLE %s AS
         """ % (name,) + select + """
@@ -307,7 +308,9 @@ class DbSql(MGTOptions):
             if curs is not None:
                 print "%s rows created in table %s" % (curs.fetchall(),name)
                 curs.close()
-    
+        if indices is not None and len(indices) > 0:
+            self.createIndices(table=name,**indices)
+            self.ddl("analyze table %s" % name,ifDialect="mysql")
 
     def makeBulkInserterFile(self,**kw):
         kw = copy(kw)
@@ -481,7 +484,10 @@ class DbSql(MGTOptions):
 
     def exportAsCsv(self,sql,out,withHeader=True,bufLen=100000,
             dialect="excel-tab",
-            dialect_options={"lineterminator":"\n"}):
+            dialect_options={"lineterminator":"\n"},
+            comment=None,
+            sqlAsComment=False,
+            commentEscape=''):
         """Excecute SQL and export the result as CSV file.
         @param sql SQL select statement to export results of
         @param out Either file name, or file stream object, or CSV writer object
@@ -490,11 +496,13 @@ class DbSql(MGTOptions):
         used when moving SQL result set into the output file
         @param dialect Dialect string defined in csv module
         @param dialect_options Passed to csv.writer(**dialect_options)
+        @param comment if not None, this string will be printed at the top
+        @param sqlAsComment if True, will print sql statement as an extra comment line
+        @param commentEscape this string will be inserted at the start of every
+        comment line
+        @note To output any comments, out should not be a csv.writer instance
         @note We set the default lineterminator to Linux style '\n', as opposed to 
         Python's default of Windows style '\r\n'"""
-        reader = self.makeBulkReader(sql=sql,format="list",bufLen=bufLen)
-        chunks = reader.chunks()
-        names = reader.fieldNames()
         if isinstance(out,str):
             out = openCompressed(out,'w')
             doClose=True
@@ -506,6 +514,21 @@ class DbSql(MGTOptions):
                 #so we assume it to be a file stream object, and call csv.writer()
                 #on it to create a CSV writer
                 w = csv.writer(out,dialect=dialect,**dialect_options)
+            else:
+                if comment is not None or sqlAsComment:
+                    raise ValueError("Illegal to write comment lines into csv.writer")
+                w = out
+        reader = self.makeBulkReader(sql=sql,format="list",bufLen=bufLen)
+        chunks = reader.chunks()
+        names = reader.fieldNames()
+        if sqlAsComment:
+            if comment is None:
+                comment = sql
+            else:
+                comment = comment + '\n' + sql
+        if comment is not None:
+            for line in ( (commentEscape + l + '\n') for l in comment.split('\n') ):
+                out.write(line)
         if withHeader:
             w.writerow(names)
         for rows in chunks:
@@ -762,7 +785,7 @@ class DbSqlMonet(DbSql):
         """This columnar RDBMS has not explicit indices"""
         pass
 
-    def createTableAs(self,name,select):
+    def createTableAs(self,name,select,indices=None):
         """Specialization.
         MonetDB requires 'with data' suffix"""
 
@@ -777,7 +800,9 @@ class DbSqlMonet(DbSql):
             if curs is not None:
                 print "%s rows created in table %s" % (curs.fetchall(),name)
                 curs.close()
-
+        if indices is not None and len(indices) > 0:
+            self.createIndices(table=name,**indices)
+            self.ddl("analyze table %s" % name,ifDialect="mysql")
 
 def createDbSql(**kw):
     #db = DbSqlLite("/export/atovtchi/test_seq.db")
