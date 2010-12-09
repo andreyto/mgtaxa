@@ -1,0 +1,6 @@
+#!bin/bash
+#We use cloc http://cloc.sourceforge.net/
+#Download it first (a single file assuming you have a rasonably standard Perl setup),
+#when run this from the top source freshly checked out directory
+perl ~/bin/cloc-1.52.pl MGT bin deps ext include src test
+
