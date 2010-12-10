@@ -1,0 +1,24 @@
+#!/bin/bash
+SELF_NAME=$(basename $0)
+function die
+{
+	echo "usage: $SELF_NAME log_root command_line"
+	echo "This will run command line, and tee all"
+	echo "its standard input and output into a file"
+	echo "log_root.io.pid.log, and standard error - "
+	echo "into log_root.err.pid.log."
+	exit 1
+}
+LOG_ROOT=$1
+shift
+[ -n "$LOG_ROOT" ] || die
+CMD=$@
+[ -n "$CMD" ] || die
+TEE=/usr/bin/tee
+IOLOG=$LOG_ROOT.io.$$.log
+ERRLOG=$LOG_ROOT.err.$$.log
+# somehow tee can multiplex into one file
+# from two instances
+#tee -a $IOLOG | ($CMD) | tee -a $IOLOG
+
+tee -a $IOLOG | ((( $CMD | tee -a $IOLOG ) 3>&2 2>&1 1>&3 | tee -a $ERRLOG ) 3>&2 2>&1 1>&3 )
