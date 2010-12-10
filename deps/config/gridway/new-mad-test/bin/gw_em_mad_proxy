@@ -11,4 +11,6 @@ setup_globus
 cd_var
 mad_debug
 
-ruby $GW_LOCATION/libexec/mad_lrm_proxy/gw_em_mad_proxy.rb
+CMD="ruby $GW_LOCATION/libexec/mad_lrm_proxy/gw_em_mad_proxy.rb"
+$GW_LOCATION/bin/io_logger $GW_LOCATION/var/gw_em_mad_proxy $CMD
+
