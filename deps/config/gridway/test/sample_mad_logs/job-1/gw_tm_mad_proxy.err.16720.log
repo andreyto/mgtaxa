@@ -1,0 +1,9 @@
+:/local/bioinfowork/data/phyla/mgtaxa/deps/config/gridway/test/test-cat.input -> mgtaxa-app:./.gw_atovtchi_0/test-cat.input
+:/home/atovtchi/work/packages/x86_64-rhel5/gridway/var/0/job.env -> mgtaxa-app:./.gw_atovtchi_0/job.env
+:/local/bioinfowork/data/phyla/mgtaxa/deps/config/gridway/test/test-cat.sh -> mgtaxa-app:./.gw_atovtchi_0/test-cat.sh
+:/home/atovtchi/work/packages/x86_64-rhel5/gridway/libexec/gw_wrapper.sh -> mgtaxa-app:./.gw_atovtchi_0/.wrapper
+mgtaxa-app:./.gw_atovtchi_0/stdout.wrapper -> :/home/atovtchi/work/packages/x86_64-rhel5/gridway/var/0/stdout.wrapper.0
+mgtaxa-app:./.gw_atovtchi_0/stderr.wrapper -> :/home/atovtchi/work/packages/x86_64-rhel5/gridway/var/0/stderr.wrapper.0
+mgtaxa-app:./.gw_atovtchi_0/test-cat.output -> :/local/bioinfowork/data/phyla/mgtaxa/deps/config/gridway/test/test-cat.output
+mgtaxa-app:./.gw_atovtchi_0/stdout.execution -> :/local/bioinfowork/data/phyla/mgtaxa/deps/config/gridway/test/stdout.0
+mgtaxa-app:./.gw_atovtchi_0/stderr.execution -> :/local/bioinfowork/data/phyla/mgtaxa/deps/config/gridway/test/stderr.0
