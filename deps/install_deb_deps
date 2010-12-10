@@ -1,0 +1,8 @@
+#!/bin/sh
+## This installs dependencies as Debian (or Ubuntu or other Deb clone) packages
+aptitude install python-numpy 
+## doxygen will install texlive, but the utility
+## epstopdf is now in texlive-font-utils
+aptitude install  texlive-font-utils doxygen
+aptitude install python-biopython
+
