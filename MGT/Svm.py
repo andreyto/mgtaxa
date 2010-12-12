@@ -37,6 +37,8 @@ def alphaHist(seq):
     return d
 
 def checkSaneAlphaHist(seq,nonDegenSymb,minNonDegenRatio=0.9):
+    if isinstance(seq,str):
+        seq = n.fromstring(seq,dtype='S1')
     hist = n.bincount(n.asarray(seq.view('b')))
     ind_nd = n.fromstring(nonDegenSymb,dtype='b')
     return float(hist[ind_nd[ind_nd<len(hist)]].sum())/len(seq) >= minNonDegenRatio

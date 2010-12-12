@@ -137,6 +137,8 @@ class PhageHostApp(App):
         opt.setIfUndef("predOutTaxa",pjoin(opt.predOutDir,"pred-taxa"))
         opt.setIfUndef("predOutTaxaCsv",opt.predOutTaxa+".csv")
         opt.setIfUndef("predOutDbSqlite",opt.predOutTaxa+".sqlite")
+        opt.setIfUndef("predOutStatsDir", pjoin(opt.predOutDir,"stats"))
+        opt.setIfUndef("predOutStatsCsv", pjoin(opt.predOutStatsDir,"stats.csv"))
         opt.setIfUndef("predOutAnnot",pjoin(opt.predOutDir,"annot"))
         opt.setIfUndef("outScoreComb",klass._outScoreCombPath(opt))
         opt.setIfUndef("taxaTreePkl",None)
@@ -407,6 +409,7 @@ class PhageHostApp(App):
         topTaxids = self._taxaTopScores(taxaTree,immScores=sc,topScoreN=10)
         argmaxSc = scores.argmax(1)
         maxSc = scores.max(1)
+        ## @todo in case of score ties, pick the lowest rank if it is a single entry
         predTaxids = idImms[argmaxSc]
         #predTaxids[maxSc<10] = self.rejTaxid
         # this will reject any sample that has top level viral score more
@@ -427,15 +430,19 @@ class PhageHostApp(App):
         # This rejected 36 out of 450 and resulted in 2% improvement in specificity
         #for i in xrange(len(predTaxids)):
         #    if not predTaxids[i] == self.rejTaxid:
-        #        if not taxaLevels.isNodeInLinnLevelRange(taxaTree.getNode(predTaxids[i]),
-        #                min_linn_levid,max_linn_levid):
+        #        predNode = taxaTree.getNode(predTaxids[i])
+        #        if predNode.isUnder(virRoot):
         #            predTaxids[i] = self.rejTaxid
-        #        elif taxaTree.getNode(predTaxids[i]).isUnder(virRoot):
+        #        # we need to protect leaf nodes because we place environmental scaffolds
+        #        # as no_rank under bacteria->environmental
+        #        elif not (predNode.isLeaf() or taxaLevels.isNodeInLinnLevelRange(predNode,
+        #                min_linn_levid,max_linn_levid)):
         #            predTaxids[i] = self.rejTaxid
 
         pred = TaxaPred(idSamp=sc.idSamp,predTaxid=predTaxids,topTaxid=topTaxids,lenSamp=sc.lenSamp)
         dumpObj(pred,opt.predOutTaxa)
         self._exportPredictions(taxaPred=pred)
+        self._statsPred()
         #todo: "root" tax level; matrix of predhost idlevel's; batch imm.score() jobs; score hist;
 
     def _exportPredictions(self,taxaPred):
@@ -469,6 +476,24 @@ class PhageHostApp(App):
                 csvFile=opt.predOutTaxaCsv,
                 hasHeader=True,
                 indices={"names":("name",)})
+        db.close()
+
+    def _statsPred(self,**kw):
+        """Create aggregate tables and csv files to show various relationships between predictions"""
+        opt = self.opt
+        db = DbSqlLite(dbpath=opt.predOutDbSqlite)
+        rmrf(opt.predOutStatsDir)
+        makedir(opt.predOutStatsDir)
+        outCsv = openCompressed(opt.predOutStatsCsv,'w')
+        sqlAsComment = True
+        sqlpar = dict(lenMin = 5000)
+        sql = """select name,count(*) as cnt from scaff_pred group by name order by cnt desc"""
+        db.exportAsCsv(sql,outCsv,sqlAsComment=sqlAsComment)
+        sql = """select name_family,count(*) as cnt from scaff_pred group by name_family order by cnt desc"""
+        db.exportAsCsv(sql,outCsv,sqlAsComment=sqlAsComment)
+        sql = """select name_genus,count(*) as cnt from scaff_pred group by name_genus order by cnt desc"""
+        db.exportAsCsv(sql,outCsv,sqlAsComment=sqlAsComment)
+        outCsv.close()
         db.close()
 
     def _loadBlastAnnotEvalues(self,hitKeys):

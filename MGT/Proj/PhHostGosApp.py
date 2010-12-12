@@ -16,6 +16,7 @@ from MGT.PhageHostApp import *
 from MGT.SeqDbFasta import *
 
 from MGT.Sql import *
+from MGT.Svm import checkSaneAlphaHist
 
 #from Bio import SeqIO
 #from Bio.Seq import Seq
@@ -83,15 +84,22 @@ class PhHostGosApp(App):
     def makeCustomTaxaTreeAndSeqDb(self,**kw):
         """Add metagenomic sequences as custom nodes to the taxonomy tree and save the tree, and also create SeqDbFasta for them"""
         opt = self.opt
+        rmrf(opt.taxaDirGos)
         makedir(opt.taxaDirGos)
+        rmrf(opt.seqDbGos)
         makedir(opt.seqDbGos)
         seqDbGos = SeqDbFasta.open(path=opt.seqDbGos)
+        compr = SymbolRunsCompressor(sym="N",minLen=1)
+        nonDegenSymb = "ATCGatcg"
         gosTaxaTop = TaxaNode(id=opt.newTaxidTop,name=opt.newTaxNameTop,rank=unclassRank,divid=dividEnv,names=list())
         nextNewTaxid = gosTaxaTop.id + 1
         for rec in FastaReader(opt.scaffGos).records():
             hdr = rec.header()
             seqid = hdr.strip().split('>')[1] # scf768709870
-            seq = rec.sequence()
+            seq = compr(rec.sequence())
+            if not checkSaneAlphaHist(seq,nonDegenSymb,minNonDegenRatio=0.99):
+                print "WARNING: ratio of degenerate symbols is too high, "+\
+                        "skipping the reference scaffold id %s" % (seqid,)
             if len(seq) >= opt.trainMinLenSamp:
                 taxaNode = TaxaNode(id=nextNewTaxid,name=opt.newTaxNameTop+"_"+seqid,rank=unclassRank,divid=dividEnv,names=list())
                 taxaNode.setParent(gosTaxaTop)
@@ -117,6 +125,8 @@ class PhHostGosApp(App):
         optI.seqDb = opt.seqDbGos
         optI.immDb = opt.immDbGos
         optI.immIdToSeqIds = opt.immIdToSeqIdsGos
+        rmrf(opt.immDbGos)
+        makedir(opt.immDbGos)
         dumpObj(makeDefaultImmSeqIds(optI.seqDb),optI.immIdToSeqIds)
         imm = ImmApp(opt=optI)
         return imm.run(**kw)
@@ -132,6 +142,8 @@ class PhHostGosApp(App):
         optI.immIdToSeqIds = opt.immIdToSeqIdsGos
         optI.outDir = opt.predOutDirGos
         optI.inpSeq = opt.predSeq
+        rmrf(optI.outDir)
+        makedir(optI.outDir)
         imm = ImmApp(opt=optI)
         return imm.run(**kw)
     
