@@ -110,12 +110,16 @@ class CrisprApp(App):
     maxProtHitDescrLen = 100
     maxProtHitNameLen = UUID.maxIdLen
 
+    pilerInpSfx = ".cr_inp.fna"
+    pilerOutSfx = ".piler.csv"
+
     @classmethod
     def parseCmdLinePost(klass,options,args,parser):
         globOpt = globals()["options"]
         opt = options
         opt.setIfUndef("sqlHost","mgtaxa-dev.jcvi.org")
         opt.setIfUndef("sqlDb","crispr")
+        opt.setIfUndef("sqlEngine","sqlite")
         opt.minSpacerLen = 20
         opt.maxSpacerLen = 60
         opt.minSpacerNum = 3
@@ -126,6 +130,8 @@ class CrisprApp(App):
         opt.crBlastDir = pjoin(workDir,"crispr-blast")
         opt.crAnnotDir = pjoin(workDir,"crispr-annot")
         opt.crGraphDir = pjoin(workDir,"crispr-graph")
+        opt.crReportDir = pjoin(workDir,"crispr-report")
+        opt.crisprCsv = pjoin(opt.crReportDir,"crispr.csv")
         opt.MEM = 6000
         ## Combine all viral tracks and all microbial tracks for BLAST array hits
         opt.virMicTracksUnion = True
@@ -134,8 +140,12 @@ class CrisprApp(App):
    
     def getDbSql(self):
         """Allocate (if necessary) and return a connection to SQL server"""
+        opt = self.opt
         if not hasattr(self,"dbSql"):
-            self.dbSql = DbSqlMy(db=self.opt.sqlDb,host=self.opt.sqlHost)
+            if opt.sqlEngine == "sqlite":
+                self.dbSql = DbSqlLite(dbpath=pjoin(opt.topWorkDir,opt.sqlDb))
+            elif opt.sqlEngine == "mysql":
+                self.dbSql = DbSqlMy(db=opt.sqlDb,host=opt.sqlHost)
         return self.dbSql
 
     def delDbSql(self):
@@ -148,7 +158,8 @@ class CrisprApp(App):
         self.BaseApp.initWork(self,**kw)
         opt = self.opt
         self.taxaTree = None #will be lazy-loaded
-        makedirs((opt.topWorkDir,opt.crArrSeqDir,opt.crArrDir,opt.crBlastDir,opt.crAnnotDir,opt.crGraphDir))
+        makedirs((opt.topWorkDir,opt.crArrSeqDir,opt.crArrDir,opt.crBlastDir,
+            opt.crAnnotDir,opt.crGraphDir,opt.crReportDir))
         self.tmpDir = pjoin(opt.topWorkDir,"tmp")
         makedir(self.tmpDir)
         storeBlast = SampStore.open(path=opt.crBlastDir)
@@ -187,6 +198,8 @@ class CrisprApp(App):
         opt = self.opt
         if opt.mode == "findcr":
             return self.findCr(**kw)
+        elif opt.mode == "import-inp-seq":
+            return self.importInputSeq(**kw)
         elif opt.mode == "pilercr":
             return self.pilerCr(**kw)
         elif opt.mode == "pilercr-one":
@@ -211,6 +224,9 @@ class CrisprApp(App):
     def findCr(self,**kw):
         """Run full pipeline for CRISPR loci detection - from finder to SQL load and FASTA export"""
         opt = self.opt.copy()
+        #opt.mode = "import-inp-seq"
+        #app = self.factory(opt=opt)
+        #jobs = app.run(**kw)
         opt.mode = "pilercr"
         app = self.factory(opt=opt)
         jobs = app.run(**kw)
@@ -231,6 +247,7 @@ class CrisprApp(App):
         self.pilerToSql(arr)
 
     def exportCr(self):
+        self.exportCrisprCsv()
         self.exportCrisprArraySeq()
 
     def makeBlastDb(self):
@@ -278,6 +295,14 @@ class CrisprApp(App):
         recs = self.parseArrayBlast(inFile=opt.blOutFile,minAlignLen=10,minBitScore=10,maxEvalue=100,maxMism=100,out=None,debug=False)
         dumpObj(recs,opt.blOutFileBin)
 
+    def importInputSeq(self,**kw):
+        opt = self.opt
+        for (iFile,inpFastaFile) in enumerate(opt.inpFastaFiles):
+            inpId = "%04d-%s" % (iFile+1,stripSfx(os.path.basename(inpFastaFile),".fasta"))
+            splitFastaFile(inpFile=inpFastaFile,
+                    outBase=pjoin(opt.crArrSeqDir,"%s%s" % (inpId,self.pilerInpSfx)),
+                    maxChunkSize=200*10**6,sfxSep='-')
+        
     def pilerCr(self,**kw):
         """Find CRISPR arrays with PilerCr within several partitions of the input sequence in parallel"""
         opt = self.opt
@@ -640,11 +665,9 @@ class CrisprApp(App):
     def listPilerIoFiles(self,input=True):
         opt = self.opt
         if input:
-            pilerSfx = ".fasta-*"
-            return ( f for f in iglob(pjoin(opt.crArrSeqDir,"*"+pilerSfx)) if re.match(r'.*-[0-9]+$',f) )
+            return ( f for f in iglob(pjoin(opt.crArrSeqDir,"*"+self.pilerInpSfx+"-*")) if re.match(r'.*-[0-9]+$',f) )
         else:
-            pilerSfx = ".piler.csv"
-            return iglob(pjoin(opt.crArrDir,"*"+pilerSfx))
+            return iglob(pjoin(opt.crArrDir,"*"+self.pilerOutSfx))
 
     def importPiler(self):
 
@@ -741,12 +764,10 @@ class CrisprApp(App):
         inserterArr.flush()
         inserterArrElem.flush()
         db.createIndices(table="arr",
-            names=["id_seq"],
-            primary="id")
+            names=["id","id_seq"])
         db.ddl("analyze table arr",ifDialect="mysql")
         db.createIndices(table="arr_elem",
-            names=["id_arr"],
-            primary="id")
+            names=["id","id_arr"])
         db.ddl("analyze table arr_elem",ifDialect="mysql")
         self.delDbSql()
 
@@ -812,6 +833,17 @@ class CrisprApp(App):
             self.taxaTree = loadTaxaTree()
         return self.taxaTree
 
+    def exportCrisprCsv(self):
+        opt = self.opt
+        db = self.getDbSql()
+        sql = """select a.id as id_arr,a.id_seq,
+        b.id as id_elem,b.begin,b.end,b.is_rep,b.seq_ali 
+        from arr a, arr_elem b
+        where a.id = b.id_arr
+        order by id_arr,id_elem"""
+        db.exportAsCsv(sql,opt.crisprCsv)
+        self.delDbSql()
+    
     def exportCrisprArraySeq(self):
         db = self.getDbSql()
         recs = db.selectAsArray("""

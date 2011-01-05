@@ -62,6 +62,26 @@ class SqlField:
 class SqlTable:
     """This class defines SQL table"""
 
+    @classmethod
+    def fromDb(klass,db,name):
+        """Generate SqlTable instance by querying an actual table in the database.
+        @param db DbSql instance
+        @param name Table name
+        @return new SqlTable instance
+        """
+        ## mnemonic names for indexes into cursor.description list
+        
+        I_NAME  = 0
+        I_TYPE  = 1
+        I_SIZE  = 3
+        I_PREC  = 4
+        I_SCALE = 5
+        
+        descr = db.getTableDescr(name)
+        fields = [ SqlField(name=f[I_NAME],type="%s(%s)" % (f[I_TYPE],f[I_SIZE])) \
+                for f in descr ]
+        return klass(name=name,fields=fields)
+
     def __init__(self,name,fields):
         self.name = name
         self.fields = fields
@@ -174,7 +194,14 @@ class DbSql(MGTOptions):
             curs.executemany(sql,data,**kw)
             watch()
             curs.close()
- 
+
+    def getTableDescr(self,name):
+        """Return table description as seen by DB API module"""
+        curs = self.execute("select * from %s limit 1" % (name,))
+        descr = curs.description
+        curs.close()
+        return descr
+
     def dumpCursor(self,cursor):
         pass
     
@@ -487,7 +514,8 @@ class DbSql(MGTOptions):
             dialect_options={"lineterminator":"\n"},
             comment=None,
             sqlAsComment=False,
-            commentEscape=''):
+            commentEscape='#',
+            epilog=None):
         """Excecute SQL and export the result as CSV file.
         @param sql SQL select statement to export results of
         @param out Either file name, or file stream object, or CSV writer object
@@ -534,6 +562,8 @@ class DbSql(MGTOptions):
         for rows in chunks:
             w.writerows(rows)
         reader.close()
+        if epilog is not None:
+            out.write(epilog)
         if doClose:
             out.close()
 
@@ -608,8 +638,11 @@ class DbSqlLite(DbSql):
         #here: http://stackoverflow.com/questions/364017/faster-bulk-inserts-in-sqlite3
         k = {}
         if kw.has_key("bufLen"):
-            k = kw["bufLen"]
-        k["sql"] = kw["table"].insertSql()
+            k["bufLen"] = kw["bufLen"]
+        tbl = kw["table"]
+        if not hasattr(tbl,"insertSql"):
+            tbl = SqlTable.fromDb(db=self,name=tbl)
+        k["sql"] = tbl.insertSql()
         return self.makeBulkInserter(**k)
    
 
@@ -1030,7 +1063,9 @@ class SqlNumpyTypeMap:
         for fld in descr:
             npy_t = None
             fld_t = fld[I_TYPE]
-            if fld_t == dbapi.NUMBER:
+            if fld_t is None:
+                npy_t = 'O'
+            elif fld_t == dbapi.NUMBER:
                 if fld[I_SCALE] > 0:
                     npy_t = 'f8'
                 else:
@@ -1126,7 +1161,10 @@ class BulkReader:
         """Return all (remaining) records as one numpy record array or nested list."""
         rows = self.curs.fetchall()
         if self.format == "array":
-            return numpy.rec.fromrecords(list(rows),dtype=self.dt)
+            if len(rows):
+                return numpy.rec.fromrecords(list(rows),dtype=self.dt)
+            else:
+                return numpy.empty(0,dtype=self.dt)
         else:
             return rows
 

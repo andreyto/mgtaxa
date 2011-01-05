@@ -59,9 +59,9 @@ class ImmScalingApp(App):
             action="store", type="string",
             dest="immIds",help="File with list of IMM IDs to use in scoring and prediction. Default is all"+\
                     " in --db-imm"),
-            make_option(None, "--query-seq",
+            make_option(None, "--pred-seq",
             action="store", type="string",
-            dest="querySeq",help="FASTA file with random query sequences"),
+            dest="predSeq",help="FASTA file with random query sequences"),
             make_option(None, "--out-score-dir",
             action="store", type="string",dest="outScoreDir",help="Directory name for output score files"),
             make_option(None, "--out-score-comb",
@@ -82,7 +82,7 @@ class ImmScalingApp(App):
         opt = options
         opt.setIfUndef("cwd",os.getcwd())
         opt.setIfUndef("outScoreDir",pjoin(opt.cwd,"scores"))
-        opt.setIfUndef("querySeq",pjoin(opt.cwd,"query.fna"))
+        opt.setIfUndef("predSeq",pjoin(opt.cwd,"query.fna"))
         opt.setIfUndef("outScoreComb",pjoin(opt.outScoreDir,"combined"+ImmApp.scoreSfx))
     
     def initWork(self,**kw):
@@ -102,13 +102,13 @@ class ImmScalingApp(App):
     def generate(self,**kw):
         """Generate random query sequences.
         Parameters are taken from self.opt
-        @param querySeq Output multi-FASTA file
+        @param predSeq Output multi-FASTA file
         @param queryLength Length on generated sequences
         @param numQueries Number of generated sequences
         """
         opt = self.opt
-        makeFilePath(opt.querySeq)
-        writer = FastaWriter(opt.querySeq)
+        makeFilePath(opt.predSeq)
+        writer = FastaWriter(opt.predSeq)
         lengths = n.ones(opt.numQueries,dtype=int)*opt.queryLength
         for iSeq,length in enumerate(lengths):
             seq = randomSeq(length)
@@ -118,13 +118,13 @@ class ImmScalingApp(App):
     def score(self,**kw):
         """Score with all IMMs and predict the taxonomy.
         Parameters are taken from self.opt
-        @param querySeq Name of the input multi-FASTA file to score
+        @param predSeq Name of the input multi-FASTA file to score
         @param outScoreDir Directory name for output score files
         @param outScoreComb name for output file with combined scores
         """
         opt = self.opt
         optI = copy(opt)
-        optI.inpSeq = opt.querySeq
+        optI.inpSeq = opt.predSeq
         optI.outDir = opt.outScoreDir
         optI.mode = "score"
         imm = ImmApp(opt=optI)

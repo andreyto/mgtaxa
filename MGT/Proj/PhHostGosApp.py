@@ -25,7 +25,7 @@ from MGT.Svm import checkSaneAlphaHist
 class PhHostGosApp(App):
     """App-derived class GOS-specific prediction of bacterial hosts for the viral sequences"""
 
-    batchDepModes = ("score-imms-gos","train-imms-gos","proc-scores")
+    batchDepModes = ("score-imms-gos","train-imms-gos")
 
     @classmethod
     def parseCmdLinePost(klass,options,args,parser):
@@ -43,13 +43,15 @@ class PhHostGosApp(App):
         opt.scaffApis = "/usr/local/projects/GOSII/dougAnalysis/apisTaxonomicScaffoldAssignments.out.gz"
         opt.annotCont = '/usr/local/projects/GOSII/hlorenzi/IO/INTERACTIONS/contigs_functional_annotation.tab'
         #topPredDir = pjoin(topWorkDir,"ph-pred-random-inp-shuffle")
-        topPredDir = pjoin(topWorkDir,"ph-pred-random-inp-uni")
-        #topPredDir = pjoin(topWorkDir,"ph-pred")
+        #topPredDir = pjoin(topWorkDir,"ph-pred-random-inp-uni")
+        topPredDir = pjoin(topWorkDir,"ph-pred")
         #opt.predSeq = "/usr/local/projects/GOSII/shannon/Indian_Ocean_Viral/asm_combined_454_large/454LargeContigs.fna"
-        opt.predSeq = pjoin(opt.workDir,"asm_combined_454_large.5K.rnd.fna")
+        #opt.predSeq = pjoin(topWorkDir,"scaff-rnd","query.5K.fna")
+        opt.predSeq = pjoin(topWorkDir,"scaff-gos-vir","asm_combined_454_large.5K.fna")
         opt.predOutDirRef = pjoin(topPredDir,"asm_combined_454_large")
         opt.predOutDirGos = pjoin(topPredDir,"asm_combined_454_large-gos-bac")
         opt.predOutDir = pjoin(topPredDir,"asm_combined_454_large-gos-bac-comb")
+        opt.predOutMgtGosCsv = pjoin(topPredDir,"gos-bac_refseq","pred-taxa.csv")
         opt.predOutTaxaMetaCsv = pjoin(opt.predOutDir,"pred-taxa.meta.csv")
         opt.predOutDbSqlite = pjoin(opt.predOutDir,"pred.db.sqlite")
         opt.predOutStatsDir = pjoin(opt.predOutDir,"stats")
@@ -220,6 +222,7 @@ class PhHostGosApp(App):
         """
         opt = self.opt
         self.loadMetaRefSql()
+        self.loadMgtTaxaRefSql()
         db = DbSqlLite(dbpath=opt.predOutDbSqlite)
         csvOutFiles = (opt.predOutTaxaCsvRef, opt.predOutTaxaCsvGos, opt.predOutTaxaCsvComb)
         for (csvOutFile,tableSfx) in zip(csvOutFiles,("ref","met","comb")):
@@ -228,11 +231,34 @@ class PhHostGosApp(App):
                     hasHeader=True,
                     indices={"names":("name",)})
             db.createTableAs("pred_annot_"+tableSfx,
-                    """select a.*,b.* from scaff_pred_%s a
-                    left outer join scaff_apis b
-                    on a.name = b.id_seq""" % (tableSfx,),
+                    """select a.*,b.taxid as mgt_taxid,b.name as mgt_name,
+                    b.name_genus as mgt_name_genus,
+                    c.*
+                    from scaff_pred_%s a
+                    left outer join scaff_apis c
+                    on a.name = c.id_seq
+                    left outer join scaff_pred_mgt b
+                    on a.name = b.id""" % (tableSfx,),
                     indices={"names":("id","name","taxid")})
             db.exportAsCsv("select * from pred_annot_"+tableSfx,opt.predOutTaxaMetaCsv+'_'+tableSfx)
+        db.close()
+
+
+    def loadMgtTaxaRefSql(self):
+        """Load MGTAXA taxonomic assignments for metagenomic bacterial references into SQL tables.
+        """
+        opt = self.opt
+        db = DbSqlLite(dbpath=opt.predOutDbSqlite)
+        def _preProcFilter(row,fields,fieldInd):
+            """Add the prefix to scaffold id"""
+            id = "jcvi_env_gos_"+row[fieldInd["id"]]
+            row[fieldInd["id"]] = id
+            return (row,)
+        db.createTableFromCsv(name="scaff_pred_mgt",
+                csvFile=opt.predOutMgtGosCsv,
+                hasHeader=True,
+                preProc=_preProcFilter,
+                indices={"names":("id","taxid","name",)})
         db.close()
 
     def loadMetaRefSql(self):
@@ -284,34 +310,67 @@ class PhHostGosApp(App):
 
     def statsPred(self,**kw):
         """Create aggregate tables and csv files to show various relationships between predictions"""
+        from textwrap import wrap,dedent
         opt = self.opt
         db = DbSqlLite(dbpath=opt.predOutDbSqlite)
         makedir(opt.predOutStatsDir)
         outCsv = openCompressed(opt.predOutStatsCsv,'w')
         sqlAsComment = True
+        epilog = "\n"
         sqlpar = dict(ratio_abs = 0.2)
+        abstract = \
+        """Abstract.
+        Several tables that aggregate viral query sequences along various annotations of predicted
+        bacterial hosts. Three tables are queried: pred_annot_ref where predictions were made against NCBI RefSeq bacteria
+        (and archaea); pred_annot_met where predictions were made against sufficiently long metagenomic scaffolds classified
+        as bacterial by external means (e.g. APIS gene votes); pred_annot_comb where predictions were made against a union
+        of bacterial references used in the first two methods (in other words, NCBI + metagenomic scaffolds).
+        The fields are named as follows: 
+        mgt_* means metagenomic microbial references were classified by MGTAXA against bacterial NCBI sequences; mgt_name
+        means whatever is the lowest taxonomic node for which the classification was made;
+        name_fam, name_gen, etc are clades of the reference sequences predicted by APIS votes;
+        ratio_fam_abs and ratio_gen_abs are ratios of the number of genes classified by APIS as name_fam and name_gen 
+        respectively to the total number of genes on the metagenomic reference scaffold. We consider APIS assignment as
+        "reliable" if either ratio is above %(ratio_abs)s.
+        name,name_genus,name_species etc means taxonomic levels of NCBI reference sequences.\n"""
+        outCsv.write(abstract)
+        sql = """select mgt_name,count(*) as cnt from pred_annot_met group by mgt_name order by cnt desc""" % sqlpar
+        comment = "Counts of phage classified against env reference grouped by MGTAXA name"
+        db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog=epilog)
+        sql = """select mgt_name_genus,count(*) as cnt from pred_annot_met group by mgt_name_genus order by cnt desc""" % sqlpar
+        comment = "Counts of phage classified against env reference grouped by MGTAXA genus name"
+        db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog=epilog)
         sql = """select a.*,b.* from pred_annot_ref a, pred_annot_comb b where a.id=b.id and not a.taxid=b.taxid and (b.ratio_gen_abs>=%(ratio_abs)s or b.ratio_fam_abs>=%(ratio_abs)s)""" % sqlpar
-        db.exportAsCsv(sql,outCsv,sqlAsComment=sqlAsComment)
+        db.exportAsCsv(sql,outCsv,sqlAsComment=sqlAsComment,epilog=epilog)
         sql = """select name_gen,count(*) as cnt from scaff_apis where ratio_gen_abs>=%(ratio_abs)s group by name_gen order by cnt desc""" % sqlpar
-        db.exportAsCsv(sql,outCsv,sqlAsComment=sqlAsComment)
+        comment = "Counts of env reference grouped by APIS reliable genus (abundance of bacterial APIS clades, regardless of viral assignment)"
+        db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog=epilog)
         # almost entirely to a single ref in gos
         sql = """select name_gen,count(*) as cnt from pred_annot_met where ratio_gen_abs>=%(ratio_abs)s group by name_gen order by cnt desc""" % sqlpar
-        db.exportAsCsv(sql,outCsv,sqlAsComment=sqlAsComment)
+        comment = "Counts of phage classified against env reference grouped by APIS reliable genus"
+        db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog=epilog)
         sql = """select name_family,count(*) as cnt from scaff_pred_ref group by name_family order by cnt desc"""
-        db.exportAsCsv(sql,outCsv,sqlAsComment=sqlAsComment)
+        comment = "Counts of phage classified against RefSeq bacteria grouped by family"
+        db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog=epilog)
         sql = """select name_genus,count(*) as cnt from scaff_pred_ref group by name_genus order by cnt desc"""
-        db.exportAsCsv(sql,outCsv,sqlAsComment=sqlAsComment)
+        comment = "Counts of phage classified against RefSeq bacteria grouped by genus"
+        db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog=epilog)
         sql = """select name_fam,count(*) as cnt from scaff_apis where ratio_fam_abs>=%(ratio_abs)s group by name_fam order by cnt desc""" % sqlpar
-        db.exportAsCsv(sql,outCsv,sqlAsComment=sqlAsComment)
+        comment = "Counts of env reference grouped by APIS reliable family"
+        db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog=epilog)
         sql = """select name_fam,count(*) as cnt from pred_annot_met where ratio_fam_abs>=%(ratio_abs)s group by name_fam order by cnt desc""" % sqlpar
-        db.exportAsCsv(sql,outCsv,sqlAsComment=sqlAsComment)
-        sql = """select a.name_family,b.name_fam from pred_annot_ref a, pred_annot_comb b where a.id=b.id and not a.taxid=b.taxid and b.ratio_fam_abs>=%(ratio_abs)s""" % sqlpar
-        db.exportAsCsv(sql,outCsv,sqlAsComment=sqlAsComment)
-        sql = """select a.name_genus,b.name_gen from pred_annot_ref a, pred_annot_comb b where a.id=b.id and not a.taxid=b.taxid and b.ratio_gen_abs>=%(ratio_abs)s""" % sqlpar
-        db.exportAsCsv(sql,outCsv,sqlAsComment=sqlAsComment)
+        comment = "Counts of phage classified against env reference grouped by APIS reliable family"
+        db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog=epilog)
+        sql = """select a.id,a.name_family,b.name_fam,b.id_seq from pred_annot_ref a, pred_annot_comb b where a.id=b.id and not a.taxid=b.taxid and b.ratio_fam_abs>=%(ratio_abs)s""" % sqlpar
+        comment = "Query records for which env reference won over RefSeq reference and APIS family is reliable"
+        db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog=epilog)
+        sql = """select a.id,a.name_genus,b.name_gen,b.id_seq from pred_annot_ref a, pred_annot_comb b where a.id=b.id and not a.taxid=b.taxid and b.ratio_gen_abs>=%(ratio_abs)s""" % sqlpar
+        comment = "Query records for which env reference won over RefSeq reference and APIS genus is reliable"
+        db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog=epilog)
         # almost entirely to a single ref in gos
-        sql = """select a.name_genus,b.name_gen,b.id_seq,b.ratio_gen_abs from pred_annot_ref a, pred_annot_met b where a.id=b.id and b.ratio_gen_abs>=%(ratio_abs)s order by b.name_gen,b.id_seq""" % sqlpar
-        db.exportAsCsv(sql,outCsv,sqlAsComment=sqlAsComment)
+        sql = """select a.id,a.name_genus,b.name_gen,b.id_seq,b.ratio_gen_abs from pred_annot_ref a, pred_annot_met b where a.id=b.id and b.ratio_gen_abs>=%(ratio_abs)s order by b.name_gen,b.id_seq""" % sqlpar
+        comment = "Query records for RefSeq and env reference assignments where APIS genus is reliable"
+        db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog=epilog)
         outCsv.close()
         db.close()
 

@@ -1,3 +1,6 @@
+"""Classify GOS scaffolds as RefSeq clades.
+A temporary hack. Works through PhageHostApp code
+with rejectRanksHigher="superkingdom"."""
 from MGT.Proj.PhHostGosApp import *
 from MGT.ImmScalingApp import *
 
@@ -19,14 +22,15 @@ if stage == "ref":
     opt.immDb = pjoin(topWorkDir,"icm-%s" % refname)
     opt.workDir = pjoin(topWorkDir,"ph-gos-bac")
     #opt.predSeq = "/usr/local/projects/GOSII/shannon/Indian_Ocean_Viral/asm_combined_454_large/454LargeContigs.fna"
-    opt.predSeq = "/usr/local/projects/moore130/M221/M221_Newb2.5_92ID/454AllContigs.fna"
+    #opt.predSeq = "/usr/local/projects/moore130/M221/M221_Newb2.5_92ID/454AllContigs.fna"
+    opt.predSeq = "/usr/local/projects/GOSII/dougAnalysis/nonViral40kbPlusScaffolds.fa.gz"
     #opt.predSeq = pjoin(topWorkDir,"scaff-gos-vir","asm_combined_454_large.5K.fna")
     #opt.predSeq = pjoin(opt.workDir,"asm_combined_454_large.5K.rnd.fna")
     #opt.predOutDir = pjoin(topPredDir,"asm_combined_454_large")
-    opt.predOutDir = pjoin(topPredDir,"moore-all")
+    opt.predOutDir = pjoin(topPredDir,"gos-bac_refseq")
     opt.rndScoreComb = pjoin(topWorkDir,"icm-%s-scale-score" % refname,"combined.score.pkl.gz")
     opt.nImmBatches = 200
-    opt.predMinLenSamp = 30
+    opt.predMinLenSamp = 100000
     opt.rejectRanksHigher = "superkingdom"
 
     for mode in ("predict","proc-scores",):

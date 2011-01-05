@@ -25,6 +25,7 @@ from collections import defaultdict as defdict
 import operator
 import itertools as it
 import datetime
+import shutil
 import pdb
 
 from MGT.Options import Struct
@@ -471,7 +472,7 @@ def readFastaRecords(infile,readSeq=True):
             seq = seqLen
         yield FastaRecord(title, seq)
 
-def splitFastaFile(inpFile,outBase,maxChunkSize):
+def splitFastaFile(inpFile,outBase,maxChunkSize,sfxSep='_'):
     inpFile = openCompressed(inpFile,'r')
     inp = readFastaRecords(inpFile)
     out = None
@@ -482,7 +483,7 @@ def splitFastaFile(inpFile,outBase,maxChunkSize):
         if out is None or chunkSize + recSize > maxChunkSize:
             if out is not None:
                 out.close()
-            out = outBase+'_%04d'%(iChunk,)
+            out = outBase+'%s%04d'%(sfxSep,iChunk,)
             out = open(out,'w')
             iChunk += 1
             chunkSize = 0
@@ -847,7 +848,7 @@ def groupRecArray(arr,keyField):
     @bug This will not work if there are fields of type "O" - seems to be a numpy bug"""
     m = defdict(list)
     if len(arr):
-        _tokey = numpyToScalarFunc(arr[0])
+        _tokey = numpyToScalarFunc(arr[0][keyField])
         if has_numpy_bug_object_cast_rec_arr(arr):
             for rec in arr:
                 #dereferenced recarray field scalars are compared by address in dict (because they are mutable?), 
@@ -857,7 +858,7 @@ def groupRecArray(arr,keyField):
             for rec in arr:
                 #dereferenced recarray field scalars are compared by address in dict (because they are mutable?), 
                 #hence .item() to get immutable Python scalar
-                m[rec[keyField].item()].append(rec)
+                m[_tokey(rec[keyField])].append(rec)
         for key in m:
             m[key] = n.asarray(m[key],dtype=arr.dtype)
         # important to convert to regular dictionary otherwise we get

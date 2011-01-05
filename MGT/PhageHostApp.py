@@ -142,6 +142,7 @@ class PhageHostApp(App):
         opt.setIfUndef("predOutAnnot",pjoin(opt.predOutDir,"annot"))
         opt.setIfUndef("outScoreComb",klass._outScoreCombPath(opt))
         opt.setIfUndef("taxaTreePkl",None)
+        opt.setIfUndef("rejectRanksHigher","order")
    
 
     def initWork(self,**kw):
@@ -293,6 +294,7 @@ class PhageHostApp(App):
         immStore = ImmStore(opt.immDb)
         immIds = immStore.listImmIds()
         immIdsPath = pjoin(opt.outDir,"imm-ids.pkl")
+        rmrf(opt.outDir)
         makedir(opt.outDir)
         dumpObj(immIds,immIdsPath)
         opt.immIds = immIdsPath
@@ -314,11 +316,12 @@ class PhageHostApp(App):
     def _maskScoresByRanks(self,taxaTree,immScores):
         """Set to a negative infinity (numpy.NINF) all columns in score matrix that point to nodes of ranks not in desired range.
         """
+        opt = self.opt
         scores = immScores.scores
         idImms = immScores.idImm
         taxaTree = self.getTaxaTree()
         taxaLevels = self.getTaxaLevels()
-        max_linn_levid = taxaLevels.getLevelId("order")
+        max_linn_levid = taxaLevels.getLevelId(opt.rejectRanksHigher)
         #min_linn_levid = max_linn_levid
         # Safe to set it to 0, because there is also at least superkingdom above 
         # min_linn_levid = taxaLevels.getLinnLevelIdRange()[0]
@@ -405,7 +408,8 @@ class PhageHostApp(App):
         #scVirRoot = scores[:,idImms == virTaxid][:,0]
         #scCellRoot = scores[:,idImms == cellTaxid][:,0]
         self._maskScoresNonSubtrees(taxaTree,immScores=sc,posRoots=micRoots)
-        #self._maskScoresByRanks(taxaTree,immScores=sc)
+        if opt.rejectRanksHigher is not "superkingdom":
+            self._maskScoresByRanks(taxaTree,immScores=sc)
         topTaxids = self._taxaTopScores(taxaTree,immScores=sc,topScoreN=10)
         argmaxSc = scores.argmax(1)
         maxSc = scores.max(1)
@@ -423,21 +427,22 @@ class PhageHostApp(App):
         
         # This not the same as _maskScoresByRanks() above (because this
         # will actually assign a reject label.
-        max_linn_levid = taxaLevels.getLevelId("order")
-        min_linn_levid = taxaLevels.getLinnLevelIdRange()[0]
-        # Reject predictions to clades outside of certain clade level range,
-        # as well as to any viral node
-        # This rejected 36 out of 450 and resulted in 2% improvement in specificity
-        #for i in xrange(len(predTaxids)):
-        #    if not predTaxids[i] == self.rejTaxid:
-        #        predNode = taxaTree.getNode(predTaxids[i])
-        #        if predNode.isUnder(virRoot):
-        #            predTaxids[i] = self.rejTaxid
-        #        # we need to protect leaf nodes because we place environmental scaffolds
-        #        # as no_rank under bacteria->environmental
-        #        elif not (predNode.isLeaf() or taxaLevels.isNodeInLinnLevelRange(predNode,
-        #                min_linn_levid,max_linn_levid)):
-        #            predTaxids[i] = self.rejTaxid
+        if opt.rejectRanksHigher is not "superkingdom":
+            max_linn_levid = taxaLevels.getLevelId(opt.rejectRanksHigher)
+            min_linn_levid = taxaLevels.getLinnLevelIdRange()[0]
+            # Reject predictions to clades outside of certain clade level range,
+            # as well as to any viral node
+            # This rejected 36 out of 450 and resulted in 2% improvement in specificity
+            for i in xrange(len(predTaxids)):
+                if not predTaxids[i] == self.rejTaxid:
+                    predNode = taxaTree.getNode(predTaxids[i])
+                    if predNode.isUnder(virRoot):
+                        predTaxids[i] = self.rejTaxid
+                    # we need to protect leaf nodes because we place environmental scaffolds
+                    # as no_rank under bacteria->environmental
+                    elif not (predNode.isLeaf() or taxaLevels.isNodeInLinnLevelRange(predNode,
+                            min_linn_levid,max_linn_levid)):
+                        predTaxids[i] = self.rejTaxid
 
         pred = TaxaPred(idSamp=sc.idSamp,predTaxid=predTaxids,topTaxid=topTaxids,lenSamp=sc.lenSamp)
         dumpObj(pred,opt.predOutTaxa)
@@ -475,7 +480,7 @@ class PhageHostApp(App):
         db.createTableFromCsv(name="scaff_pred",
                 csvFile=opt.predOutTaxaCsv,
                 hasHeader=True,
-                indices={"names":("name",)})
+                indices={"names":("id","taxid","name",)})
         db.close()
 
     def _statsPred(self,**kw):
@@ -488,11 +493,17 @@ class PhageHostApp(App):
         sqlAsComment = True
         sqlpar = dict(lenMin = 5000)
         sql = """select name,count(*) as cnt from scaff_pred group by name order by cnt desc"""
-        db.exportAsCsv(sql,outCsv,sqlAsComment=sqlAsComment)
-        sql = """select name_family,count(*) as cnt from scaff_pred group by name_family order by cnt desc"""
-        db.exportAsCsv(sql,outCsv,sqlAsComment=sqlAsComment)
+        comment = "Count of assignments grouped by reference name"
+        db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog="\n")
+        sql = """select name_species,count(*) as cnt from scaff_pred group by name_species order by cnt desc"""
+        comment = "Count of assignments grouped by reference species name"
+        db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog="\n")
         sql = """select name_genus,count(*) as cnt from scaff_pred group by name_genus order by cnt desc"""
-        db.exportAsCsv(sql,outCsv,sqlAsComment=sqlAsComment)
+        comment = "Count of assignments grouped by reference genus name"
+        db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog="\n")
+        sql = """select name_family,count(*) as cnt from scaff_pred group by name_family order by cnt desc"""
+        comment = "Count of assignments grouped by reference family name"
+        db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment)
         outCsv.close()
         db.close()
 
