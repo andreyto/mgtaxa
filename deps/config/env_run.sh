@@ -26,16 +26,31 @@ export INST_LIB_MACH=$INSTMACH/lib64
 
 export INST_LIB=$INSTMACH/lib
 
-export PYTHON=$INSTMACH/bin/python
+if [ -n "$PY_PREF_INTERP" ]; then
+## For python under its own prefix, we need to add paths to relevant env vars
+export LD_LIBRARY_PATH="$PY_PREF_INTERP/lib:$LD_LIBRARY_PATH"
+export PATH="$PY_PREF_INTERP/bin:$PATH"
+[ -n "$PYTHON" ] || export PYTHON=$PY_PREF_INTERP/bin/python
+else
+## Otherwise, the common paths are already added
+[ -n "$PYTHON" ] || export PYTHON=$INSTMACH/bin/python
+fi
+
+if [ -f "$PYTHON" ]; then
 
 export PY_VER=`$PYTHON -c 'from distutils.sysconfig import *; print get_python_version()'`
 
 export PYCOMMON=$INST/lib/python${PY_VER}/site-packages
 export PYMACH=$INSTMACH/lib/python${PY_VER}/site-packages
+# Shogun will install itself in here if given INSTMACH as prefix,
+# and this is clumsy to override, so we just add it to the path:
+export PYDIST=$INSTMACH/lib/python${PY_VER}/dist-packages
+export PYTHONPATH=${PYDIST}:${PYMACH}:${PYCOMMON}:${PYTHONPATH}
+
+fi
 
 export PATH="$INST/x86_32/texlive/2007/bin/i386-linux:$INSTMACH/bin:$INST/bin:$PATH"
 
-export PYTHONPATH=${PYMACH}:${PYMACH}/Numeric:${PYCOMMON}:${PYTHONPATH}
 
 # For some packages, setting LD_RUN_TIME during build and linker options do not help.
 # We still have to define LD_LIBRARY_PATH

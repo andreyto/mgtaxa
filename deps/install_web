@@ -1,0 +1,11 @@
+#!/bin/bash
+## This install Web interface components (those that are specific to DMZ host)
+set -ex #abort if any command fails and echo all commands
+topdir=$(pwd)
+
+cd globus && ${topdir}/install_globus && cd ${topdir}
+
+cd gridway && ${topdir}/install_gridway && cd ${topdir}
+
+cd gridway && ${topdir}/install_gridway_py_drmaa && cd ${topdir}
+

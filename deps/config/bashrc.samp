@@ -9,6 +9,7 @@ if [ -r "$f" ]; then . $f; else echo "Missing $f - contact your sysadmin."; fi
 # Put your additions/changes below
 #
 #echo "Sourcing .bashrc"
+export PS1="[\u@\h \W]\$ "
 source ~/.environ
 export LS_COLORS="${LS_COLORS}:di=01;35"
 export AT_BASHRC_DONE=1

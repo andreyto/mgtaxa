@@ -18,7 +18,7 @@ if [[ ! -f copy_deps ]]; then
     exit 1
 fi
 
-CPA="cp -a"
+CPA="rsync -av"
 mkdir -p $DEP_SRC_TOP
 $CPA $DEP_SRC_ORIG/* $DEP_SRC_TOP/
 $CPA * $DEP_SRC_TOP/

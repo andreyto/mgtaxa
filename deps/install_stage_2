@@ -1,9 +1,10 @@
 #!/bin/bash
 set -ex #abort if any command fails and echo all commands
 topdir=$(pwd)
-#if false; then
-bash setuptools/setuptools-0.6c9-py2.5.egg 
-easy_install --upgrade mercurial
+## this assumes that there is only one egg per version
+bash setuptools/setuptools-*-py${PY_VER}.egg --prefix=$INST
+easy_install --prefix=$INST --upgrade mercurial
+easy_install --prefix=$INST --upgrade nose
 cd git/git && ${topdir}/install_git && cd ${topdir}
 cd cmake && ${topdir}/install_cmake && cd ${topdir}
 cd mysql/mysql && ${topdir}/install_mysql && cd ${topdir}
@@ -16,17 +17,15 @@ cd boost/boost && ${topdir}/install_boost && cd ${topdir}
 cd matplotlib/matplotlib && ${topdir}/install_matplotlib && cd ${topdir}
 cd mysql/MySQL-python/MySQL-python && ${topdir}/install_pymysql && cd ${topdir}
 cd pytables && ${topdir}/install_pytables && cd ${topdir}
-#fi
-easy_install --upgrade bx-python
-easy_install --upgrade ipython
+easy_install --prefix=$INST --upgrade bx-python
+easy_install --prefix=$INST --upgrade ipython
 #A simple easy_install call below should work, but it does not. So we use specific tarball link.
 #easy_install --upgrade MDP
-easy_install --upgrade http://downloads.sourceforge.net/project/mdp-toolkit/mdp-toolkit/2.6/MDP-2.6.tar.gz
+easy_install --prefix=$INST --upgrade http://downloads.sourceforge.net/project/mdp-toolkit/mdp-toolkit/2.6/MDP-2.6.tar.gz
 #shogun needs swig that understands python2.5 int types,
 #centos 5 default swig does not
 cd swig/swig && ${topdir}/install_swig && cd ${topdir}
-cd numpy/numpy && ${topdir}/install_numpy && cd ${topdir}
 cd shogun/shogun/src && ${topdir}/install_shogun && cd ${topdir}
 cd genometools/genometools && ${topdir}/install_genometools && cd ${topdir}
-easy_install --upgrade sqlalchemy
+easy_install --prefix=$INST --upgrade sqlalchemy
 

@@ -1,22 +1,53 @@
 #!/bin/sh
+set -ex
 
-## I installed Atlas from sources.
+## This builds with our custom-built Atlas libs and custom-built lapack that uses some Atlas routines.
 ## Swig in CentOS 5 is too old to build with python 2.5. Installed swig from sources.
 
-## ./configure script is very rough. It ignores LDFLAGS, the only way to inject -W,l options is to pass
-## them to --libs argument, which adds '-L' prefix to them, so the value must start with a true directory,
-## w/o the -L (see below).
-## ./configure also forgets to add libdl and libutil, which results in missing symbols and configure error exit.
+## To get my atlas detected, I need to add f77blas to the list of libraries in --libs, otherwise
+## it does not detect atlas and also tries to compile tests with lapack, and complains of 
+## missing symbols (references f77blas rouitines).
+## If I remove -latlas from the --libs, "configure" adds extra -L to the command string,
+## and the compiler bails out.
+## If --libs is provided, the LDFLAGS is ignored, so I inject it into --libs
 
-## Attempt to build with --disable-atlas (with built-in blas support) resulted in more 'make tests' errors.
-## In particular, liblinear module got disabled completely.
+## HDF5, although detected, results in multiple compilation errors ("too few arguments..."),
+## so we disable HDF5 serialization for now
 
-## It seems the configure cannot find my atlas when built on CentOS
+## There is a --pydir configure argument to control where Python modules get installed.
+## If not set, it defaults to PREFIX/lib/pythonVER/dist-packages.
+## If set, the .config gets PYDIR=PREFIX/lib/`--pydir`.
+## If we wanted to install into our default PREFIX/lib/pythonVER/site-packages,
+## we would have to use this code:
+## --pydir=$(python -c 'import os; print os.path.relpath(os.environ["PYMACH"],os.path.join(os.         environ["INSTMACH"],"lib"))')
+## But it seems easier to add the dist-packages instead to our profile PYTHONPATH.
+## 'make tests' does not run in either case, because it resets PYTHONPATH to PYDIR,
+## and we have stuff in both PYCOMMON and PYMACH
 
+## Shogun sources reference the data dir as symlink data -> ../data,
+## so we unpack and rename the data first
+NAME=shogun-data-0.1
+SOURCE=$NAME.tar.bz2
+BUILD=$NAME
+rm -rf $BUILD data
+bunzip2 -c $SOURCE | tar -xf -
+mv $BUILD data
+
+NAME=shogun-0.10.0
+SOURCE=$NAME.tar.bz2
+BUILD=$NAME
+rm -rf $BUILD
+bunzip2 -c $SOURCE | tar -xf -
+cd $BUILD
+
+exit 0
+cd src
 make distclean
-./configure --prefix=$INSTMACH --interface=python-modular --cflags="$CFLAGS" --cxxflags="$CXXFLAGS" --libs="$INST_LIB_MACH $LDFLAGS -ldl -lutil -latlas -lcblas -lgfortran" && \
-make && \
-make install && \
-make doc && \
-make tests
+./configure --disable-hdf5 --prefix=$INSTMACH --interfaces=libshogun,python_modular --libs="$LDFLAGS -latlas -lf77blas -lgfortran"
+#./configure --prefix=$INSTMACH --interfaces=libshogun,python_modular --cflags="$CFLAGS" --cxxflags="$CXXFLAGS" --libs="$INST_LIB_MACH $LDFLAGS -ldl -lutil -latlas -lcblas -lf77blas -lgfortran"
+make
+make install
+make doc
+#make tests
+(cd ../testsuite/python_modular && ( ./test_all.sh || true ))
 

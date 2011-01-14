@@ -6,22 +6,49 @@
 
 if [ -z "$AT_HOME_ENVIRON_DONE" ]; then
 
-## JCVI only has functional gcc (with gfortran) in /usr/local, so we need to make sure
+#export MGT_JCVI_DMZ=1
+
+## JCVI used to have the only has functional gcc (with gfortran) in /usr/local, so we need to make sure
 ## its shared libs are found at run-time instead of the one in /usr/
+## Now it seems that gfortran has been installed from RPM in /usr, but all stuff in /usr/local probably
+## was still compiled with gcc from /usr/local. Right now the OS and the /usr/local have the same
+## version, so it still be OK if one shared lib is picked at run-time instead of another.
+## On DMZ, the /usr/local gcc only lives under its own prefix, but we do not process DMZ case separately
+## because the versions match with the OS gcc.
 export CFLAGS="$CFLAGS -I/usr/local/include"
 export LDFLAGS="$LDFLAGS -L/usr/local/lib64 -Wl,-R/usr/local/lib64 -L/usr/local/lib -Wl,-R/usr/local/lib"
 
+if [ -z "$MGT_JCVI_DMZ" ]; then
 # tell SGE to use new CentOS grid
 source /usr/local/sge_current/jcvi/common/settings.sh
+fi
 
 export LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib:$LD_LIBRARY_PATH
 
-export JAVA_HOME=/usr/local/java/current
+#This Java path is identical on Intranet and DMZ, although it seems that the main
+#java home is under /usr/local/java on the Intranet
+export JAVA_HOME=/usr/local/packages/java/current
 ## ANT (the Java make) is installed at JCVI, but ANT_HOME has to be defined,
 ## otherwise Globus Toolkit build fails when ant cannot find xmlvalidate module ("task")
 export ANT_HOME=/usr/local/packages/apache-ant
 
-#echo "Sourcing .environ"
+## We support these types of Python install:
+## already built under a separate prefix and we do not have write support
+## prefix same as the packages that we build, and we build our python where.
+## We define the following variables to make it easier to support the above
+## two cases and various other combinations.
+## If set, we will build our own interpreter:
+export PY_BUILD_INTERP=
+## If set, the interpreter lives under that separate --prefix, otherwise
+## it will be under one of common prefixes (either our package prefix or
+## system prefix):
+export PY_PREF_INTERP=/usr/local/packages/python-2.6.6
+## Additionally, there is an option to set an absolute path to
+## the Python executable (to support e.g. python2.5 and python2.6
+## located inside the same bin/ directory). If not set, this variable
+## will default to bin/python under the finally computed python prefix.
+export PYTHON=
+
 # absolute path to the user HOME under which everything is installed (by default - self)
 export AHOME=$HOME
 
