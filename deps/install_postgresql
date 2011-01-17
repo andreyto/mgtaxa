@@ -1,0 +1,17 @@
+#!/bin/sh
+set -ex
+
+NAME=postgresql-8.4.6
+SOURCE=$NAME.tar.bz2
+BUILD=$NAME
+rm -rf $BUILD
+bunzip2 -c $SOURCE | tar -xf -
+cd $BUILD
+
+cd src
+make distclean
+./configure --prefix=$PGSQL_LOCATION --disable-rpath --with-openssl
+make
+make install
+make check
+

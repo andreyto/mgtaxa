@@ -1,0 +1,68 @@
+#!/bin/bash
+set -ex
+
+[ -n "$DEP_SRC_TOP" ] || exit 1
+( [ -n "$PGSQL_DATA" ] && [ -n "$PGSQL_ROOT_USER" ] && [ -n "$PRIV_DATA" ] ) || exit 1
+
+## This will wack the existing DB, so require an argument to do so
+
+if ! [[ "$1" == "NEW" ]]; then
+    echo "Use NEW argument to erase the current DB (if any). Exiting..."
+    exit 1
+fi
+
+( pg_ctl -D $PGSQL_DATA stop && sleep 5 ) || true
+
+rm -rf $PGSQL_DATA
+
+## --auth=md5 is actually not needed because it generates pg_hba.conf that
+## we overwrite with the skeleton file anyway
+
+initdb -D $PGSQL_DATA --username=$PGSQL_ROOT_USER --pwfile=$PRIV_DATA/postgresql_root_passwd --auth=md5
+
+## Generate pgpass file in required format for psql passwordless use
+echo "localhost:*:*:$PGSQL_ROOT_USER:$(cat $PRIV_DATA/postgresql_root_passwd)" > $PGPASSFILE
+chmod 600 $PGPASSFILE
+
+## This script creates a "single OS-user" installation:
+## postgresql.conf file has:
+## unix_socket_permissions = 0700
+## And pg_hba.conf has only lines:
+## local   all         @admins                           md5
+## local   sameuser    all                               md5
+
+## Here we create admins file refernced by pg_hba.conf, and it only has the 
+## current user in it:
+
+echo "$PGSQL_ROOT_USER" > $PGSQL_DATA/admins
+chmod 600 $PGSQL_DATA/admins
+
+## The net result is that connections are only allowed through a socket,
+## access to which is restricted to the user that runs the postgresql server
+## process (also the user that runs this script). Once a connection to the
+## socket is made, the DB root user can connect to any DB after providing a 
+## password encrypted in MD5;
+## any other DB user (e.g. "galaxy") can connect only to the DB with the same
+## name as user name ("galaxy"), again only with md5 password.
+
+## PostgreSQL is sensitive to permissions, so we use 'install' instead of
+## copying the entire skeleton with 'cp -a'
+install --mode=600 $DEP_SRC_TOP/config/pgsql/skel/data/*.conf $PGSQL_DATA/
+
+## Note: the socket name is constructed by the client from the socket
+## directory name and the server port number, even if the server does not
+## listen on TCP ports at all.
+
+PGSQL_LOG_DIR=$PGSQL_LOCATION/var/log
+mkdir -p $PGSQL_LOG_DIR
+chmod 700 $PGSQL_LOG_DIR
+
+pg_ctl -D $PGSQL_DATA -l $PGSQL_LOG_DIR/postinstall.log start
+sleep 5 # give it time to start
+
+psql -d postgres -U $PGSQL_ROOT_USER -c "CREATE USER galaxy WITH PASSWORD '""$(cat $PRIV_DATA/postgresql_galaxy_passwd)""'"
+
+createdb -U $PGSQL_ROOT_USER --owner galaxy galaxy
+
+#pg_ctl -D $PGSQL_DATA stop
+

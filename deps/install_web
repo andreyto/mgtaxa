@@ -9,3 +9,5 @@ cd gridway && ${topdir}/install_gridway && cd ${topdir}
 
 cd gridway && ${topdir}/install_gridway_py_drmaa && cd ${topdir}
 
+cd postgresql && ${topdir}/install_postgresql && cd ${topdir}
+

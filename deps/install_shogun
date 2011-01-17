@@ -40,7 +40,6 @@ rm -rf $BUILD
 bunzip2 -c $SOURCE | tar -xf -
 cd $BUILD
 
-exit 0
 cd src
 make distclean
 ./configure --disable-hdf5 --prefix=$INSTMACH --interfaces=libshogun,python_modular --libs="$LDFLAGS -latlas -lf77blas -lgfortran"
@@ -48,6 +47,9 @@ make distclean
 make
 make install
 make doc
+## 'make tests' overrides PYTHONPATH to shogun's module dir only, and this is hard-coded,
+## so we cannot use 'make tests'
 #make tests
+## This will also fail at the end
 (cd ../testsuite/python_modular && ( ./test_all.sh || true ))
 
