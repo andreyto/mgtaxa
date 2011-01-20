@@ -1,9 +1,0 @@
-rm -rf build
-python setup.py install --prefix=$INST --exec-prefix=$INSTMACH
-#the above will fail on gfortran linking of .so file
-#add '-shared' to the linking command and run it manually, then 
-#repeat:
-#python setup.py install --prefix=$INST --exec-prefix=$INSTMACH
-#also, it might be a good idea to remove site-packages/numpy before
-#installing
-

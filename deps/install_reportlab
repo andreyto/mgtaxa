@@ -1,6 +1,0 @@
-#!/bin/tcsh
-#setenv CFLAGS -I$INST/include/python2.4/
-#setenv CXXFLAGS -I$INST/include/python2.4/
-rm -rf build
-python setup.py install --prefix=$INST --exec-prefix=$INSTMACH
-

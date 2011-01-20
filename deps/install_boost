@@ -1,5 +1,0 @@
-make clean
-./configure --prefix=$INST --exec-prefix=$INSTMACH --with-python=$PYTHON --with-libraries=python && \
-make -j 8 && \
-make install
-

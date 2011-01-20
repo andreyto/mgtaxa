@@ -1,4 +1,0 @@
-#!/bin/tcsh
-rm -rf build
-python setup.py build install --prefix=$INST --exec-prefix=$INSTMACH
-

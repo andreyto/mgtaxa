@@ -1,5 +1,0 @@
-make clean
-./configure --prefix=$INST --exec-prefix=$INSTMACH && \
-make && \
-make install
-
