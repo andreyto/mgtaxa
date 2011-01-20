@@ -1,0 +1,97 @@
+#!/bin/bash
+## Start Qpid Java broker as a daemon,
+## query the daemon status, or stop the daemon.
+## Run this script as Qpid daemon user, with the full user
+## environment sourced.
+
+## Implementation:
+## qpid broker does not have a built-in daemon mode (to detach), and
+## the qpid-server script does not check if the broker
+## is already running - it will always try to start the broker 
+## java process, which will fail after trying to bind an already taken
+## to a port. The failed java process will still overwrite
+## the pid file.
+## Also, qpid.stop does not look at the pid file at all -
+## is uses pgrep to find the process by user and unique sub-string
+## of the process command line.
+## Therefore, we ignore the pid file too.
+## How their pgrep works:
+## When they start the broker, they run it like this:
+## java -server -DPNAME=QPBRKR ...
+## Then they pgrep for the string 'PNAME=QPBRKR' with an extra
+## condition that the process is owned by the current user.
+## We cannot source their qpid.stop file and use functions defined where
+## because sourcing would kill the running brokers.
+## So, we copied the relevant function here - the search string will have 
+## to be checked against each Qpid version update.
+
+## PID search pattern
+SEARCH="PNAME=QPBRKR"
+## grep ps for all instances of $SEARCH for the current user and collect PIDs
+
+lookup_all_pids()
+{
+pids=`pgrep -f -U $USER $SEARCH`
+result_all=`echo -n $pids | wc -w`
+}
+
+. $QPID_HOME/etc/qpid_set_env
+
+BIN_DIR=$QPID_HOME/bin
+
+start(){
+    lookup_all_pids
+    if [ -z "$pids" ]; then
+        nohup $BIN_DIR/qpid-server > $QPID_WORK/server-daemon-out.log 2>&1 &
+        ret=$? 
+        if [ $ret -eq 0 ]
+        then
+            sleep 4
+            lookup_all_pids
+            if [ -z "$pids" ]; then
+                echo "Server terminated after start"
+                script_result=1
+            else
+                echo "Started"
+            fi
+        else
+            echo "Failed to start server"
+            script_result=1
+        fi
+    else
+        echo "Server already running with pid $pids"
+    fi
+}
+
+status(){
+    lookup_all_pids
+    if [ -z "$pids" ]; then
+        echo "Stopped"
+    else
+        echo "Running"
+    fi
+}
+
+stop(){
+    $BIN_DIR/qpid.stop
+    script_result=$?
+}
+
+
+# See how we were called.
+case "$1" in
+  start)
+	start
+	;;
+  stop)
+	stop
+	;;
+  status)
+	status
+	;;
+  *)
+	echo $"Usage: $0 {start|stop|status}"
+	exit 1
+esac
+
+exit $script_result

@@ -11,3 +11,5 @@ cd gridway && ${topdir}/install_gridway_py_drmaa && cd ${topdir}
 
 cd postgresql && ${topdir}/install_postgresql && cd ${topdir}
 
+cd qpid && ${topdir}/install_qpid_broker_java && cd ${topdir}
+

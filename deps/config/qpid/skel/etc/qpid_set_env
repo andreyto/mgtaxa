@@ -1,0 +1,5 @@
+#!/bin/bash
+## Source this file before you run qpid java broker
+## or any of its java utilities
+export PATH=$QPID_HOME/bin:$QPID_JAVA_HOME/bin:$PATH
+export JAVA_HOME=$QPID_JAVA_HOME
