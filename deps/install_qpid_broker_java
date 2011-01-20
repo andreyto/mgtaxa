@@ -1,0 +1,30 @@
+#!/bin/sh
+set -ex
+
+[ -n "$DEP_SRC_TOP" ] || exit 1
+[ -n "$QPID_VER" ] || exit 1
+
+VER=$QPID_VER
+BUILD=qpid-$VER
+NAME=qpid-java-$VER
+SOURCE=$NAME.tar.gz
+rm -rf $BUILD
+tar -zxf $SOURCE
+
+($QPID_HOME/bin/qpid.stop || true)
+rm -rf $QPID_HOME
+mkdir -p $QPID_HOME
+cp -a $BUILD/* $QPID_HOME/
+mkdir -p $QPID_WORK
+
+## We want to make the installation relocatable (so
+## that we can push the install to other host/user).
+## Therefore, our startup scripts dereference the 
+## environment variables at run-time.
+
+cp -a $DEP_SRC_TOP/config/qpid/skel/* $QPID_HOME/
+
+PASSWD_FILE=$QPID_HOME/etc/passwd
+install -b -m 600 $PRIV_DATA/qpid_passwd $PASSWD_FILE
+
+

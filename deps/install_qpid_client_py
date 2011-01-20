@@ -1,0 +1,23 @@
+#!/bin/sh
+set -ex
+
+[ -n "$QPID_VER" ] || exit 1
+
+VER=$QPID_VER
+BUILD=qpid-$VER
+NAME=qpid-python-$VER
+SOURCE=$NAME.tar.gz
+rm -rf $BUILD
+tar -zxf $SOURCE
+
+cd $BUILD/python
+rm -rf build
+python setup.py install --prefix=$INSTMACH
+
+## The testing below makes certain assumptions about
+## the broker installation (where it is running and 
+## the availability of user/password
+cd ..
+(qpid_daemon start || true)
+python python/examples/api/hello guest/guest@localhost:5672
+
