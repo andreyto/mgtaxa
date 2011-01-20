@@ -1,0 +1,11 @@
+!#/bin/bash
+## A template procedure to edit GitHub pages for the project.
+## Assuming you are outside your mgtaxa work directory,
+## and the directory mgtaxa.gh-pages does not exist.
+git clone git@github.com:andreyto/mgtaxa.git mgtaxa.gh-pages
+cd mgtaxa.gh-pages/
+git checkout -b gh-pages origin/gh-pages
+## This pulls the previously re-generated API docs
+rsync -av ~/work/mgtaxa/doc/html doc/
+## edit more, commit and push
+
