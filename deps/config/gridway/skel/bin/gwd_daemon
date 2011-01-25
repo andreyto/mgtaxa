@@ -1,0 +1,134 @@
+#!/bin/bash
+# GridWay	This is the init-like script for starting up the GridWay gwd
+#		server. This is based on the CentOS init script, but is designed to
+#       be executed and owned by the user that runs gwd. Thus, it does not 
+#       maintain the components in /var/run and /run/subsystem like a regular
+#       init script that is executed by root. On the other hand, the non-priviledged
+#       user can edit this script and other components of the GridWay installation
+#
+#       The user environment should be already sourced; GridWay binaries should
+#       be in the PATH; GW_LOCATION must be set.
+
+success() { 
+    echo "$1 -------  SUCCESS" 
+}
+failure() { 
+    echo "$1 -------  FAIL" 
+}
+
+echo_success() { 
+    echo "SUCCESS" 
+}
+echo_failure() { 
+    echo "FAIL" 
+}
+
+[ -n "$GW_LOCATION" ] || exit 1
+
+GWD_LOCK_FILE=$GW_LOCATION/var/.lock
+
+## The following two functions are probably 
+## sensitive to the command line used to start
+## gwd. ^ and $ were added to avoid finding this
+## script itself, and they work correctly both
+## when gwd is started as 'gwd' or as full path to
+## gwd. We currently start gwd in single-user mode,
+## w/o the -m switch.
+
+find_daemon_pid() {
+    pgrep -u $USER '^gwd$'
+}
+
+kill_daemon() {
+    pkill -u $USER '^gwd$'
+}
+
+clean_lock() {
+    if find_daemon_pid; then
+        return 1
+    elif [ -f $GWD_LOCK_FILE ]; then
+        rm $GWD_LOCK_FILE
+        ret=$?
+        if [ $ret -eq 0 ]; then
+            return 0
+        else
+            return 2
+        fi
+    else
+        return 0
+    fi
+}
+
+NAME=`basename $0`
+
+script_result=0
+
+start(){
+	GWD_START="Starting ${NAME} service: "
+    clean_lock
+    ret=$?
+    if [ $ret -eq 0 ]; then
+        echo -n "$GWD_START"
+        gwd
+        sleep 3
+        if find_daemon_pid
+        then
+            success "$GWD_START"
+            echo
+        else
+            failure "$GWD_START"
+            echo
+            script_result=1
+        fi
+    elif [ $ret -eq 1 ]; then
+        success "${GWD_START}: gwd already running"
+        echo
+    else
+        failure "${GWD_START}: Cannot remove stale lock file"
+    fi
+}
+
+stop(){
+	echo -n $"Stopping ${NAME} service: "
+	kill_daemon
+    sleep 3
+    if clean_lock
+	then
+		echo_success
+	else
+		echo_failure
+		script_result=1
+	fi
+	echo
+}
+
+status() {
+    find_daemon_pid && gwhost
+    ret=$?
+    if [ $ret -eq 0 ]; then
+        echo "Running"
+    else
+        echo "Stopped"
+    fi
+	script_result=$ret
+    echo
+}
+
+# See how we were called.
+case "$1" in
+  start)
+	start
+	;;
+  stop)
+	stop
+	;;
+  status)
+    status
+	;;
+  *)
+	echo $"Usage: $0 {start|stop|status}"
+	exit 1
+esac
+
+exit $script_result
+
