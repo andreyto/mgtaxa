@@ -1,0 +1,95 @@
+#!/bin/bash
+# postgresql	This is the init-like script for starting up the Galaxy
+#		server. This is based on the CentOS init script, but is designed to
+#       be executed and owned by the user that runs Galaxy. Thus, it does not 
+#       maintain the components in /var/run and /run/subsystem like a regular
+#       init script that is executed by root. On the other hand, the non-priviledged
+#       user can edit this script and other components of the Galaxy installation
+#
+#       The user environment should be already sourced; GALAXY_LOCATION must be set.
+
+success() { 
+    echo "$1 -------  SUCCESS" 
+}
+failure() { 
+    echo "$1 -------  FAIL" 
+}
+
+echo_success() { 
+    echo "SUCCESS" 
+}
+echo_failure() { 
+    echo "FAIL" 
+}
+
+[ -n "$GALAXY_LOCATION" ] || exit 1
+
+NAME=`basename $0`
+
+GALAXY_LOG_DIR=$GALAXY_LOCATION/var/log
+
+[ -d "$GALAXY_LOG_DIR" ] || mkdir -p $GALAXY_LOG_DIR
+
+GALAXY_LOG=$GALAXY_LOG_DIR/galaxy_daemon.log
+
+RUN_SCRIPT=$GALAXY_LOCATION/run.sh
+
+script_result=0
+
+start(){
+	MSG_START="Starting ${NAME} service: "
+
+	echo -n "$MSG_START"
+    ## The following should match new_files_path Galaxy 
+    ## config setting
+    export TEMP=$GALAXY_LOCATION/database/tmp
+    $RUN_SCRIPT --daemon --log-file $GALAXY_LOG
+    ## sleep 3 was not enough for Galaxy to figure out
+    ## that PostgreSQL server was not available and exit
+	sleep 5
+	if $RUN_SCRIPT --status
+	then
+		success "$MSG_START"
+		echo
+	else
+		failure "$MSG_START"
+		echo
+		script_result=1
+	fi
+}
+
+stop(){
+	echo -n $"Stopping ${NAME} service: "
+	if $RUN_SCRIPT --stop
+	then
+		echo_success
+	else
+		echo_failure
+		script_result=1
+	fi
+	echo
+}
+
+status() {
+	$RUN_SCRIPT --status
+	script_result=$?
+    echo
+}
+
+# See how we were called.
+case "$1" in
+  start)
+	start
+	;;
+  stop)
+	stop
+	;;
+  status)
+    status
+	;;
+  *)
+	echo $"Usage: $0 {start|stop|status}"
+	exit 1
+esac
+
+exit $script_result

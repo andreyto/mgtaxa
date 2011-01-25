@@ -100,6 +100,9 @@ export QPID_WORK=$QPID_HOME/var
 export PATH=$QPID_HOME/bin:$PATH
 export QPID_JAVA_HOME=/usr/local/java/1.6.0
 
+# Galaxy
+export GALAXY_LOCATION=$INSTMACH/mgtaxa-galaxy
+
 # Ruby stuff
 # We need to have rubygems module loaded ("require") on every start of ruby,
 # because that adds into Ruby's library path the gems installed by 'gem install --user-install'
