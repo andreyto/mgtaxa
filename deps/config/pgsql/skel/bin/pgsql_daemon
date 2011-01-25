@@ -1,0 +1,85 @@
+#!/bin/bash
+# postgresql	This is the init-like script for starting up the PostgreSQL
+#		server. This is based on the CentOS init script, but is designed to
+#       be executed and owned by the user that runs PostgreSQL. Thus, it does not 
+#       maintain the components in /var/run and /run/subsystem like a regular
+#       init script that is executed by root. On the other hand, the non-priviledged
+#       user can edit this script and other components of the PostgreSQL installation
+#
+#       The user environment should be already sourced; PostgreSQL binaries should
+#       be in the PATH; PGDATA must be set.
+
+success() { 
+    echo "$1 -------  SUCCESS" 
+}
+failure() { 
+    echo "$1 -------  FAIL" 
+}
+
+echo_success() { 
+    echo "SUCCESS" 
+}
+echo_failure() { 
+    echo "FAIL" 
+}
+
+[ -n "$PGDATA" ] || exit 1
+
+NAME=`basename $0`
+
+PGLOG=$PGSQL_LOCATION/var/log/pgstartup.log
+
+script_result=0
+
+start(){
+	PSQL_START="Starting ${NAME} service: "
+
+	echo -n "$PSQL_START"
+    pg_ctl -D $PGDATA -l $PGLOG start
+	sleep 3
+	if pg_ctl -D $PGDATA status
+	then
+		success "$PSQL_START"
+		echo
+	else
+		failure "$PSQL_START"
+		echo
+		script_result=1
+	fi
+}
+
+stop(){
+	echo -n $"Stopping ${NAME} service: "
+	if pg_ctl stop -D "$PGDATA" -s -m fast
+	then
+		echo_success
+	else
+		echo_failure
+		script_result=1
+	fi
+	echo
+}
+
+status() {
+	pg_ctl -D $PGDATA status
+	script_result=$?
+    echo
+}
+
+# See how we were called.
+case "$1" in
+  start)
+	start
+	;;
+  stop)
+	stop
+	;;
+  status)
+    status
+	;;
+  *)
+	echo $"Usage: $0 {start|stop|status}"
+	exit 1
+esac
+
+exit $script_result
