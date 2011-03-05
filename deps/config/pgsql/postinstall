@@ -45,6 +45,7 @@ chmod 600 $PGSQL_DATA/admins
 ## any other DB user (e.g. "galaxy") can connect only to the DB with the same
 ## name as user name ("galaxy"), again only with md5 password.
 
+cp -a $DEP_SRC_TOP/config/pgsql/skel/bin/* $PGSQL_LOCATION/bin/
 ## PostgreSQL is sensitive to permissions, so we use 'install' instead of
 ## copying the entire skeleton with 'cp -a'
 install --mode=600 $DEP_SRC_TOP/config/pgsql/skel/data/*.conf $PGSQL_DATA/

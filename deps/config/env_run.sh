@@ -112,6 +112,13 @@ export GALAXY_LOCATION=$INSTMACH/mgtaxa-galaxy
 # where instead of default ~/.gem
 export RUBYOPT="-rrubygems"
 
+# R stuff
+# Python rpy and rpy2 needs to load R shared lib at run-time
+if which R; then
+    RHOME=$(R RHOME)
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$RHOME/lib
+fi
+
 export AT_ENV_RUN_DONE=1
 
 fi # [ -z "$AT_ENV_RUN_DONE" ]

@@ -1,6 +1,9 @@
 #!/bin/bash
 ## This install Web interface components (those that are specific to DMZ host)
 set -ex #abort if any command fails and echo all commands
+
+[ -n "$DEP_SRC_TOP" ] || exit 1
+
 topdir=$(pwd)
 
 cd globus && ${topdir}/install_globus && cd ${topdir}
@@ -12,4 +15,14 @@ cd gridway && ${topdir}/install_gridway_py_drmaa && cd ${topdir}
 cd postgresql && ${topdir}/install_postgresql && cd ${topdir}
 
 cd qpid && ${topdir}/install_qpid_broker_java && cd ${topdir}
+
+## Dependencies for various Galaxy tools. If tools are to be run on the cluster
+## then these have to be installed on the backend as well
+easy_install --update --prefix=$INSTMACH rpy2
+
+## easy_install cannot find the rpy sources online, so
+## we had to download the source manually. The tar.gz file
+## is much older and gives an error when trying to parse the
+## R VERSION output
+easy_install --update --prefix=$INSTMACH rpy/rpy-1.0.3a.zip
 

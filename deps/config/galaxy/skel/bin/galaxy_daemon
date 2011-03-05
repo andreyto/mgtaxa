@@ -33,6 +33,7 @@ GALAXY_LOG_DIR=$GALAXY_LOCATION/var/log
 GALAXY_LOG=$GALAXY_LOG_DIR/galaxy_daemon.log
 
 RUN_SCRIPT=$GALAXY_LOCATION/run.sh
+RUN_ENV=$GALAXY_LOCATION/galaxy.rc
 
 script_result=0
 
@@ -40,9 +41,7 @@ start(){
 	MSG_START="Starting ${NAME} service: "
 
 	echo -n "$MSG_START"
-    ## The following should match new_files_path Galaxy 
-    ## config setting
-    export TEMP=$GALAXY_LOCATION/database/tmp
+    [ -e "$RUN_ENV" ] && . $RUN_ENV
     $RUN_SCRIPT --daemon --log-file $GALAXY_LOG
     ## sleep 3 was not enough for Galaxy to figure out
     ## that PostgreSQL server was not available and exit

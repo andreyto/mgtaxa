@@ -1,0 +1,11 @@
+#!/bin/bash
+## Custom environment variables specific to the Galaxy process
+
+## The following should match new_files_path Galaxy 
+## config setting
+export TEMP=$GALAXY_LOCATION/database/tmp
+
+## Select the DRMAA C implementation
+[ -n "GW_LOCATION" ] || exit 1
+export DRMAA_LIBRARY_PATH=$GW_LOCATION/lib/libdrmaa.so
+
