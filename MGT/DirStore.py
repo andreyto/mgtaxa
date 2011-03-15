@@ -10,7 +10,6 @@
 
 from MGT.Svm import *
 from MGT.App import *
-from MGT.ClassifierApp import *
 from MGT.ParamScanApp import *
 from MGT.SeqFeaturesApp import *
 import glob
@@ -146,8 +145,25 @@ class DirStore:
         for path in glob.iglob(self.getFilePath(pattern)):
             yield path
     
-    def fileNames(self,pattern="*",sfxStrip=None):
-        for path in glob.iglob(self.getFilePath(pattern)):
+    def fileNames(self,pattern="*",sfxStrip=None,iterPaths=None):
+        """Iterate over names that optionally filtered by the shell pattern.
+        @param pattern Shel-style pattern
+        @param sfxStrip Filename suffix to strip before returning the remaining
+        part (math is done before stripping)
+        @param iterPaths If defined, must be an iterable over file paths - it 
+        will be used instead of the content of this store. This option can be
+        used to build multi-level filters."""
+        if iterPaths is not None:
+            import fnmatch
+            def _iter_glob():
+                for item in iterPaths:
+                    if fnmatch.fnmatch(item,pattern):
+                        yield item
+        else:
+            def _iter_glob():
+                for item in glob.iglob(self.getFilePath(pattern)):
+                    yield item
+        for path in _iter_glob():
             f = os.path.basename(path)
             if sfxStrip is not None:
                 f = stripSfx(f,sfxStrip)
@@ -419,6 +435,7 @@ class TestStore(DirStore):
         DirStore.__init__(self,path,opt=opt)
 
     def run(self,**kw):
+        from MGT.ClassifierApp import ClassifierApp
         opt = self.opt
         opt.cwd = self.path # in case we moved it after __init__()
         opt.predFile = pjoin(opt.cwd,"pred.pkl")
@@ -453,6 +470,7 @@ class TrainStore(DirStore):
         DirStore.__init__(self,path,opt=opt)
 
     def run(self,**kw):
+        from MGT.ClassifierApp import ClassifierApp
         opt = self.opt
         opt.cwd = self.path # in case we moved it after __init__()
         jobs = []
@@ -478,6 +496,7 @@ class PredictStore(DirStore):
         DirStore.__init__(self,path,opt=opt)
 
     def run(self,**kw):
+        from MGT.ClassifierApp import ClassifierApp
         opt = self.opt
         opt.cwd = self.path # in case we moved it after __init__()
         opt.predFile = pjoin(opt.cwd,"pred.pkl")

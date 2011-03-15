@@ -113,7 +113,7 @@ class MGTOptions:
         self.hdfTestFile = 'test.hdf'
         self.predictorTable = "pred"
         self.batchRun = Options(
-                PROJECT_CODE = 600005,
+                PROJECT_CODE = "0413",
                 MEM = 2000,
                 ARCH = "lx*64",
                 maxQueued = 50,
@@ -127,10 +127,10 @@ class MGTOptions:
                 sketchConf=pjoin(self.confDir,"gt.sketch.default.style")
                 )
         self.glimmer3 = Options(
-                topDir="/usr/local/projects/GOSII/atovtchi/phymm/.scripts/.icmCode"
+                topDir=os.environ["INSTMACH"]
                 )
-        self.glimmer3.immBuildExe=pjoin(self.glimmer3.topDir,"bin","build-icm")
-        self.glimmer3.immScoreExe=pjoin(self.glimmer3.topDir,"bin","simple-score")
+        self.glimmer3.immBuildExe=pjoin(self.glimmer3.topDir,"bin","mgt-glm-build-icm")
+        self.glimmer3.immScoreExe=pjoin(self.glimmer3.topDir,"bin","mgt-glm-simple-score")
 
     def _setTaxaFileNames(self,topDir,sfx=""):
         setattr(self,'taxaDataDir'+sfx,topDir)

@@ -5,8 +5,15 @@
 ## This file is auto-generated and will be overwritten on each install.
 ## Variables marked below can be also defined in ~/.mgtaxa, that will NOT be overwritten.
 
+die() {
+    echo "MGTAXA Error: $@"
+    exit 1
+}
+
 if [ -z "$MGT_RC_DONE" ]; then
-    source ~/.environ #set up the dependencies - python, shogun, hdf5 etc
+    ## This allowes sourcing this file from ~/.environ and
+    ## vice versa
+    [ -n "$AT_HOME_ENVIRON_ENTERED" ] || source ~/.environ
     export MGT_RC=__MGT_RC__
     export MGT_HOME=__MGT_HOME__
     export MGT_BIN=__MGT_BIN__

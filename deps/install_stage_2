@@ -30,4 +30,5 @@ cd genometools/genometools && ${topdir}/install_genometools && cd ${topdir}
 easy_install --prefix=$INST --upgrade sqlalchemy
 easy_install --prefix=$INST --upgrade drmaa
 cd qpid && ${topdir}/install_qpid_client_py && cd ${topdir}
+cd glimmer && ${topdir}/install_glimmer && cd ${topdir}
 

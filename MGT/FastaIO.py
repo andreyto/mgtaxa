@@ -68,7 +68,22 @@ class FastaReader(object):
 
     def getSimpleId(self):
         """Assume that header starts with '>string_no_spaces ' and return that string."""
-        return self.hdr.split(None,1)[0][1:]
+        return self.header().strip().split('>')[1].split(None,1)[0]
+
+    def getId(self):
+        """Attempt to extract and return an ID substring from the header.
+        If the idExtractor method was set previously, use it.
+        Otherwise, use getSimpleId()."""
+        if hasattr(self,"idExtractor"):
+            return self.idExtractor(self.header())
+        else:
+            return self.getSimpleId()
+
+    def setIdExtractor(self,idExtractor):
+        """Assign a method to be used in future calls to getId().
+        @param idExtractor A method that takes a header string and return sequences ID from it
+        """
+        self.idExtractor = idExtractor
 
     def seqLines(self):
         infile = self.infile
