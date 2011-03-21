@@ -96,6 +96,8 @@ class ArchiveApp(App):
                 for entry in os.listdir(name):
                     tar.add(os.path.join(name,entry),arcname=entry)
         tar.close()
+        #TMP:
+        #strToFile("EXIT_STATUS=0","stdout.wrapper","a")
     
     def extract(self,**kw):
         opt = self.opt

@@ -20,6 +20,7 @@ _BatchJobTemplateTcsh = \
 #$$ -l memory=${MEM}M $LLENGTH -l arch="$ARCH"
 #$$ -cwd
 #$$ -r n
+${OTHER_QSUB_OPTS}
 ## Submit as 'qsub -b n -S /bin/tcsh script_name'. Apparently admins changed the default value of -b to 'y'
 ## and by default qstat now thinks of script_name as a binary file and does not parse it for
 ## embedded options (09/14/07).  Shell NEEDS to be correctly specified both at the top and (?) 
@@ -29,12 +30,13 @@ _BatchJobTemplateTcsh = \
 ## echo "Initial environment end"
 ## pstree
 source $$HOME/.cshrc
+
 ## printenv | sort
-hostname
-uname -a
-pwd
-date
-top -b -n 1 | head -n 15
+#hostname
+#uname -a
+#pwd
+#date
+#top -b -n 1 | head -n 15
 ####
 """
 
@@ -44,30 +46,42 @@ _BatchJobTemplateBash = \
 #$$ -l memory=${MEM}M $LLENGTH -l arch="$ARCH"
 #$$ -cwd
 #$$ -r n
+${OTHER_QSUB_OPTS}
 ## Submit as 'qsub -b n -S /bin/bash script_name'. Apparently admins changed the default value of -b to 'y'
 ## and by default qstat now thinks of script_name as a binary file and does not parse it for
 ## embedded options (09/14/07).  Shell NEEDS to be correctly specified both at the top and (?) 
 ## in qsub options for the user environment to be correctly sourced.
-echo "######### Initial environment begin"
-printenv | sort
-echo "######### Initial environment end"
-## pstree
-## Sourcing .bashrc is not enough - only .profile creates MACHTYPE, on which .environ depends
+
+batchHostDebug=${batchHostDebug}
+
+if [ -n "$$batchHostDebug" ]; then
+    echo "######### Initial environment begin"
+    printenv | sort
+    echo "######### Initial environment end"
+    ## pstree
+    ## Sourcing .bashrc is not enough - only .profile creates MACHTYPE, on which .environ depends
+fi
+
 source ~/.profile
 ${LENVRC}
-echo "########## Execution environment begin"
-printenv | sort
-echo "########## Execution environment end"
-hostname
-uname -a
-pwd
-date
-top -b -n 1 | head -n 15
-####
+
+if [ -n "$$batchHostDebug" ]; then
+    echo "########## Execution environment begin"
+    printenv | sort
+    echo "########## Execution environment end"
+    hostname
+    uname -a
+    pwd
+    date
+    top -b -n 1 | head -n 15
+    ####
+fi
 """
 _BatchJobTemplate = _BatchJobTemplateBash
 
 class BatchSubmitter(object):
+
+    qsubOptsDelim = r"#$ "
     
     @classmethod
     def defaultOptions(klass):
@@ -78,6 +92,10 @@ class BatchSubmitter(object):
         opts.setdefault('MEM',2000)
         opts.setdefault('ARCH',"lx*64")
         opts.setdefault('LENGTH',"medium")
+        opts.setdefault("stdout",None)
+        opts.setdefault("stderr",None)
+        opts.setdefault("OTHER_QSUB_OPTS","")
+        opts.setdefault("batchHostDebug","") #should be empty for all web jobs
         return opts
     
     def __init__(self,**kw):
@@ -95,7 +113,11 @@ class BatchSubmitter(object):
             envrc = ""
         else:
             envrc = "source %s" % (envrc,)
-        opts.LENVRC = envrc
+        opts.LENVRC = envrc        
+        if opts.stdout is not None:
+            opts.OTHER_QSUB_OPTS += "%s -o %s\n" % (self.qsubOptsDelim,opts.stdout)
+        if opts.stderr is not None:
+            opts.OTHER_QSUB_OPTS += "%s -e %s\n" % (self.qsubOptsDelim,opts.stderr)
         self.header = varsub(_BatchJobTemplate,**opts.asDict())
         
     def submit(self,cmd,scriptName=None,cwd=None,sleepTime=0,depend=[],dryRun=False):

@@ -36,6 +36,11 @@ def trainCustom(jobs):
     opt.taxaTreePkl = pjoin(os.getcwd(),"92830.tree.pkl")
     opt.immDbArchive = pjoin(os.getcwd(),"92830.immdb.tar")
     opt.trainMinLenSamp = 1
+    
+    opt.web = True
+    opt.needTerminator = True
+    opt.stdout = "stdout.log"
+    opt.stderr = "stderr.log"
 
     ImmClassifierApp.fillWithDefaultOptions(opt)
 
@@ -135,12 +140,12 @@ def procScoresRefAgainstRef(jobs):
 #jobs = scoreRefAgainstRef(jobs)
 #jobs = procScoresRefAgainstRef(jobs)
 
-#jobs = trainCustom(jobs)
+jobs = trainCustom(jobs)
 #print jobs
 #jobs = scoreRefAgainstCustom(jobs)
 #print jobs
 #jobs = procScoresRefAgainstCustom(jobs)
 #print jobs
-jobs = scoreCustomAgainstJoint(jobs)
-jobs = procScoresCustomAgainstJoint(jobs)
+#jobs = scoreCustomAgainstJoint(jobs)
+#jobs = procScoresCustomAgainstJoint(jobs)
 

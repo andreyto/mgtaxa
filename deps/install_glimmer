@@ -1,0 +1,17 @@
+#!/bin/sh
+set -ex
+
+NAME=glimmer3_plusSS
+SOURCE=$NAME.tar.gz
+BUILD=$NAME
+rm -rf $BUILD
+gunzip -c $SOURCE | tar -xf -
+cd $BUILD
+pushd SimpleMake
+
+make
+popd
+install bin/build-icm $INSTMACH/bin/mgt-glm-build-icm
+install bin/simple-score $INSTMACH/bin/mgt-glm-simple-score
+
+

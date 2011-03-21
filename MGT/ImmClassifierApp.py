@@ -138,7 +138,9 @@ class ImmClassifierApp(App):
             make_option(None, "--train-min-len-samp",
             action="store", 
             type="int",
-            default=100000,
+            #TMP:
+            default=1,
+            #default=100000,
             dest="trainMinLenSamp",
             help="Min length of scaffolds to consider for training custom IMMs"),
             
@@ -181,6 +183,7 @@ class ImmClassifierApp(App):
         opt.setIfUndef("cwd",os.getcwd())
         if ( not opt.immDbArchive and not opt.immDb ):
             opt.immDb = [ pjoin(opt.cwd,"imm") ]
+        opt.setIfUndef("seqDb",pjoin(opt.cwd,"seqDb"))
         opt.setIfUndef("immIds",opt.immIdToSeqIds)
         opt.setIfUndef("outScoreComb",pjoin(opt.outDir,"combined"+ImmApp.scoreSfx))
         opt.setIfUndef("predOutTaxa",pjoin(opt.predOutDir,"pred-taxa"))
@@ -231,20 +234,22 @@ class ImmClassifierApp(App):
         is an extra requirement on the LRM config that it has to
         allow job submission from compute nodes."""
         opt = self.opt
+        ret = None
         if opt.mode == "train":
-            return self.train(**kw)
+            ret = self.train(**kw)
         elif opt.mode == "score":
-            return self.score(**kw)
+            ret = self.score(**kw)
         elif opt.mode == "predict":
-            return self.predict(**kw)
+            ret = self.predict(**kw)
         elif opt.mode == "proc-scores":
-            return self.processImmScores(**kw)
+            ret = self.processImmScores(**kw)
         elif opt.mode == "setup-train":
             return self.setupTraining(**kw)
         elif opt.mode == "combine-scores":
-            return self.combineScores(**kw)
+            ret = self.combineScores(**kw)
         else:
             raise ValueError("Unknown opt.mode value: %s" % (opt.mode,))
+        return ret
 
     def getTaxaTree(self):
         if self.taxaTree is None:
@@ -262,6 +267,7 @@ class ImmClassifierApp(App):
         if self.seqDb is None:
             self.seqDb = SeqDbFasta.open(opt.seqDb,mode="r") #"r"
             return self.seqDb
+
 
     ## Methods that assign training sequences to higher-level nodes
 

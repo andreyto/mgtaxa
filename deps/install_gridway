@@ -27,4 +27,6 @@ make install
 
 ## Install init.d-like unprivileged script
 cp -a $DEP_SRC_TOP/config/gridway/skel/bin/* $GW_LOCATION/bin/
+## Install config modifications
+cp -a $DEP_SRC_TOP/config/gridway/skel/etc/* $GW_LOCATION/etc/
 

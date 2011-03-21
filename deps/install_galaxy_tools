@@ -1,0 +1,26 @@
+#!/bin/bash
+## This installs external packages needed by some Galaxy tools
+## If tools are to be run on the cluster
+## then these have to be installed on the backend as well
+
+set -ex #abort if any command fails and echo all commands
+
+[ -n "$DEP_SRC_TOP" ] || exit 1
+
+topdir=$(pwd)
+
+## It looks like Galaxy tools only use older rpy for
+## some reason, but we install the newer rpy2 anyway
+easy_install --update --prefix=$INSTMACH rpy2
+
+## easy_install cannot find the rpy sources online, so
+## we had to download the source manually. The 1.0.3.tar.gz file
+## is much older and gives an error when trying to parse the
+## R VERSION output, so we use their updated 1.0.3a.zip
+easy_install --update --prefix=$INSTMACH $DEP_SRC_TOP/rpy/rpy-1.0.3a.zip
+
+## FASTAX Toolkit
+## Their binary archive from (http://hannonlab.cshl.edu/fastx_toolkit/download.html)
+## expands as ./bin/..., and file names are sufficiently unique, so we unarchive all at $INSTMACH/
+bunzip2 -c $DEP_SRC_TOP/galaxy-tools/fastx_toolkit_0.0.13_binaries_Linux_2.6_amd64.tar.bz2 | tar -C $INSTMACH -xf -
+
