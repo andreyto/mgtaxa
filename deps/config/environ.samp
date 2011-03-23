@@ -65,7 +65,11 @@ export WORK=$HOME/work
 export DEP_SRC_TOP=$WORK/distros
 
 # project area shared scratch space
-export SCRATCH=/usr/local/projects/MGTAXA/scratch/$USER
+if [ -z "$MGT_JCVI_DMZ" ]; then
+    export SCRATCH=/usr/local/projects/MGTAXA/scratch/$USER
+else
+    export SCRATCH=/opt/software/mgtaxa/scratch/$USER
+fi
 
 # This should be sourced at all times
 source ~/.env_run.sh

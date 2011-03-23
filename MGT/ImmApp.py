@@ -49,7 +49,6 @@ class ImmApp(App):
     @classmethod
     def parseCmdLinePost(klass,options,args,parser):
         opt = options
-        print "DEBUG: ", opt
         opt.setIfUndef("incrementalWork",False)
         opt.setIfUndef("immDb","imm")
         opt.setIfUndef("nImmBatches",10)

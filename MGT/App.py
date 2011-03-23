@@ -245,6 +245,16 @@ class App:
             default=False,
             dest="web",
             help="Is this executed from the Web API"),
+            
+            make_option(None, "--extra-py-args",
+            action="store",
+            type="string",
+            dest="extraPyArgs",
+            help="Extra arguments to the python executable that will run "+\
+                    "this application script. Default will be taken from "+\
+                    "the global App options. If both are undefined and "+\
+                    "--web is set, the value that tells python to ignore "+\
+                    "all warnings will be used."),
         ]
         parseArgs = klass.makeOptionParserArgs()
         parseArgs.option_list.extend(option_list)
@@ -326,14 +336,18 @@ class App:
         "python -c '...'" form is used if we can get the module name of self,
         and "python sys.argv[0]" otherwise."""
         import inspect
+        opt = self.opt
         modname = inspect.getmodule(self).__name__
+        extraPyArgs = opt.getIfUndef("extraPyArgs",options.getIfUndef("extraPyArgs","")).strip()
+        if not extraPyArgs and opt.web:
+            extraPyArgs = "-W ignore"
         if modname == "__main__":
             #executed as script, module name is not available but we can execute the same way again
-            return sys.executable + " " + sys.argv[0]
+            return sys.executable + " " + extraPyArgs + " " + sys.argv[0]
         else:
             #modname must have a full import path and we can use python -c '...'
             klassname = self.__class__.__name__
-            return sys.executable + " -c 'import %s; %s.%s(args=None).run()'" % (modname,modname,klassname)
+            return sys.executable + " " + extraPyArgs + " -c 'import %s; %s.%s(args=None).run()'" % (modname,modname,klassname)
 
     def getCmdOptFile(self,cwd=os.getcwd(),**kw):
         """Generate unique file name for a new options pickle file and build full command line with it.

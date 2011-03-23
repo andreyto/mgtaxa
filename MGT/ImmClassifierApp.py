@@ -34,7 +34,19 @@ class ImmClassifierApp(App):
     def makeOptionParserArgs(klass):
         from optparse import make_option
         
-        optChoicesMode = ("score","predict","train","setup-train")
+        optChoicesMode = ("score","predict","train","setup-train","proc-scores")
+        
+        def optParseCallback_StoreAbsPath(option, opt_str, value, parser):
+            setattr(parser.values, option.dest, os.path.abspath(value))
+
+        def optParseMakeOption_Path(shortName,longName,dest,help=None,default=None):
+            return make_option(shortName,longName,
+            action="callback", 
+            callback=optParseCallback_StoreAbsPath,
+            type="string",
+            dest=dest,
+            default=default,
+            help=help)
         
         option_list = [
             
@@ -46,9 +58,7 @@ class ImmClassifierApp(App):
             default="predict",
             help=("What to do, choice of %s, default is %%default" % (optChoicesMode,))),
             
-            make_option(None, "--db-seq",
-            action="store", 
-            type="string",
+            optParseMakeOption_Path(None, "--db-seq",
             dest="seqDb",
             help="SeqDbFasta path, used either to create custom SeqDb from scaffolds "+\
                 "or to use an existing SeqDb for training the IMMs"),
@@ -71,29 +81,21 @@ class ImmClassifierApp(App):
                     "The list of collections defined with this option will be concatenated "+\
                     "with the list defined with --db-imm option."),
             
-            make_option(None, "--imm-seq-ids",
-            action="store", 
-            type="string",
+            optParseMakeOption_Path(None, "--imm-seq-ids",
             default="imm-seq-ids",
             dest="immIdToSeqIds",
             help="File that maps IMM IDs to lists of seq IDs during IMM training"),
             
-            make_option(None, "--imm-ids",
-            action="store", 
-            type="string",
+            optParseMakeOption_Path(None, "--imm-ids",
             dest="immIds",
             help="File with list of IMM IDs to use in scoring and prediction. Default is all"+\
                     " IMMs from --imm-seq-ids"),
             
-            make_option(None, "--inp-seq",
-            action="store", 
-            type="string",
+            optParseMakeOption_Path(None, "--inp-seq",
             dest="inpSeq",
             help="File with input FASTA sequence for prediction"),
 
-            make_option(None, "--inp-train-seq",
-            action="store", 
-            type="string",
+            optParseMakeOption_Path(None, "--inp-train-seq",
             dest="inpTrainSeq",
             help="File with input FASTA sequences for training the models"),
             
@@ -105,23 +107,17 @@ class ImmClassifierApp(App):
             help="Maximum number of training SeqDB IDs to propagate up from "+\
                     "every child of a given node"),
             
-            make_option(None, "--out-dir",
-            action="store", 
-            type="string",
+            optParseMakeOption_Path(None, "--out-dir",
             default="results",
             dest="outDir",
             help="Directory name for output score files"),
             
-            make_option(None, "--out-score-comb",
-            action="store", 
-            type="string",
+            optParseMakeOption_Path(None, "--out-score-comb",
             dest="outScoreComb",
             help="Output file for combined raw scores. Default "+\
                     "is 'combined'+ImmApp.scoreSfx inside --out-dir"),
         
-            make_option(None, "--taxa-tree-pkl",
-            action="store", 
-            type="string",
+            optParseMakeOption_Path(None, "--taxa-tree-pkl",
             dest="taxaTreePkl",
             help="Custom taxonomy tree saved in pickle format. If not set, standard NCBI tree is used, "+\
                     "except when training custom IMMs when this has to be always defined."),
@@ -151,19 +147,20 @@ class ImmClassifierApp(App):
             dest="newTaxNameTop",
             help="Root name for custom reference sequences"),
             
-            make_option(None, "--pred-out-dir",
-            action="store", 
-            type="string",
+            optParseMakeOption_Path(None, "--pred-out-dir",
             default="results",
             dest="predOutDir",
             help="Output directory for classification results"),
             
-            make_option(None, "--pred-out-taxa",
-            action="store", 
-            type="string",
+            optParseMakeOption_Path(None, "--pred-out-taxa",
             dest="predOutTaxa",
             help="Output file with predicted taxa; default is pred-taxa inside "+\
                     "--pred-out-dir"),
+            
+            optParseMakeOption_Path(None, "--pred-out-taxa-csv",
+            dest="predOutTaxaCsv",
+            help="Output CSV file with predicted taxa; default is --pred-out-taxa "+\
+                    "+ '.csv'"),
             
             make_option(None, "--rej-ranks-higher",
             action="store", 
@@ -449,10 +446,11 @@ class ImmClassifierApp(App):
         immDb = [ (d,None) for d in opt.immDb ]
         immDbArch = self._archiveNamesToDirNames(opt.immDbArchive,opt.immDbWorkDir,"imm")
         immDb += immDbArch
+        jobsD = kw.get("depend",list())
         jobs = []
         outSubScores = []
         for immD in immDb:
-            jobsI = kw.get("depend",list())
+            jobsI = copy(jobsD)
             if immD[1] is not None:
                 optI = copy(opt)
                 optI.mode = "extract"
@@ -462,30 +460,33 @@ class ImmClassifierApp(App):
                 app = ArchiveApp(opt=optI)
                 #optI.path is not actually used below
                 immIds = ImmStore(immD[0]).listImmIds(iterPaths=(item.name for item in app.iterMembers()))
-                jobsI = app.run(**kw)
+                kwI = kw.copy()
+                jobsI = app.run(**kwI)
             else:
                 immIds = ImmStore(immD[0]).listImmIds()
             assert len(immIds) > 0,"No IMMs found in IMM DB - probably training did not run yet"
-            kw = kw.copy()
-            kw["depend"] = jobsI
+            
+            kwI = kw.copy()
+            kwI["depend"] = jobsI
         
             optI = copy(opt)
             optI.mode = "score"
             optI.immDb = immD[0]
-            #TODO: have a separate set of the options below for each immDb,
-            #until then, we have to zap them and cause ImmApp to use all
-            #available imms in each collection.
-            optI.immIdToSeqIds = None
-            optI.immIds = pjoin(os.path.dirname(optI.immDb),"imm-ids.pkl")
-            dumpObj(immIds,optI.immIds)
             #Until we change ImmApp, we have to run each in a separate dir
             #because it uses a fixed file name for immIds file that it generates.
             optI.cwd = self._immDbNameToScoreDirName(optI.immDb,opt.scoreWorkDir)
             optI.outDir = optI.cwd
+            #TODO: have a separate set of the options below for each immDb,
+            #until then, we have to zap them and cause ImmApp to use all
+            #available imms in each collection.
+            optI.immIdToSeqIds = None
+            optI.immIds = pjoin(optI.outDir,"imm-ids.pkl")
+            dumpObj(immIds,optI.immIds)
             optI.outScoreComb = pjoin(optI.outDir,"combined"+ImmApp.scoreSfx)
+            optI.nImmBatches = 50
             outSubScores.append(optI.outScoreComb)
             app = ImmApp(opt=optI)
-            jobsI = app.run(**kw)
+            jobsI = app.run(**kwI)
             jobs += jobsI
         
         optI = copy(opt)
@@ -493,9 +494,9 @@ class ImmClassifierApp(App):
         optI.outSubScores = outSubScores
         
         app = self.factory(opt=optI)
-        kw = kw.copy()
-        kw["depend"] = jobs
-        jobs = app.run(**kw)
+        kwI = kw.copy()
+        kwI["depend"] = jobs
+        jobs = app.run(**kwI)
         
         return jobs
 

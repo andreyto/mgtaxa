@@ -101,7 +101,9 @@ class Imm:
             closeOut = False
         if out is PIPE and inp is PIPE:
             raise ValueError("Both inp and out parameters cannot be None at the same time - set one to a real file/stream")
-        p = Popen(cmd, stdin=inp, stdout=out, close_fds=True)
+        stderr = open(os.devnull,"w") #incompat with close_fds on Windows
+        p = Popen(cmd, stdin=inp, stdout=out, stderr=stderr,close_fds=True)
+        stderr.close()
         self.p = p
         self.cmd = cmd
         if closeInp:

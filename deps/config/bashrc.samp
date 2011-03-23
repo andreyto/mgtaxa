@@ -1,9 +1,20 @@
 if [ -z "$AT_BASHRC_DONE" ]; then
 
+_SHORT_HOST=$(hostname -s)
+if [[ "$_SHORT_HOST" == "mgtaxa" ]]; then
+    export MGT_JCVI_DMZ=1
+fi
+
 #------------------------------------------------------------------------------
 # TIGR wide global environment settings - please do NOT edit 
 f=/usr/local/global.files/global.bashrc
-if [ -r "$f" ]; then . $f; else echo "Missing $f - contact your sysadmin."; fi 
+if [ -r "$f" ]; then 
+    . $f
+else
+    if [ -z "$MGT_JCVI_DMZ" ]; then
+        echo "Missing $f - contact your sysadmin."
+    fi
+fi 
 #------------------------------------------------------------------------------
 #
 # Put your additions/changes below

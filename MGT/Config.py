@@ -13,8 +13,9 @@ pjoin = os.path.join
 pabs = os.path.abspath
 
 
-class MGTOptions:
-    def __init__(self):
+class MGTOptions(Options):
+    def __init__(self,*l,**kw):
+        Options.__init__(self,*l,**kw)
         self.debug = 1
         # Use modified 'fastacmd' binary that replaces nucleotide
         # content with repeated 'x<gi>' string. This should be set
@@ -116,11 +117,14 @@ class MGTOptions:
                 PROJECT_CODE = "0413",
                 MEM = 2000,
                 ARCH = "lx*64",
-                maxQueued = 50,
+                maxQueued = 1500,
                 LENGTH = "medium", #fast
                 ENVRC = self.envRc)
         self.app = Options(
-                runMode = "default"#override App.opt.runMode value if not "default" here. Other choices are "inproc"
+                #override App.opt.runMode value if not "default" here. Other choices are "inproc"
+                runMode = "default",
+                #extra default arguments to python that executes the App script
+                extraPyArgs = None 
                 )
         self.genomeTools = Options(
                 exe=pjoin(os.environ["INSTMACH"],"app/gt/gt"),
