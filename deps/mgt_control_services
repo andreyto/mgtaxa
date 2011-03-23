@@ -1,0 +1,86 @@
+#!/bin/bash
+
+#
+# Start/stop/restart MGTAXA services
+#
+
+start() {
+    echo "Starting MGTAXA services on $DEPLOY_ROLES"
+	if [[ "$DEPLOY_ROLES" == "frontend" ]]; then
+        qpid_daemon start
+        gwd_daemon start
+        pgsql_daemon start
+        $GALAXY_LOCATION/galaxy_daemon start
+	fi
+	if [[ "$DEPLOY_ROLES" == "backend" ]]; then
+        gpm_daemon start
+	fi
+}
+
+stop() {
+    echo "Stopping MGTAXA services on $DEPLOY_ROLES"
+	if [[ "$DEPLOY_ROLES" == "frontend" ]]; then
+        $GALAXY_LOCATION/galaxy_daemon stop
+        pgsql_daemon stop
+        gwd_daemon stop
+        qpid_daemon stop
+	fi
+	if [[ "$DEPLOY_ROLES" == "backend" ]]; then
+        gpm_daemon stop
+	fi
+}
+
+status() {
+    echo "Status of MGTAXA services on $DEPLOY_ROLES"
+	if [[ "$DEPLOY_ROLES" == "frontend" ]]; then
+        echo -n "Galaxy: "; $GALAXY_LOCATION/galaxy_daemon status
+        echo -n "PGSQL: "; pgsql_daemon status
+        echo -n "GWD: "; gwd_daemon status
+        echo -n "QPID: "; qpid_daemon status
+	fi
+	if [[ "$DEPLOY_ROLES" == "backend" ]]; then
+        echo -n "GPM: "; gpm_daemon status
+	fi
+}
+
+SCRIPT_NAME=$(basename $0)
+
+print_usage() {
+    echo "Usage: $SCRIPT_NAME {frontend|backend} {start|stop|restart|status}"
+}
+
+# See how we were called.
+
+DEPLOY_ROLES=$1
+
+case "$DEPLOY_ROLES" in
+  frontend)
+        ;;
+  backend)
+        ;;
+  *)
+        print_usage
+        exit 1
+esac
+
+case "$2" in
+  start)
+        start
+        ;;
+  stop)
+        stop
+        ;;
+  status)
+        status
+        ;;
+  restart)
+        stop
+        sleep 4
+        start
+        ;;
+  *)
+        print_usage
+        exit 1
+esac
+
+exit 0

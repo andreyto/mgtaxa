@@ -10,9 +10,9 @@ if [ -z "$DEPLOY_ROLES" ]; then
     exit 1
 fi
 
-$MGT_SRC=~/work/mgtaxa
+MGT_SRC=~/work/mgtaxa
 
-$GPM_SRC=~/work/gridway-proxy-mad/src
+GPM_SRC=~/work/gridway-proxy-mad/src
 
 pushd $MGT_SRC
 rm -rf build
