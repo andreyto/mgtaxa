@@ -14,6 +14,8 @@ MGT_SRC=~/work/mgtaxa
 
 GPM_SRC=~/work/gridway-proxy-mad/src
 
+source $MGT_SRC/deps/config/functions.sh
+
 pushd $MGT_SRC
 rm -rf build
 mkdir build
@@ -23,6 +25,8 @@ make -f ../Makefile install
 popd
 
 pushd $GPM_SRC
+
+rm -rf build
 
 GPM_EXTRA_CONF_FILE=auto_deploy_loc.conf.tmp
 
@@ -56,5 +60,10 @@ GPM_EXTRA_CONF_FILE=$GPM_EXTRA_CONF_FILE python setup.py build install --prefix=
 
 popd
 
-/etc/init.d/mgtaxa restart
+if [[ "$DEPLOY_ROLES" == "frontend" ]]; then
+    # Apache user will need to serve static content from Galaxy directory
+    make_readable $GALAXY_LOCATION/static
+fi
+
+$MGT_SRC/deps/mgt_control_services $DEPLOY_ROLES restart
 

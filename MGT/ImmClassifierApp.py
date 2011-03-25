@@ -107,6 +107,14 @@ class ImmClassifierApp(App):
             help="Maximum number of training SeqDB IDs to propagate up from "+\
                     "every child of a given node"),
             
+            make_option(None, "--n-imm-batches",
+            action="store", 
+            type="int",
+            default=200,
+            dest="nImmBatches",
+            help="Try to split processing into that many batches for each ICM set "+\
+                    "(leading to separate jobs in batch run-mode)"),
+            
             optParseMakeOption_Path(None, "--out-dir",
             default="results",
             dest="outDir",
@@ -125,18 +133,16 @@ class ImmClassifierApp(App):
             make_option(None, "--pred-min-len-samp",
             action="store", 
             type="int",
-            default=400,
+            default=300,
             dest="predMinLenSamp",
-            help="Min length of samples to consider for prediction. 400 is recommended "+\
+            help="Min length of samples to consider for prediction. 300 is recommended "+\
                     "for bacterial classification; 5000 is recommended for predicting "+\
                     "hosts for viral scaffolds."),
             
             make_option(None, "--train-min-len-samp",
             action="store", 
             type="int",
-            #TMP:
-            default=1,
-            #default=100000,
+            default=100000,
             dest="trainMinLenSamp",
             help="Min length of scaffolds to consider for training custom IMMs"),
             
@@ -483,7 +489,6 @@ class ImmClassifierApp(App):
             optI.immIds = pjoin(optI.outDir,"imm-ids.pkl")
             dumpObj(immIds,optI.immIds)
             optI.outScoreComb = pjoin(optI.outDir,"combined"+ImmApp.scoreSfx)
-            optI.nImmBatches = 50
             outSubScores.append(optI.outScoreComb)
             app = ImmApp(opt=optI)
             jobsI = app.run(**kwI)
