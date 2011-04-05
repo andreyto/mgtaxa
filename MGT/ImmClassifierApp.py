@@ -133,11 +133,10 @@ class ImmClassifierApp(App):
             make_option(None, "--pred-min-len-samp",
             action="store", 
             type="int",
-            default=300,
             dest="predMinLenSamp",
-            help="Min length of samples to consider for prediction. 300 is recommended "+\
-                    "for bacterial classification; 5000 is recommended for predicting "+\
-                    "hosts for viral scaffolds."),
+            help="Min length of samples to consider for prediction. 300 is default "+\
+                    "for bacterial classification; 5000 is default for predicting "+\
+                    "hosts for viral contigs."),
             
             make_option(None, "--train-min-len-samp",
             action="store", 
@@ -171,11 +170,24 @@ class ImmClassifierApp(App):
             make_option(None, "--rej-ranks-higher",
             action="store", 
             type="string",
-            default="superkingdom",
             dest="rejectRanksHigher",
             help="If a sample was assigned a clade above this rank or below , it will be marked as "+\
                     "'rejected' instead. The default value of 'superkingdom' effectively disables "+\
                     "this filer. Set to 'order' if performing phage-host assignment."),
+            
+            make_option(None, "--pred-mode",
+            action="store",
+            type="choice",
+            choices=("host","taxa"),
+            default="taxa",
+            dest="predMode",
+            help="Set the prediction mode: 'host' will work in a mode that assigns "+\
+                    "host taxonomy to (presumed) bacteriophage "+\
+                    "sequence. Setting this will overwrite the value of some other "+\
+                    "options (currently it will set --rej-ranks-higher=order and "+\
+                    "--pred-min-len-samp=5000 if they were not defined. "+\
+                    "'bac' [default] will try to assign bacterial taxonomy to the "+\
+                    "input sequences."),
         ]
         return Struct(usage = klass.__doc__+"\n"+\
                 "%prog [options]",option_list=option_list)
@@ -197,6 +209,15 @@ class ImmClassifierApp(App):
         opt.setIfUndef("newTaxidTop",mgtTaxidFirst)
         opt.setIfUndef("immDbWorkDir",pjoin(opt.cwd,"immDbWorkDir"))
         opt.setIfUndef("scoreWorkDir",pjoin(opt.cwd,"scoreWorkDir"))
+        if opt.predMode == "host": 
+            opt.setIfUndef("rejectRanksHigher","order")
+            opt.setIfUndef("predMinLenSamp",5000)
+        elif opt.predMode == "taxa":
+            opt.setIfUndef("rejectRanksHigher","superkingdom")
+            opt.setIfUndef("predMinLenSamp",300)
+        else:
+            raise ValueError("Unknown --pred-mode value: %s" % (opt.predMode,))
+
     
     def instanceOptionsPost(self,opt):
         """Set (in place) instance-specific options.
@@ -333,6 +354,7 @@ class ImmClassifierApp(App):
                 rank=unclassRank,divid=dividEnv,names=list())
         nextNewTaxid = newTaxaTop.id + 1
         fastaReader = FastaReader(opt.inpTrainSeq)
+        nNodesOut = 0
         for rec in fastaReader.records():
             hdr = rec.header()
             seqid = rec.getId() # scf768709870
@@ -349,7 +371,11 @@ class ImmClassifierApp(App):
                 fastaWriter.record(header=hdr,sequence=seq)
                 fastaWriter.close()
                 nextNewTaxid += 1
-        print "DEBUG: written %s sequence files in SeqDbFasta" % (nextNewTaxid - newTaxaTop.id -1,)
+                nNodesOut += 1
+        print "DEBUG: written %s sequence files in SeqDbFasta" % (nNodesOut,)
+        if nNodesOut <= 0:
+            raise ValueError(("No training nodes conform to the minimum sequence length "+\
+                    "requirement of %s (after compressing degenerate runs)") % (opt.trainMinLenSamp,))
         fastaReader.close()
         self.taxaTree = None
         taxaTree = loadTaxaTree() # pristine NCBI tree
