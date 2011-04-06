@@ -8,7 +8,7 @@
 
 """I/O of FASTA formatted sequence files"""
 
-__all__ = [ "FastaReader", "fastaReaderGzip", "FastaWriter", "fastaLengths" ]
+__all__ = [ "FastaReader", "fastaReaderGzip", "FastaWriter", "splitFasta", "fastaLengths" ]
 
 from MGT.Common import *
 from MGT.Util import openGzip, openCompressed
@@ -163,12 +163,18 @@ class FastaWriter:
         self.out.close()
 
     def record(self,header,sequence):
+        self.header(header)
+        self.sequence(sequence)
+
+    def header(self,header):
         out = self.out
         if not header.startswith(">"):
             out.write(">")
         out.write(header)
         if not header.endswith("\n"):
             out.write("\n")
+
+    def sequence(self,sequence):
         if isinstance(sequence,str):
             s = sequence
         else:
@@ -177,6 +183,36 @@ class FastaWriter:
         for x in range(0,len(s),lineLen):
             out.write(s[x:x+lineLen])
             out.write("\n")
+
+def splitFasta(inpFasta,outBase,maxChunkSize,sfxSep='_',lineLen=80):
+    inpSeq = FastaReader(inpFasta)
+    iChunk = 0
+    chunkSize = 0
+    def _open_new_out(iChunk):
+        return openCompressed(outBase+'%s%04d'%(sfxSep,iChunk,),"w")
+    out = _open_new_out(iChunk)
+    print "Writing chunk %i of target size %i" % (iChunk,maxChunkSize)
+    for rec in inpSeq.records():
+        hdr = rec.header()
+        out.write(hdr)
+        lenSeq = 0
+        #size rec.seqChunks() argument should be multiple of lineLen
+        for chunk in rec.seqChunks(lineLen*1024):
+            for x in range(0,len(chunk),lineLen):
+                out.write(chunk[x:x+lineLen])
+                out.write("\n")
+            lenSeq += len(chunk)
+            chunkSize += len(chunk)
+        # we approximate the next seq length by the last one
+        if chunkSize + lenSeq >= maxChunkSize:
+            out.close()
+            iChunk += 1
+            chunkSize = 0
+            out = _open_new_out(iChunk)
+            print "Writing chunk %i of target size %i" % (iChunk,maxChunkSize)
+    out.close()
+    inpSeq.close()
+    return iChunk
 
 def fastaWriteOnce(records,out,lineLen=None,mode="w"):
     """Open out file, write several records at once as FASTA, and close the file.

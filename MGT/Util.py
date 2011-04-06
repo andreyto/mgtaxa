@@ -472,27 +472,6 @@ def readFastaRecords(infile,readSeq=True):
             seq = seqLen
         yield FastaRecord(title, seq)
 
-def splitFastaFile(inpFile,outBase,maxChunkSize,sfxSep='_'):
-    inpFile = openCompressed(inpFile,'r')
-    inp = readFastaRecords(inpFile)
-    out = None
-    iChunk = 0
-    chunkSize = 0
-    for rec in inp:
-        recSize = len(rec.sequence)
-        if out is None or chunkSize + recSize > maxChunkSize:
-            if out is not None:
-                out.close()
-            out = outBase+'%s%04d'%(sfxSep,iChunk,)
-            out = open(out,'w')
-            iChunk += 1
-            chunkSize = 0
-        out.write('%s\n'%(rec,))
-        chunkSize += recSize
-    out.close()
-    inpFile.close()
-    return iChunk
-
 
 
 class HistogramRdnGenerator:
