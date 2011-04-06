@@ -111,6 +111,11 @@ class Struct(object):
             self[key] = val
         return self[key]
 
+    def getIfUndef(self,key,val):
+        """Get key's value if the key exists and value is not None, otherwise get default value"""
+        if self.isUndef(key):
+            return val
+        return self[key]
 
     def asDict(self):
         return self.__dict__
@@ -213,5 +218,5 @@ class Options(Struct):
         if getattr(self,"_is_frozen",False):
             raise AttributeError(name)
         else:
-            Struct.__delattr__(self,name,value)
+            Struct.__delattr__(self,name)
 

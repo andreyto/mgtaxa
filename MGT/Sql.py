@@ -10,7 +10,7 @@ from MGT.Common import *
 import time, csv
 
 def dbClose(dbObj):
-    print "Running 'atexit()' handler"
+    #print "Running 'atexit()' handler"
     dbObj.close()
 
 class SqlResultAssertionError(StandardError):
@@ -124,7 +124,7 @@ class DbSql(MGTOptions):
     def __init__(self):
         MGTOptions.__init__(self)
         atexit.register(dbClose, dbObj=self)
-        self.debug = 1
+        self.debug = 0
 
         # This will be lazy constructed because the needed DBAPI module is
         # only available after descendant class __init__ is called

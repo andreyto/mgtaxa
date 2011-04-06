@@ -23,8 +23,9 @@ class ImmStore(SampStore):
     def getImmPath(self,immId):
         return self.getFilePath("%s%s" % (immId,self.immSfx))
 
-    def listImmIds(self):
-        return list(self.fileNames(pattern="*"+self.immSfx,sfxStrip=self.immSfx))
+    def listImmIds(self,iterPaths=None):
+        """List IMM IDs either from this store or from the externally provided iterable"""
+        return list(self.fileNames(pattern="*"+self.immSfx,sfxStrip=self.immSfx,iterPaths=iterPaths))
 
 def makeDefaultImmSeqIds(seqDb):
     """Return a default dict(immId -> [ seqDb-Id, ... ]) to use as opt.immIdToSeqIds in ImmApp.
@@ -48,7 +49,6 @@ class ImmApp(App):
     @classmethod
     def parseCmdLinePost(klass,options,args,parser):
         opt = options
-        print "DEBUG: ", opt
         opt.setIfUndef("incrementalWork",False)
         opt.setIfUndef("immDb","imm")
         opt.setIfUndef("nImmBatches",10)
@@ -143,6 +143,7 @@ class ImmApp(App):
                 immOpt.immSeqIds = immSeqIds
                 immApp = ImmApp(opt=immOpt)
                 jobs += immApp.run(**kw)
+        #TODO: add combiner job that validates that all models have been built
         return jobs
 
     def scoreBatch(self,**kw):

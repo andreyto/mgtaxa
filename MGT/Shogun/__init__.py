@@ -15,7 +15,10 @@ import pdb
 
 #from shogun.Kernel import * #GaussianKernel, WeightedDegreeStringKernel, WeightedCommWordStringKernel
 from shogun.Features import Labels, SparseRealFeatures
-from shogun.Classifier import PlattProb
+try:
+    from shogun.Classifier import PlattProb
+except ImportError:
+    pass
 #from shogun.PreProc import SortWordString, SortUlongString
 
 def makeRandomSplits(nSamp,nSplits):

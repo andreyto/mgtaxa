@@ -107,6 +107,12 @@ def rmfMany(paths,dryRun=False):
         except OSError:
             pass
 
+def remakedir(path,dryRun=False):
+    """Create an empty dir with a given path.
+    If path already exists, it will be removed first."""
+    rmrf(path,dryRun=dryRun)
+    makedir(path,dryRun=dryRun)
+
 def chmod(path,mode,opts='',dryRun=False):
     if isinstance(path,basestring):
         path = [path]

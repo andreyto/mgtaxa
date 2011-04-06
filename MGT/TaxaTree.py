@@ -472,7 +472,7 @@ class TaxaNode(object):
         @note A node is not considered a subnode of itself - see isUnder() for this."""
         return self.lnest > other.lnest and self.rnest < other.rnest
 
-    def isUnder(self,other,withSelf=False):
+    def isUnder(self,other):
         """Return true if this node is a descendant of the other node or the other node itself.
         Uses pre-computed nested sets indexes, which must be up-to-date."""
         return self.lnest >= other.lnest and self.rnest <= other.rnest

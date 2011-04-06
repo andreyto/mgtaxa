@@ -98,7 +98,7 @@ export QPID_VER=0.8
 export QPID_HOME=$INSTMACH/qpid-$QPID_VER
 export QPID_WORK=$QPID_HOME/var
 export PATH=$QPID_HOME/bin:$PATH
-export QPID_JAVA_HOME=/usr/local/java/1.6.0
+export QPID_JAVA_HOME=/usr/local/packages/java/1.6.0
 
 # Galaxy
 export GALAXY_LOCATION=$INSTMACH/mgtaxa-galaxy
@@ -111,6 +111,13 @@ export GALAXY_LOCATION=$INSTMACH/mgtaxa-galaxy
 # @todo We probably need to add GEM_HOME=$INSTMACH/ruby/gem so that --user-install puts gems
 # where instead of default ~/.gem
 export RUBYOPT="-rrubygems"
+
+# R stuff
+# Python rpy and rpy2 needs to load R shared lib at run-time
+if [ -n "$(which R)" ]; then
+    RHOME=$(R RHOME)
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$RHOME/lib
+fi
 
 export AT_ENV_RUN_DONE=1
 

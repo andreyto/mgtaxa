@@ -3,8 +3,17 @@
 # THIS WILL ERASE EXISTING .bashrc and .profile !!!
 # Run this w/o arguments to setup profile files other than .bashrc and .profile
 
+set -ex
 
 CPA="cp -a"
+
+# if running from source deps dir, take files
+# straight from where
+if [ -r config/environ.samp ]; then
+    DEP_SRC_TOP=$(pwd)
+fi
+
+[ -n "$DEP_SRC_TOP" ] || exit 1
 
 $CPA $DEP_SRC_TOP/config/env_run.sh $HOME/.env_run.sh
 $CPA $DEP_SRC_TOP/config/env_build.sh $HOME/.env_build.sh

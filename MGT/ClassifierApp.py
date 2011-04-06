@@ -12,7 +12,10 @@ from MGT.Shogun import *
 from MGT.Svm import *
 from shogun.Features import *
 from shogun.Classifier import *
-from shogun.Kernel import SparseGaussianKernel
+try:
+    from shogun.Kernel import SparseGaussianKernel
+except ImportError:
+    pass
 from shogun.Distance import *
 from MGT.PredProcessor import *
 from MGT.SvmMulti import *

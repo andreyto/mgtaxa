@@ -92,7 +92,7 @@ stop(){
 	echo -n $"Stopping ${NAME} service: "
 	kill_daemon
     sleep 3
-    if clean_lock
+    if clean_lock || (sleep 3 && clean_lock)
 	then
 		echo_success
 	else
@@ -100,6 +100,18 @@ stop(){
 		script_result=1
 	fi
 	echo
+}
+
+restart-wipe(){
+	echo -n $"Wiping jobs DB and restarting ${NAME} service: "
+	kill_daemon
+    sleep 3
+    stop
+    # we make sure that this indeed looks like GW location dir
+    GW_VAR="$GW_LOCATION/var"
+    # acct must exist for start() to succeed
+    [ -n "$GW_VAR/gwd.log" ] && rm -rf $GW_VAR/[0-9]*/ $GW_VAR/acct/* $GW_VAR/*.log
+    start
 }
 
 status() {
@@ -122,11 +134,18 @@ case "$1" in
   stop)
 	stop
 	;;
+  restart)
+	stop
+    start
+	;;
+  restart-wipe)
+	restart-wipe
+	;;
   status)
     status
 	;;
   *)
-	echo $"Usage: $0 {start|stop|status}"
+	echo $"Usage: $0 {start|stop|restart|restart-wipe|status}"
 	exit 1
 esac
 
