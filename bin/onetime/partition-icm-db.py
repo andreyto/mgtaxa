@@ -8,6 +8,7 @@ Creates one directory with symlinks to bac ICMs"""
 workDir = os.environ["GOSII_WORK"]
 immDbPath = pjoin(workDir,"icm-refseq")
 newStorePath = immDbPath+".bac"
+newFullStorePath = immDbPath+".all"
 newStoreTopTaxid =  bacTaxid
 
 immStore = ImmStore.open(path=immDbPath)
@@ -18,7 +19,7 @@ immIds = n.asarray(immIds,dtype=int)
 
 taxaTree = loadTaxaTree()
 
-immStoreNew = ImmStore.open(path=immDbPathNew)
+immStoreNew = ImmStore.open(path=newStorePath)
 
 topNode = taxaTree.getNode(newStoreTopTaxid)
 
