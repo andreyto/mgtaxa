@@ -1,6 +1,9 @@
 #!/bin/bash
-# Script to finish deployment
-# Run on the target deployment host after the directory trees have been updated
+## Sample script to finish deployment from devepment host to production.
+## Run on the target deployment hosts (internal application host and dmz front) 
+## after the directory trees have been updated with deploy_copy script.
+## @todo on DMZ, the make_readable call somehow make the whole script
+## to exit. Make sure that you run what is after it manually when needed.
 
 set -ex
 
