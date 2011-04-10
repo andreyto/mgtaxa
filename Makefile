@@ -104,6 +104,7 @@ BUILD_EXT_DIR := $(BUILD_DIR)/MGTX
 SRC_DIR := $(PROJ_DIR)/src
 EXT_DIR := $(PROJ_DIR)/ext
 PY_DIR := $(PROJ_DIR)/MGT
+EXAMPLE_DATA_DIR := $(PROJ_DIR)/example_data
 INC_DIR := $(PROJ_DIR)/include
 TEST_DIR := $(PROJ_DIR)/test
 TEST_SRC_DIR := $(TEST_DIR)/cpp
@@ -208,6 +209,7 @@ install: all
 	install -d $(docdir)
 	install -d $(sysconfdir)
 	$(CPR) $(PY_DIR) $(prefix)
+	$(CPR) $(EXAMPLE_DATA_DIR) $(prefix)
 	install -t $(extdir) $(PYEXT) MGTX/__init__.py
 	$(CPR) $(DOC_DIR)/html $(docdir)
 	install -t $(sysconfdir) mgtaxa.shrc $(PROJ_DIR)/etc/gt.sketch.default.style
