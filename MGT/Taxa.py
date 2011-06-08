@@ -29,6 +29,11 @@ def loadTaxaTreeNew(allNames=False):
         ncbiNamesDumpFile=options.taxaNamesFileNew,
         allNames=allNames)
 
+def loadTaxaTreeTest(allNames=False):
+    return loadTaxaTree(ncbiDumpFile=options.taxaNodesFileTest,
+        ncbiNamesDumpFile=options.taxaNamesFileTest,
+        allNames=allNames)
+
 def makeGiTaxBin(ncbiDumpFiles,outFile):
     """Create and save a pickled numpy gi->taxid index from a list of ncbi dump files.
     Typically, there are two dump files: one for nucleotide and another for protein sequences.
@@ -118,7 +123,7 @@ def mapFastaRecordsToTaxaTree(inSeqs,taxaTree,giToTaxa,
         inpSeq.close()
     return taxMis
 
-def splitFastaFilesByTaxa(inSeqs,taxaTree,giToTaxa,outDir):
+def splitFastaFilesByTaxa(inSeqs,taxaTree,giToTaxa,outDir,filt=None):
     from MGT.FastaIO import FastaReader
     if taxaTree is None:
         taxaTree = loadTaxaTree()
@@ -127,22 +132,24 @@ def splitFastaFilesByTaxa(inSeqs,taxaTree,giToTaxa,outDir):
     taxMis = Struct()
     lastTaxid = None
     out = None
+    if filt is None:
+        filt = lambda x: x
     for inSeq in inSeqs:
         inpSeq = FastaReader(inSeq)
-        for rec in ncbiFastaRecordsWithTaxa(fastaReader=inpSeq,
+        for rec in ncbiFastaRecordsWithTaxa(fastaReader=filt(inpSeq),
                 taxaTree=taxaTree,
                 giToTaxa=giToTaxa,
                 errorCounter=taxMis):
-            node = rec.node
-            seq = rec.seq
-            taxid = node.id
-            if lastTaxid is None or lastTaxid != taxid:
-                if out is not None:
-                    out.close()
-                out = openCompressed(pjoin(outDir,"%s.fasta.gz" % taxid),"a")
-            out.write(seq.header())
-            for line in seq.seqLines():
-                out.write(line)
+                node = rec.node
+                seq = rec.seq
+                taxid = node.id
+                if lastTaxid is None or lastTaxid != taxid:
+                    if out is not None:
+                        out.close()
+                    out = openCompressed(pjoin(outDir,"%s.fasta.gz" % taxid),"a")
+                out.write(seq.header())
+                for line in seq.seqLines():
+                    out.write(line)
         inpSeq.close()
     if out is not None:
         out.close()

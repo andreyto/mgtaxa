@@ -184,7 +184,7 @@ class PhHostGosApp(App):
             optI.taxaTreePkl = opt.taxaFileGos
             optI.predOutTaxaCsv = predOutTaxaCsvFile
             PhageHostApp.fillWithDefaultOptions(optI)
-            app = PhageHostApp(opt=optI)
+            app = ImmClassifierApp(opt=optI)
             jobs+=app.run(**kw)
         jobs = []
 
@@ -258,6 +258,7 @@ class PhHostGosApp(App):
                 csvFile=opt.predOutMgtGosCsv,
                 hasHeader=True,
                 preProc=_preProcFilter,
+                fieldsMap={"len":SqlField(type="integer")},
                 indices={"names":("id","taxid","name",)})
         db.close()
 

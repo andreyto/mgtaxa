@@ -22,9 +22,9 @@ class SeqDbFasta(DirStore):
     def setTaxaTree(self,taxaTree):
         self.taxaTree = taxaTree
 
-    def importByTaxa(self,inpFiles):
+    def importByTaxa(self,inpFiles,filt=None):
         taxaTree = self.getTaxaTree()
-        splitFastaFilesByTaxa(inSeqs=inpFiles,taxaTree=taxaTree,giToTaxa=None,outDir=self.getPath())
+        splitFastaFilesByTaxa(inSeqs=inpFiles,taxaTree=taxaTree,giToTaxa=None,outDir=self.getPath(),filt=filt)
 
     def loadTaxaList(self):
         self.taxaList = n.asarray([ int(f) for f in self.fileNames("*"+self.fastaSfx,sfxStrip=self.fastaSfx) ])
@@ -39,9 +39,17 @@ class SeqDbFasta(DirStore):
     def getFilePathById(self,id):
         return self.getFilePath("%s%s" % (id,self.fastaSfx))
 
+    def delById(self,id):
+        os.remove(self.getFilePathById(id))
+
     def fastaReader(self,id):
         """Return FastaReader to read from the DB for a given ID"""
         return FastaReader(self.getFilePathById(id))
+
+    def seqLengths(self,id):
+        """Return a numpy recarray with fields ("id","len") for a given DB ID.
+        Currently has to read all sequence - works through FastaReader"""
+        return fastaLengths(self.getFilePathById(id))
 
     def fastaWriter(self,id,lineLen=None,mode="w"):
         """Return FastaWriter to write INTO the DB for a given ID.
@@ -61,13 +69,15 @@ class SeqDbFasta(DirStore):
                     out.write(line)
             reader.close()
 
-    def writeFastaBothStrands(self,ids,out):
+    def writeFastaBothStrands(self,ids,out,maxLen=None):
         fsout = None # create after lineLen is known
         for id in ids:
             reader = self.fastaReader(id)
             for rec in reader.records():
                 header = rec.header()
                 seq = rec.sequence()
+                if maxLen is not None:
+                    seq = seq[:maxLen]
                 if len(seq) > 0:
                     if fsout is None: 
                         fsout = FastaWriter(out,lineLen=reader.lineLen())

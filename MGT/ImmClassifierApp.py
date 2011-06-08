@@ -15,6 +15,27 @@ from MGT.DirStore import *
 from MGT.SeqDbFasta import *
 from MGT.ArchiveApp import *
 
+import functools
+
+def fastaReaderFilterNucDegen(fastaReader,extraFilter=None):
+    compr = SymbolRunsCompressor(sym="N",minLen=1)
+    nonDegenSymb = "ATCGatcg"
+    def line_gen():
+        for rec in fastaReader.records():
+            hdr = rec.header()
+            seq = compr(rec.sequence())
+            if not checkSaneAlphaHist(seq,nonDegenSymb,minNonDegenRatio=0.99):
+                print "WARNING: ratio of degenerate symbols is too high, "+\
+                        "skipping sequence with id %s" % (rec.getId(),)
+            else:
+                rec = extraFilter(hdr,seq)
+                if rec:
+                    hdr,seq = rec
+                    yield hdr
+                    for line in seqToLines(seq):
+                        yield line
+    return FastaReader(line_gen())
+
 class TaxaPred(Struct):
     """Class to represent taxonomic predictions - one taxid per sample"""
     pass
@@ -34,12 +55,14 @@ class ImmClassifierApp(App):
     def makeOptionParserArgs(klass):
         from optparse import make_option
         
-        optChoicesMode = ("score","predict","train","setup-train","proc-scores")
+        optChoicesMode = ("score","predict","train","setup-train","proc-scores",
+                "export-predictions","make-ref-seqdb","stats-pred")
         
         def optParseCallback_StoreAbsPath(option, opt_str, value, parser):
             setattr(parser.values, option.dest, os.path.abspath(value))
 
         def optParseMakeOption_Path(shortName,longName,dest,help=None,default=None):
+            #TODO: have it working for multi-entry options too
             return make_option(shortName,longName,
             action="callback", 
             callback=optParseCallback_StoreAbsPath,
@@ -94,10 +117,21 @@ class ImmClassifierApp(App):
             optParseMakeOption_Path(None, "--inp-seq",
             dest="inpSeq",
             help="File with input FASTA sequence for prediction"),
+            
+            optParseMakeOption_Path(None, "--inp-seq-attrib",
+            dest="sampAttrib",
+            help="Optional tab-delimited file with extra attributes for each input sequence. "+\
+                    "Currently must have two columns (no header row): sample id and weight. "+\
+                    "Weight can be read count in a contig, and will be used when calculating "+\
+                    "summary abundance tables."),
 
             optParseMakeOption_Path(None, "--inp-train-seq",
             dest="inpTrainSeq",
-            help="File with input FASTA sequences for training the models"),
+            help="File with input FASTA sequences for training extra user models"),
+            
+            optParseMakeOption_Path(None, "--inp-ncbi-seq",
+            dest="inpNcbiSeq",
+            help="File or shell glob with input NCBI FASTA sequences for training main set of models"),
             
             make_option(None, "--max-seq-id-cnt",
             action="store", 
@@ -167,6 +201,11 @@ class ImmClassifierApp(App):
             help="Output CSV file with predicted taxa; default is --pred-out-taxa "+\
                     "+ '.csv'"),
             
+            optParseMakeOption_Path(None, "--trans-pred-out-taxa",
+            dest="transPredOutTaxa",
+            help="Existing output file with predicted taxa for custom training sequences to be used "+\
+                    "in transitive classification [Optional]"),
+            
             make_option(None, "--rej-ranks-higher",
             action="store", 
             type="string",
@@ -217,6 +256,10 @@ class ImmClassifierApp(App):
             opt.setIfUndef("predMinLenSamp",300)
         else:
             raise ValueError("Unknown --pred-mode value: %s" % (opt.predMode,))
+        if opt.mode == "make-ref-seqdb":
+            opt.trainMinLenSamp = 500000
+            globOpt = globals()["options"]
+            opt.setIfUndef("inpNcbiSeq",pjoin(globOpt.refSeqDataDir,"microbial.genomic.fna.gz"))
 
     
     def instanceOptionsPost(self,opt):
@@ -265,12 +308,18 @@ class ImmClassifierApp(App):
             ret = self.score(**kw)
         elif opt.mode == "predict":
             ret = self.predict(**kw)
+        elif opt.mode == "export-predictions":
+            ret = self.exportPredictions(**kw)
         elif opt.mode == "proc-scores":
             ret = self.processImmScores(**kw)
         elif opt.mode == "setup-train":
             return self.setupTraining(**kw)
         elif opt.mode == "combine-scores":
             ret = self.combineScores(**kw)
+        elif opt.mode == "make-ref-seqdb":
+            ret = self.makeRefSeqDb(**kw)
+        elif opt.mode == "stats-pred":
+            ret = self.statsPred(**kw)
         else:
             raise ValueError("Unknown opt.mode value: %s" % (opt.mode,))
         return ret
@@ -282,8 +331,10 @@ class ImmClassifierApp(App):
 
     def getTaxaLevels(self):
         if self.taxaLevels is None:
-            #that assigns "level" and "idlevel" attributes to TaxaTree nodes
-            self.taxaLevels = TaxaLevels(self.getTaxaTree())
+            #that assigns "level" and "idlevel" attributes to TaxaTree nodes,
+            #when taxaTree is already loaded. Otherwise, you can use
+            #taxaLevels.setTaxaTree() later.
+            self.taxaLevels = TaxaLevels(self.taxaTree)
         return self.taxaLevels
     
     def getSeqDb(self):
@@ -291,6 +342,26 @@ class ImmClassifierApp(App):
         if self.seqDb is None:
             self.seqDb = SeqDbFasta.open(opt.seqDb,mode="r") #"r"
             return self.seqDb
+
+    def makeRefSeqDb(self,**kw):
+        """Create reference SeqDb (the "main" SeqDb)"""
+        return self.makeNCBISeqDb(**kw)
+
+    def makeNCBISeqDb(self,**kw):
+        """Create SeqDb for training ICM model from NCBI RefSeq"""
+        opt = self.opt
+        self.seqDb = None
+        filt = functools.partial(fastaReaderFilterNucDegen,
+                extraFilter=lambda hdr,seq: None if "plasmid" in hdr.lower() else (hdr,seq) )
+        seqDb = SeqDbFasta.open(path=opt.seqDb,mode="c")
+        seqDb.setTaxaTree(self.getTaxaTree())
+        seqDb.importByTaxa(glob.glob(opt.inpNcbiSeq),filt=filt)
+
+        taxids = seqDb.getTaxaList()
+        for taxid in taxids:
+            taxidSeqLen = seqDb.seqLengths(taxid)["len"].sum()
+            if taxidSeqLen < opt.trainMinLenSamp:
+                seqDb.delById(taxid)
 
 
     ## Methods that assign training sequences to higher-level nodes
@@ -340,6 +411,40 @@ class ImmClassifierApp(App):
                 immIdToSeqIds[node.id] = node.pickedSeqDbIds
         dumpObj(immIdToSeqIds,self.opt.immIdToSeqIds)
 
+    def _customTrainSeqIdToTaxaName(self,seqid):
+        """Generate a name for new TaxaTree node from sequence ID.
+        To be used both when defining tree nodes for custom training sequences,
+        as well as when joining with predictions for these sequences for
+        transitive annotation"""
+        return self.opt.newTaxNameTop+"_"+seqid
+
+    def _customTrainSeqIdToTaxid(self,seqid):
+        """Generate a name for new TaxaTree node from sequence ID.
+        To be used both when joining with predictions for these sequences for
+        transitive annotation.
+        @return TaxaNode ID or None if seqid not found"""
+        taxaName = self._customTrainSeqIdToTaxaName(seqid)
+        node = self.getTaxaTree().searchName(taxaName) #returns a list
+        if len(node) > 1:
+            raise ValueError("Custom taxa name must be unique in the tree, found: %s" % \
+                ",    ".join(["%s" % _n for _n in node]))
+        elif len(node) == 1:
+            return node[0].id
+        else:
+            return None
+
+    def _customTrainTaxidToSeqId(self,taxid):
+        """Return seq id corresponding to a custom TaxaTree node.
+        To be used both when joining with predictions for these sequences for
+        transitive annotation.
+        The implementation must match _customTrainSeqIdToTaxaName()"""
+        taxaTree = self.getTaxaTree()
+        node = taxaTree.getNode(taxid)
+        try:
+            return node.name.split(self.opt.newTaxNameTop+"_")[1]
+        except IndexError:
+            return None
+
     def makeCustomTaxaTreeAndSeqDb(self,**kw):
         """Add provided scaffolds as custom nodes to the taxonomy tree and save the tree, and also create SeqDbFasta for them.
         The resulting SeqDbFasta and TaxaTree can be used to train the IMM models.
@@ -363,7 +468,7 @@ class ImmClassifierApp(App):
                 print "WARNING: ratio of degenerate symbols is too high, "+\
                         "skipping the reference scaffold id %s" % (seqid,)
             if len(seq) >= opt.trainMinLenSamp:
-                taxaNode = TaxaNode(id=nextNewTaxid,name=opt.newTaxNameTop+"_"+seqid,rank=unclassRank,divid=dividEnv,names=list())
+                taxaNode = TaxaNode(id=nextNewTaxid,name=self._customTrainSeqIdToTaxaName(seqid),rank=unclassRank,divid=dividEnv,names=list())
                 taxaNode.setParent(newTaxaTop)
                 # that will be used by the following call to defineImms()
                 taxaNode.pickedSeqDbIds = [ taxaNode.id ]
@@ -544,6 +649,23 @@ class ImmClassifierApp(App):
         makeFilePath(opt.outScoreComb)
         dumpObj(scoreComb,opt.outScoreComb)
 
+    def predict(self,**kw):
+        """Score input sequences and predict taxonomy"""
+        opt = self.opt
+        
+        optI = copy(opt)
+        optI.mode = "score"
+        app = self.factory(opt=optI)
+        jobs = app.run(**kw)
+        
+        optI = copy(opt)
+        optI.mode = "proc-scores"
+        app = self.factory(opt=optI)
+        kw = kw.copy()
+        kw["depend"] = jobs
+        jobs = app.run(**kw)
+        return jobs
+
     def _maskScoresNonSubtrees(self,taxaTree,immScores,posRoots):
         """Set to a negative infinity (numpy.NINF) all columns in score matrix that point to NOT subtrees of posRoots nodes.
         This is used to mask all scores pointing to other than bacteria or archaea."""
@@ -640,14 +762,20 @@ class ImmClassifierApp(App):
         sc.idImm = n.asarray(sc.idImm,dtype=int)
         #scRnd = loadObj(opt.rndScoreComb)
         #sc.scores = self._normalizeScores(sc,scRnd)
+        #normalize to Z-score along each row
+        #sc.scores = ((sc.scores.T - sc.scores.mean(1))/sc.scores.std(1)).T
+        #normalize to Z-score over entire matrix
+        #sc.scores = ((sc.scores - sc.scores.mean())/sc.scores.std())
         taxaTree = self.getTaxaTree()
         taxaLevels = self.getTaxaLevels()
         scores = sc.scores
         idImms = sc.idImm
-        micRoots = tuple([ taxaTree.getNode(taxid) for taxid in micTaxids ])
+        micRoots = [ taxaTree.getNode(taxid) for taxid in micTaxids ]
         virRoot = taxaTree.getNode(virTaxid)
         #scVirRoot = scores[:,idImms == virTaxid][:,0]
         #scCellRoot = scores[:,idImms == cellTaxid][:,0]
+        #cellTopColInd = n.concatenate([ n.where(idImms == taxid)[0] for taxid in micTaxids ])
+        #scCellRootMax = scores[:,cellTopColInd].max(1)
         self._maskScoresNonSubtrees(taxaTree,immScores=sc,posRoots=micRoots)
         if opt.rejectRanksHigher is not "superkingdom":
             self._maskScoresByRanks(taxaTree,immScores=sc)
@@ -656,18 +784,19 @@ class ImmClassifierApp(App):
         maxSc = scores.max(1)
         ## @todo in case of score ties, pick the lowest rank if it is a single entry
         predTaxids = idImms[argmaxSc]
-        #predTaxids[maxSc<10] = self.rejTaxid
+        #predTaxids[maxSc<0] = self.rejTaxid
         # this will reject any sample that has top level viral score more
         # that top level cellular org score, on the assumption that easily
         # assignbale viruses should be closer to cellular orgs than to other
         # viruses.
         # Result: removed 90 out of 250 samples, with no change in specificity.
         #predTaxids[scVirRoot>scCellRoot] = self.rejTaxid
+        #predTaxids[scVirRoot>scCellRootMax] = self.rejTaxid
         # this excluded 10 out of 430, no change in specificity
         #predTaxids[scVirRoot>=maxSc] = self.rejTaxid
         
-        # This not the same as _maskScoresByRanks() above (because this
-        # will actually assign a reject label.
+        # This is not the same as _maskScoresByRanks() above (because this
+        # will actually assign a reject label).
         if opt.rejectRanksHigher is not "superkingdom":
             max_linn_levid = taxaLevels.getLevelId(opt.rejectRanksHigher)
             min_linn_levid = taxaLevels.getLinnLevelIdRange()[0]
@@ -688,66 +817,186 @@ class ImmClassifierApp(App):
         pred = TaxaPred(idSamp=sc.idSamp,predTaxid=predTaxids,topTaxid=topTaxids,lenSamp=sc.lenSamp)
         makeFilePath(opt.predOutTaxa)
         dumpObj(pred,opt.predOutTaxa)
-        self._exportPredictions(taxaPred=pred)
-        self._statsPred()
+        self.exportPredictions()
         #todo: "root" tax level; matrix of predhost idlevel's; batch imm.score() jobs; score hist;
 
-    def _exportPredictions(self,taxaPred):
+    def exportPredictions(self,**kw):
+        """
+        Export predictions and summary statistics.
+        Parameters are taken from self.opt.
+        @param predOutTaxa Output file with predicted taxa
+        @param sampAttrib Optional input tab-delimited file with extra per-sample
+        attributes. Currently it should have two columns: sample id and 
+        weight. Weight can be a number of reads in a given contig if
+        samples are assembly contigs. The clade counts will be multiplied
+        by these weights when aggregate summary tables are generated.
+        """
+        opt = self.opt
+        self._exportPredictions()
+        self._reExportPredictionsWithSql()
+        self.statsPred()
+
+    def _buildCustomTaxidToRefTaxidMap(self,predOutTaxa):
+        """Helper method for transitive classification.
+        This loads a prediction file created in a separate
+        run for assigning cutsom model sequences to a reference DB,
+        and returns a dict that maps custom taxonomic id generated
+        here to assigned reference DB taxid"""
+        opt = self.opt
+        taxaPred = loadObj(predOutTaxa)
+        custToRef = {}
+        for idS,taxidRef,lenS in it.izip(taxaPred.idSamp,taxaPred.predTaxid,taxaPred.lenSamp):
+            taxidCust = self._customTrainSeqIdToTaxid(idS)
+            if taxidCust:
+                custToRef[taxidCust] = taxidRef
+        return custToRef
+
+    def _exportPredictions(self):
         opt = self.opt    
+        taxaPred = loadObj(opt.predOutTaxa)
         taxaTree = self.getTaxaTree()
         taxaLevels = self.getTaxaLevels()
         levNames = taxaLevels.getLevelNames("ascend")
+        if opt.transPredOutTaxa:
+            transTaxaMap = self._buildCustomTaxidToRefTaxidMap(opt.transPredOutTaxa)
+        else:
+            transTaxaMap = None
         makeFilePath(opt.predOutTaxaCsv)
         out = openCompressed(opt.predOutTaxaCsv,"w")
         flds = ["id","len","taxid","name","rank"]
-        for lev in levNames:
-            flds += ["taxid_"+lev,"name_"+lev]
+        for levName in levNames:
+            flds += ["taxid_"+levName,"name_"+levName]
         w = csv.DictWriter(out, fieldnames=flds, restval='null',dialect='excel-tab')
         w.writerow(dict([(fld,fld) for fld in flds]))
-        for idS,taxid,lenS in it.izip(taxaPred.idSamp,taxaPred.predTaxid,taxaPred.lenSamp):
+        predPerSample = 1
+        if predPerSample > 1:
+            predTaxidRows = taxaPred.topTaxid[:,:predPerSample]
+        else:
+            predTaxidRows = taxaPred.predTaxid[:,n.newaxis]
+        for idS,taxids,lenS in it.izip(taxaPred.idSamp,predTaxidRows,taxaPred.lenSamp):
             if lenS < opt.predMinLenSamp:
                 continue
-            row = dict(id=idS,len=lenS,taxid=taxid)
-            if taxid != self.rejTaxid:
-                node = taxaTree.getNode(taxid)
-                row["name"] = node.name
-                row["rank"] = node.linn_level
-                lin = taxaLevels.lineage(node,withUnclass=False)
-                for ln in lin:
-                    row["name_"+ln.level] = ln.name
-                    row["taxid_"+ln.level] = ln.id
-            w.writerow(row)
+            for taxid in taxids:
+                row = dict(id=idS,len=lenS)
+                if transTaxaMap:
+                    if taxid != self.rejTaxid:
+                        taxid = transTaxaMap[taxid]
+                if taxid != self.rejTaxid:
+                    node = taxaTree.getNode(taxid)
+                    row["name"] = node.name
+                    row["rank"] = node.linn_level
+                    lin = taxaLevels.lineageFixedList(node,null=None,format="node",fill="up-down")
+                    for (levName,levNode) in it.izip(levNames,lin):
+                        if levNode:
+                            row["name_"+levName] = levNode.name
+                            row["taxid_"+levName] = levNode.id
+                row["taxid"] = taxid
+                w.writerow(row)
         out.close()
         
+    def _reExportPredictionsWithSql(self):
+        opt = self.opt    
         makeFilePath(opt.predOutDbSqlite)
         db = DbSqlLite(dbpath=opt.predOutDbSqlite)
-        db.createTableFromCsv(name="scaff_pred",
+        db.createTableFromCsv(name="scaff_pred_1",
                 csvFile=opt.predOutTaxaCsv,
                 hasHeader=True,
-                indices={"names":("id","taxid","name",)})
+                fieldsMap={"len":SqlField(type="integer")},
+                indices={"names":("id",)})
+
+        if opt.sampAttrib:
+            db.createTableFromCsv(name="scaff_attr",
+                    csvFile=opt.sampAttrib,
+                    hasHeader=False,
+                    fieldsMap={0:SqlField(name="id"),
+                        1:SqlField(name="weight",type="real")},
+                    indices={"names":("id",)})
+        else:
+            db.createTableAs("scaff_attr",
+                    """\
+                    select distinct id,1.0 as weight
+                    from scaff_pred_1""",
+                    indices={"names":("id",)})
+
+        sql = \
+                """select a.*,b.weight as weight
+                from scaff_pred_1 a, scaff_attr b
+                where a.id = b.id
+                """
+        db.createTableAs("scaff_pred",sql,indices={"names":("id","taxid","name","len")})
+        db.exportAsCsv("select * from scaff_pred",
+            opt.predOutTaxaCsv,
+            comment=None,
+            sqlAsComment=False)
         db.close()
 
-    def _statsPred(self,**kw):
-        """Create aggregate tables and csv files to show various relationships between predictions"""
+    def _sqlReport(self,db,dbTable,levName,outCsv=None):
+        if levName:
+            fldGrp = "name_"+levName
+        else:
+            fldGrp = "name"
+        dbTableRep = dbTable+"_grp_"+levName
+        sql = """\
+                select %(fldGrp)s as clade,
+                sum(weight) as sum_weight,
+                count(*) as cnt_samp,
+                sum(len) as len_samp,
+                avg(len) as avg_len_samp 
+                from %(dbTable)s
+                group by %(fldGrp)s
+                order by sum_weight desc
+        """ % dict(fldGrp=fldGrp,dbTable=dbTable)
+        db.createTableAs(dbTableRep,sql)
+        if outCsv:
+            comment = "Count of assignments grouped by %s" % \
+                    (levName if levName else "lowest assigned clade",)
+            db.exportAsCsv("""\
+                    select * from %(dbTableRep)s
+                    order by sum_weight desc
+                    """ % dict(dbTableRep=dbTableRep),
+                    outCsv,
+                    comment=comment,
+                    sqlAsComment=False,
+                    epilog="\n")
+        return dbTableRep
+    
+    def _graphicsReport(self,db,dbTableRep,levName,fldRep="sum_weight",outPrefix=None,maxClades=20):
+        import matplotlib
+        matplotlib.use('AGG')
+        from MGT import Graphics
+        data=db.selectAll("""select
+            clade, %(fldRep)s            
+            from %(dbTableRep)s 
+            order by %(fldRep)s desc
+            limit %(maxClades)s
+            """ % (dict(dbTableRep=dbTableRep,maxClades=maxClades,fldRep=fldRep)))
+        if not outPrefix:
+            outPrefix = dbTableRep
+        Graphics.barHorizArea(data=data,
+                xLabel="Count of assignments",
+                yLabel=("Assigned %s" % (levName,)) if levName else "Lowest assigned clade",
+                outPrefix=outPrefix)
+
+
+    def statsPred(self,**kw):
+        """Create aggregate tables,figures and csv files to show statistics of predictions"""
         opt = self.opt
+        taxaLevels = self.getTaxaLevels()
+        levNames = taxaLevels.getLevelNames("ascend")
         db = DbSqlLite(dbpath=opt.predOutDbSqlite)
         rmrf(opt.predOutStatsDir)
         makeFilePath(opt.predOutStatsCsv)
         outCsv = openCompressed(opt.predOutStatsCsv,'w')
         sqlAsComment = True
-        sqlpar = dict(lenMin = 5000)
-        sql = """select name,count(*) as cnt from scaff_pred group by name order by cnt desc"""
-        comment = "Count of assignments grouped by reference name"
-        db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog="\n")
-        sql = """select name_species,count(*) as cnt from scaff_pred group by name_species order by cnt desc"""
-        comment = "Count of assignments grouped by reference species name"
-        db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog="\n")
-        sql = """select name_genus,count(*) as cnt from scaff_pred group by name_genus order by cnt desc"""
-        comment = "Count of assignments grouped by reference genus name"
-        db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog="\n")
-        sql = """select name_family,count(*) as cnt from scaff_pred group by name_family order by cnt desc"""
-        comment = "Count of assignments grouped by reference family name"
-        db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment)
+        sqlpar = dict(lenMin = opt.predMinLenSamp)
+        db.ddl("""\
+                create temporary view scaff_pred_filt as 
+                select * from scaff_pred 
+                where len >= %(lenMin)s""" % sqlpar)
+        for levName in levNames+[""]: #"" is for lowest clade
+            dbTableRep = self._sqlReport(db=db,dbTable="scaff_pred_filt",levName=levName,outCsv=outCsv)
+            self._graphicsReport(db=db,dbTableRep=dbTableRep,levName=levName,fldRep="sum_weight",
+                    outPrefix=pjoin(opt.predOutStatsDir,dbTableRep),maxClades=20)
         outCsv.close()
         db.close()
 

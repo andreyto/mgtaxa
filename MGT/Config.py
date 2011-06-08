@@ -60,6 +60,7 @@ class MGTOptions(Options):
         self.blastSelAlias = 'mgt'
         self._setTaxaFileNames(_pdata_ncbi('taxonomy'),sfx="")
         self._setTaxaFileNames(_pdata_ncbi('taxonomy.new'),sfx="New")
+        self._setTaxaFileNames(pjoin(self.testDataDir,"taxonomy"),sfx="Test")
         self.taxaTreeTablePrefix = "txtr"
         self.taxaTreeTableSfxMain = ""
         #self.kmerTxtDir = os.environ['PHYLA_KMERS']

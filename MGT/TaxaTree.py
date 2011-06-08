@@ -23,6 +23,8 @@ class TaxaNode(object):
     # This reduces memory consumption by removing __weakref__ dict attribute
     __slots__ = '__dict__'
 
+    rankMaxAttr = "rank_max"
+
     @staticmethod
     def setDebugOnUpdate(hook):
         """Sets new debugging hook to call on attribute update.
@@ -417,13 +419,17 @@ class TaxaNode(object):
                     )
         self.visitDepthBottom(actor)
 
-    def setMaxSubtreeRank(self):
-        """Set an attribute "rank_max" in every node of this subtree that is a highest standard rank of any node in a subtree.
+    def setMaxSubtreeRank(self,ranks=None,nameAttr=None):
+        """Set an attribute nameAttr or "rank_max" in every node of this subtree that is a highest standard rank of any node in a subtree.
         unclassRank and noRank nodes are both considered as noRank in comparisons.
-        Thus, if and only if all subtree nodes are unclassRank or noRank, "rank_max" is set to noRank."""
-        dstAttr = "rank_max"
+        Thus, if and only if all subtree nodes are unclassRank or noRank, "rank_max" is set to noRank.
+        @param ranks A subset of @see linnRanks to use (e.g. linnMainRanks). @see linnRanks if None
+        @param nameAttr Name of the attribute to set (@see TaxaNode.rank_max_attr if None)"""
+        dstAttr = self.rankMaxAttr if nameAttr is None else nameAttr
         #{rank->order index}
-        ranksToInd = dict([ (x[1],x[0]) for x in enumerate((noRank,)+tuple(linnRanks)) ])
+        if ranks is None:
+            ranks = linnRanks
+        ranksToInd = dict([ (x[1],x[0]) for x in enumerate((noRank,)+tuple(ranks)) ])
         def extractor(node):
             """Return rank converted such that everything not found in ranksToInd becomes noRank.
             That includes unclassRank"""
@@ -596,8 +602,8 @@ class TaxaTree(object):
     def setReduction(self,extractor,dstAttr,reduction=None,condition=None):
         self.getRootNode().setReduction(extractor,dstAttr,reduction,condition)
 
-    def setMaxSubtreeRank(self):
-        self.getRootNode().setMaxSubtreeRank()
+    def setMaxSubtreeRank(self,ranks=None,nameAttr=None):
+        self.getRootNode().setMaxSubtreeRank(ranks=ranks,nameAttr=nameAttr)
 
     def getNode(self,id):
         return self.nodes[id]
@@ -1055,6 +1061,9 @@ class TaxaLevels:
     ## min level ID of a Linnean rank. It should correlate with 
     minLinnId = 20
 
+    ## TaxaNode attribute name for a max Linnean level in a subtree
+    linnLevelMaxAttr = "linn_level_max"
+
     def __init__(self,taxaTree=None):
         """Constructor.
         @param taxaTree instance of TaxaTree - if not None, will be modified, so that TaxaLevels.lineage() etc work after words; 
@@ -1071,7 +1080,7 @@ class TaxaLevels:
         self._linn_id_range = (_linn_ids[0],_linn_ids[1])
         #index of a given level name in the list 'levels'
         levelPos = {}
-        for (i,level) in zip(range(len(self.levels)),self.levels):
+        for (i,level) in enumerate(self.levels):
             levelPos[level] = i
         self.levelPos = levelPos
         if taxaTree is not None:
@@ -1145,6 +1154,7 @@ class TaxaLevels:
                 node.linn_level = node.level
             else:
                 node.linn_level = node.getParent().linn_level
+        taxaTree.setMaxSubtreeRank(ranks=self.levels,nameAttr=self.linnLevelMaxAttr)
 
     def lineage(self,node,withUnclass=True):
         levelSet = self.levelSet
@@ -1158,14 +1168,55 @@ class TaxaLevels:
         else:
             return [ (levelIds[n.level],n.id) for n in self.lineage(node)]
 
-    def lineageFixedList(self,node,null=None,format="id"):
+    def lineageFixedList(self,node,null=None,format="id",fill=None):
         """Return a list of taxids that correspond to the list of level names returned by getLevelNames("ascend").
-        If a given level is not present in this node's lineage, the corresponding element is 'null'."""
+        @param node TaxaNode instance
+        @param null If a given level is not present in this node's lineage, 
+        and the parameter 'fill' is None, the corresponding element is set to 'null' value.
+        @param format Output format: if 'id', taxids will be returned, else node instances
+        @param fill If None, entries for the absent levels will be set to 'null;
+        If 'left', absent entries will be filled from the nearest non-absent entries
+        to their right, but not for entries below or equal to the maximum level below
+        this node. Examples of the 'left' fill:
+            The node's actual lineage is: ["species","no_rank","family","order",...]
+            The returned value will be: ["species_id","family_id_as_genus","family","order",...]
+            The nodes' actual lineage is: ["no_rank","order","class",...] and the max
+            level below the node is "genus"
+            The returned value will be: ["order_id_as_family","order","class",...]
+        The purpose of the 'left' fill is to make easy SQL aggregations like: group rows
+        by genus or whatever is the lowest defined rank above genus.
+        """
         assert format in ("id","node")
         levelPos = self.levelPos
         ret = [null]*len(self.levels)
         for n in self.lineage(node,withUnclass=False):
             ret[levelPos[n.level]] = (n.id if format == "id" else n)
+        if fill is not None:
+            linn_under = getattr(node,self.linnLevelMaxAttr)
+            linn_above = node.linn_level
+            level = node.level
+            if level == linn_above:
+                iLevBeg = levelPos[level]
+            elif linn_under == noRank:
+                iLevBeg = levelPos[linn_above]
+            else:
+                iLevBeg = levelPos[linn_under]+1
+                if ret[iLevBeg] is null:
+                    ret[iLevBeg] = node.id if format == "id" else node
+            #at this point we made sure that iLevBeg index points to the
+            #entry in 'ret' corresponding to the lowest rank that makes
+            #sense, and that entry is defined (not null)
+            assert ret[iLevBeg] is not null
+            if fill in ("up","up-down"):
+                for iLev in xrange(iLevBeg+1,len(ret)-1):
+                    if ret[iLev] is null:
+                        ret[iLev] = ret[iLev-1]
+                if fill == "up-down":
+                    for iLev in xrange(iLevBeg-1,-1,-1):
+                        if ret[iLev] is null:
+                            ret[iLev] = ret[iLev+1]
+            else:
+                raise ValueError("Unknown value of 'fill': %s" % (fill,))
         return ret
 
     def reduceNodes(self,tree,topNodeId=None):

@@ -1,5 +1,6 @@
 from MGT.Proj.PhHostGosApp import *
 from MGT.ImmScalingApp import *
+from MGT.ImmClassifierApp import *
 
 jobs = []
 
@@ -9,12 +10,12 @@ topPredDir = pjoin(topWorkDir,"ph-pred")
 #topPredDir = pjoin(topWorkDir,"ph-pred-random-inp")
 topRndSeqDir = pjoin(topWorkDir,"scaff-rnd")
 
-stage = "ref"
+stage = "gos"
 
 if stage == "ref":
 
     opt = Struct()
-    opt.runMode = "inproc"
+    opt.runMode = "inproc" #"inproc"
     refname = "refseq"
     #refname = "gos-bac"
     opt.immDb = pjoin(topWorkDir,"icm-%s" % refname)
@@ -25,13 +26,14 @@ if stage == "ref":
     #opt.predSeq = pjoin(opt.workDir,"asm_combined_454_large.5K.rnd.fna")
     opt.predOutDir = pjoin(topPredDir,"asm_combined_454_large")
     #opt.predOutDir = pjoin(topWorkDir,"icm-%s-scale-score" % refname)
+    opt.outDir = opt.predOutDir
     opt.rndScoreComb = pjoin(topWorkDir,"icm-%s-scale-score" % refname,"combined.score.pkl.gz")
     opt.nImmBatches = 200
     opt.predMinLenSamp = 5000
 
     for mode in ("proc-scores",):
         opt.mode = mode #"predict" "proc-scores" #"proc-scores-phymm" #"perf" #"proc-scores"
-        app = PhageHostApp(opt=opt)
+        app = ImmClassifierApp(opt=opt)
         jobs = app.run(depend=jobs)
     sys.exit(0)
     opt.cwd = opt.workDir

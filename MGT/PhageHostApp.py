@@ -298,6 +298,7 @@ class PhageHostApp(App):
         makedir(opt.outDir)
         dumpObj(immIds,immIdsPath)
         opt.immIds = immIdsPath
+        #opt.predMode = "host"
         imm = ImmClassifierApp(opt=opt)
         jobs = imm.run(**kw)
         return jobs

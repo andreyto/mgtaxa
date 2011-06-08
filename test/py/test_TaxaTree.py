@@ -39,13 +39,6 @@ taxaTree.reindex()
 taxaTree.setIndex()
 
 
-#taxaLevels = TaxaLevels()
-#taxaLevels.setLevels(taxaTree)
-#taxaLevels.reduceNodes(taxaTree)
-
-#for node in taxaTree.getNodesIter():
-#    print node
-
 #storeOut = NodeStorageNewick(fileName="test_TaxaTree.newick",
 #    labeler=lambda n: "%s_%s_%s" % (n.name,n.rank,n.id))
 

@@ -2,15 +2,36 @@
 Make a horizontal bar histogram of assigned clade counts.
 The area of each bar is equal to the corresponding count.
 """
+import matplotlib
+matplotlib.use('AGG')
 from pylab import *
 import numpy as n
 import pdb
-import os
+import os,sys
 
 from MGT.Sql import *
+from MGT import Graphics
+
+def prepDataAbundJoin(db,tables):
+    maps = [ db.selectAsNx1Dict("""\
+            select clade,sum_weight
+            from %(tbl)s
+            where not clade = 'null'
+            """ % dict(tbl=tbl)) for tbl in tables ]
+    keys = set()
+    for map in maps:
+        keys |= set(map)
+    join = dict()
+    for key in keys:
+        join[key] = n.zeros(len(maps),dtype=float)
+    for imap,map in enumerate(maps):
+        for (key,val) in map.items():
+            join[key][imap] = val
+    return sorted(join.items(),key=lambda item: item[1].max(),reverse=True)
 
 
-def prepDataAbundJoin(db,rank):
+
+def prepDataAbundJoinOld(db,rank):
     """Create abundance table for ref and met sets joined by rank"""
     tbl_pref=rank if rank else "name"
     grp_fld_ref = "name_"+rank if rank else "name"
@@ -32,12 +53,12 @@ def prepDataAbundJoin(db,rank):
           ORDER BY cnt DESC
           """ % dict(grp_fld_met=grp_fld_met))
     db.createTableAs("%s_abund_ref_met" % (tbl_pref,),"""\
-            SELECT a.name,a.cnt as cnt_ref,coalesce(b.cnt,0) as cnt_met
+            SELECT a.name as name,a.cnt as cnt_ref,coalesce(b.cnt,0) as cnt_met
             FROM   %(tbl_pref)s_abund_ref a
             LEFT JOIN %(tbl_pref)s_abund_met b
             ON a.name = b.name""" % dict(tbl_pref=tbl_pref))
     db.createTableAs("%s_abund_met_ref" % (tbl_pref,),"""\
-            SELECT b.name,coalesce(a.cnt,0) as cnt_ref,b.cnt as cnt_met
+            SELECT b.name as name,coalesce(a.cnt,0) as cnt_ref,b.cnt as cnt_met
             FROM   %(tbl_pref)s_abund_met b
             LEFT JOIN %(tbl_pref)s_abund_ref a
             ON b.name = a.name""" % dict(tbl_pref=tbl_pref))
@@ -54,45 +75,28 @@ def prepDataAbundJoin(db,rank):
             ORDER BY max(cnt_ref,cnt_met) desc,(cnt_ref+cnt_met) desc""" % dict(tbl_pref=tbl_pref))
     return dict(res_tbl=res_tbl)
 
-def prepDataAbundCross(db,rank):
+def prepDataAbundCross(db,tables,rank):
     """Create abundance table for ref and met sets joined by contig ID.
     This shows the prevalent transitions of predictions for a given rank between
     ref and met sets"""
-    tbl_pref=rank if rank else "name"
+    tbl_pref=(rank if rank else "name")
     grp_fld_ref = "name_"+rank if rank else "name"
-    grp_fld_met = "mgt_name_" + rank if rank else "mgt_name"
+    grp_fld_met = "name_" + rank if rank else "name"
     db.createTableAs("%s_pred_ref_met" % (tbl_pref,),"""\
           SELECT a.id,
           a.%(grp_fld_ref)s AS name_ref,
           b.%(grp_fld_met)s AS name_met
-          FROM pred_annot_ref a, pred_annot_met b
+          FROM %(tbl_ref)s a, %(tbl_met)s b
           WHERE a.id=b.id
-          """ % dict(grp_fld_ref=grp_fld_ref,grp_fld_met=grp_fld_met))
+          """ % dict(grp_fld_ref=grp_fld_ref,grp_fld_met=grp_fld_met,tbl_ref=tables[0],tbl_met=tables[1]))
     res_tbl = "%s_pred_cross" % (tbl_pref,)
     db.createTableAs(res_tbl,"""\
-          SELECT name_ref,name_met,count(*) as cnt
+          SELECT name_ref as clade_dir,name_met as clade_trans,count(*) as cnt
           FROM %(tbl_pref)s_pred_ref_met
           GROUP BY name_ref,name_met
           ORDER BY cnt DESC
           """ % dict(tbl_pref=tbl_pref))
     return dict(res_tbl=res_tbl)
-
-    outCsv = openCompressed(opt.predOutStatsCsv,'w')
-    sqlAsComment = True
-    sqlpar = dict(lenMin = 5000)
-    sql = """select name,count(*) as cnt from scaff_pred group by name order by cnt desc"""
-    comment = "Count of assignments grouped by reference name"
-    db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog="\n")
-    sql = """select name_species,count(*) as cnt from scaff_pred group by name_species order by cnt desc"""
-    comment = "Count of assignments grouped by reference species name"
-    db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog="\n")
-    sql = """select name_genus,count(*) as cnt from scaff_pred group by name_genus order by cnt desc"""
-    comment = "Count of assignments grouped by reference genus name"
-    db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog="\n")
-    sql = """select name_family,count(*) as cnt from scaff_pred group by name_family order by cnt desc"""
-    comment = "Count of assignments grouped by reference family name"
-    db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment)
-    outCsv.close()
 
 
 def graph(data,xlabel,ylabel,outpref):
@@ -108,7 +112,7 @@ def graph(data,xlabel,ylabel,outpref):
     color = []
     group = []
     y = []
-    for _group,(_lab,_y1,_y2) in enumerate(data):
+    for _group,(_lab,(_y1,_y2)) in enumerate(data):
         labels.append(_lab)
         labels.append("")
         color.append("g")
@@ -200,7 +204,7 @@ def graph(data,xlabel,ylabel,outpref):
     # only possible when the drawing backend is already active. Therefore,
     # that processing will be done inside the 'draw' event hadler.
     fig.canvas.mpl_connect('draw_event', on_draw)
-    #show()
+    show()
     #this makes visible changes made by on_draw() event handler
     #we cannot call it from on_draw() because it would cause infinite recursion
     fig.canvas.draw()
@@ -211,16 +215,30 @@ def graph(data,xlabel,ylabel,outpref):
 def main():
     
     #dbSqlite = os.path.join(os.environ["GOSII_WORK"],"ph-pred/asm_combined_454_large-gos-bac-comb/pred.db.sqlite")
-    dbSqlite = "pred.db.sqlite"
+    dbSqlite = "pred_join.db.sqlite"
     db = DbSqlLite(dbpath=dbSqlite)
+    db.ddl("attach database '%s' as db0" % (sys.argv[1],))
+    db.ddl("attach database '%s' as db1" % (sys.argv[2],))
+    predOutCsv = "pred_join.csv"
+    outCsv = openCompressed(predOutCsv,'w')
+    sqlAsComment = True
     #for rank in ("","genus"):
-    for rank in ("genus",""):
-        res = prepDataAbundJoin(db=db,rank=rank)
-        graph(data=db.selectAll("select * from %(res_tbl)s where not name ='null'" % res)[:20],
-                xlabel="Count of assignments",
-                ylabel=("Assigned %s" % (rank,)) if rank else "Lowest assignedclade",
-                outpref=res["res_tbl"])
-        prepDataAbundCross(db=db,rank=rank)
+    for level in ("genus",):
+        tables=["db%i.scaff_pred_filt_grp_%s" % (itbl,level) for itbl in range(2)]
+        res = prepDataAbundJoin(db=db,tables=tables)
+        try:
+            Graphics.barHorizArea2(data=res[:20],
+                    xLabel="Count of assignments",
+                    yLabel=("Assigned %s" % (level,)) if level else "Lowest assigned clade",
+                    outPrefix="cnt_join_%s" % (level,))
+        finally:
+            tables=["db%i.scaff_pred" % (itbl,) for itbl in range(2)]
+            res = prepDataAbundCross(db=db,tables=tables,rank=level)
+            sql = """select * from %(res_tbl)s order by cnt desc""" % res
+            comment = "Counts of samples for assigned %s transitions between direct and transitive assignments"
+            db.exportAsCsv(sql,outCsv,comment=comment,sqlAsComment=sqlAsComment,epilog="\n")
+            pass
+    outCsv.close()
 
 main()
 

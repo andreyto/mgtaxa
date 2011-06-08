@@ -8,7 +8,7 @@
 
 """I/O of FASTA formatted sequence files"""
 
-__all__ = [ "FastaReader", "fastaReaderGzip", "FastaWriter", "splitFasta", "fastaLengths" ]
+__all__ = [ "FastaReader", "fastaReaderGzip", "FastaWriter", "splitFasta", "fastaLengths", "seqToLines" ]
 
 from MGT.Common import *
 from MGT.Util import openGzip, openCompressed
@@ -29,7 +29,12 @@ class FastaReader(object):
     """
 
     def __init__(self,infile):
-        if not hasattr(infile,"readline"):
+        """Ctor.
+        @param infile It can be either a string with a file name, or it can be an
+        iterator that returns lines (each line should be terminated with a new line),
+        e.g. a file object. An iterator can be a filter that reads another FastaReader
+        object, performs transformations on the records and emits them as lines."""
+        if isinstance(infile,str):
             infile = openCompressed(infile,'r')
             self.ownInfile = True
         else:
@@ -45,11 +50,9 @@ class FastaReader(object):
                 self.freshHdr = False
                 yield self
                 continue
-            line = infile.readline()
-            if not line:
-                return
+            line = infile.next()
             # skip blank lines
-            elif line.isspace():
+            if line.isspace():
                 continue
             elif line.startswith(">"):
                 self.hdr = line
@@ -88,10 +91,8 @@ class FastaReader(object):
     def seqLines(self):
         infile = self.infile
         while True:
-            line = infile.readline()
-            if not line:
-                break
-            elif line.isspace():
+            line = infile.next()
+            if line.isspace():
                 continue
             elif line.startswith(">"):
                 self.hdr = line
@@ -151,11 +152,19 @@ def fastaLengths(inp):
     reader = FastaReader(inp)
     res = []
     for rec in reader.records():
-        id = rec.header().split()[0][1:]
+        id = rec.getId()
         ln = rec.seqLen()
         res.append((id,ln))
     reader.close()
     return n.asarray(res,dtype=[("id",idDtype),("len","i8")])
+
+def seqToLines(seq,lineLen=80):
+    """Utility method that converts a string into line iterator.
+    Endlines are inserted. The input string should not have endlines anywhere.
+    This can be used in filters that emulate FastaReader record interface."""
+    for x in range(0,len(seq),lineLen):
+        yield seq[x:x+lineLen]+"\n"
+
 
 class FastaWriter:
     
@@ -190,6 +199,7 @@ class FastaWriter:
             out.write("\n")
 
     def sequence(self,sequence):
+        out = self.out
         if isinstance(sequence,str):
             s = sequence
         else:
@@ -198,6 +208,7 @@ class FastaWriter:
         for x in range(0,len(s),lineLen):
             out.write(s[x:x+lineLen])
             out.write("\n")
+
 
 def splitFasta(inpFasta,outBase,maxChunkSize,sfxSep='_',lineLen=80):
     inpSeq = FastaReader(inpFasta)

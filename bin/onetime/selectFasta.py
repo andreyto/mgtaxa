@@ -1,12 +1,14 @@
 from MGT.FastaIO import *
+import re
+import sys
 
-hdrSel=">scf1118659309935"
-inpFile = "scaff-gos-bac/nonViral40kbPlusScaffolds.fa.gz"
-wr = FastaWriter("scf1118659309935.fna",lineLen=80)
+hdrSel=sys.argv[1]
+inpFile = sys.stdin
+wr = FastaWriter(sys.stdout,lineLen=80)
 for rec in FastaReader(inpFile).records():
     hdr = rec.header().strip()
-    seq = rec.sequence()
-    if hdr==hdrSel:
+    if re.match(hdrSel,hdr[1:]):
+        seq = rec.sequence()
         wr.record(hdr,seq)
-wr.close()
+#wr.close()
 

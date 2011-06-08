@@ -111,7 +111,10 @@ class ImmApp(App):
         imm = Imm(path=immPath)
         try:
             inp = imm.train()
-            seqDb.writeFastaBothStrands(ids=immSeqIds,out=inp)
+            #TMP: maxLen
+            #print "WARNING: maxLen=100000 is a temporary hack to use only 100Kbp seq for ICM training"
+            maxLen = None
+            seqDb.writeFastaBothStrands(ids=immSeqIds,out=inp,maxLen=maxLen)
             inp.close()
             imm.flush()
         except:
