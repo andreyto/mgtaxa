@@ -117,6 +117,8 @@ export RUBYOPT="-rrubygems"
 if [ -n "$(which R)" ]; then
     RHOME=$(R RHOME)
     export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$RHOME/lib
+    # R packages will be installed here and loaded from here
+    export R_LIBS=$INSTMACH/lib/rpacks
 fi
 
 export AT_ENV_RUN_DONE=1

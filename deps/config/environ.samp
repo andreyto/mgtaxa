@@ -79,6 +79,11 @@ source ~/.env_build.sh
 # Source MGTAXA config if exists
 [ -f $INST/mgtaxa/etc/mgtaxa.shrc ] && source $INST/mgtaxa/etc/mgtaxa.shrc
 
+# This gets rid of "Could not find/open font when opening font "arial", 
+# using internal non-scalable font" in custom-compiled gnuplot
+#export GDFONTPATH=/usr/share/fonts/liberation
+#export GNUPLOT_DEFAULT_GDFONT=LiberationSans-Regular
+
 export AT_HOME_ENVIRON_DONE=1
 
 fi # [ -z "$AT_HOME_ENVIRON_DONE" ]
