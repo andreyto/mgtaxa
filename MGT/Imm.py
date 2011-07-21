@@ -4,8 +4,35 @@
 from MGT.Common import *
 
 
-class ImmScores(object):
+class ImmScoresRam(object):
     """Class to represent a matrix of scores for multiple Imms (columns) for multiple samples (rows)"""
+    def __init__(self,idImm,idSamp,lenSamp=None,scores=None,scoreDtype=None):
+        self.idImm = idImm
+        self.idSamp = idSamp
+        if scores is None:
+            if scoreDtype is None:
+                scoreDtype="f4"
+            scores = n.zeros((len(idSamp),len(idImm)),dtype=scoreDtype)
+        self.scores = scores
+        self.lenSamp = lenSamp
+    
+    @classmethod
+    def catImms(klass,immScores):
+        """Concatenate a sequence of ImmScores objects representing different Imms for the same samples."""
+        assert len(immScores) > 0, "Need at least one object in a sequence"
+        assert sameArrays((x.idSamp for x in immScores))
+        #conversion to UUID string array is a kludge to avoid second array items been
+        #cut if they are longer than the items of the first array
+        idImm = n.concatenate([ n.asarray(x.idImm,dtype=idDtype) for x in immScores ])
+        assert isUniqueArray(idImm), "This concatenates non-intersecting sets of Imm IDs"
+        idSamp = immScores[0].idSamp.copy()
+        lenSamp = immScores[0].lenSamp.copy()
+        scores = n.concatenate([ x.scores for x in immScores ],1) # along rows
+        return klass(idImm=idImm,idSamp=idSamp,scores=scores,lenSamp=lenSamp)
+
+from MGT.Hdf import *
+class ImmScoresHdf(object):
+    """PyTables implementation of a matrix of scores for multiple Imms (columns) for multiple samples (rows)"""
     def __init__(self,idImm,idSamp,scores,lenSamp):
         self.idImm = idImm
         self.idSamp = idSamp
@@ -25,7 +52,8 @@ class ImmScores(object):
         lenSamp = immScores[0].lenSamp.copy()
         scores = n.concatenate([ x.scores for x in immScores ],1) # along rows
         return klass(idImm=idImm,idSamp=idSamp,scores=scores,lenSamp=lenSamp)
-        
+
+ImmScores = ImmScoresHdf
 
 class Imm:
     glImmBuildExe = options.glimmer3.immBuildExe

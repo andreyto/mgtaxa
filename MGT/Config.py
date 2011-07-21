@@ -115,7 +115,7 @@ class MGTOptions(Options):
         self.hdfTestFile = 'test.hdf'
         self.predictorTable = "pred"
         self.batchRun = Options(
-                PROJECT_CODE = "0413",
+                PROJECT_CODE = "9223",
                 MEM = 2000,
                 ARCH = "lx*64",
                 maxQueued = 1500,
