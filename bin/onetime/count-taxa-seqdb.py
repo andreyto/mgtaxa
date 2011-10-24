@@ -94,7 +94,7 @@ workDir = pjoin(os.environ["GOSII_WORK"],"shannon_viral_paper_2011")
 dbPath = pjoin(workDir,"refseq-taxa")
 taxonomyDir = pjoin(workDir,"taxonomy")
 
-topTaxid =  bacTaxid
+topTaxids =  micTaxids
 
 dbSeq = SeqDbFasta(path=dbPath)
 taxids = dbSeq.getTaxaList()
@@ -102,14 +102,14 @@ taxids = dbSeq.getTaxaList()
 taxaTree = loadTaxaTree(ncbiDumpFile=pjoin(taxonomyDir,"nodes.dmp"),
                 ncbiNamesDumpFile=pjoin(taxonomyDir,"names.dmp"))
 
-topNode = taxaTree.getNode(topTaxid)
+topNodes = [ taxaTree.getNode(topTaxid) for topTaxid in topTaxids ]
 
 linwr = LinnWriter(taxaTree=taxaTree)
 wr = linwr.newWriter()
 
 for taxid in taxids:
     node = taxaTree.getNode(taxid)
-    if node.isUnder(topNode):
+    if sum(( node.isUnder(topNode) for topNode in topNodes )):
         wr.send(dict(taxid=taxid,weight=dbSeq.seqLengths(taxid)["len"].sum()))
         #wr.send(dict(taxid=taxid))
         #rd = dbSeq.fastaReader(taxid)

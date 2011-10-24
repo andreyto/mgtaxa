@@ -1,8 +1,8 @@
-pkg_ver=cmake-2.8.0
+pkg_ver=cmake-2.8.6
 rm -rf $pkg_ver
 tar -zxf $pkg_ver.tar.gz
 cd $pkg_ver
-./configure --prefix=$INST --exec-prefix=$INSTMACH && \
+./configure --prefix=$INSTMACH && \
 make && \
 make install
 

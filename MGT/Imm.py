@@ -30,7 +30,7 @@ class ImmScoresRam(object):
         scores = n.concatenate([ x.scores for x in immScores ],1) # along rows
         return klass(idImm=idImm,idSamp=idSamp,scores=scores,lenSamp=lenSamp)
 
-from MGT.Hdf import *
+#from MGT.Hdf import *
 class ImmScoresHdf(object):
     """PyTables implementation of a matrix of scores for multiple Imms (columns) for multiple samples (rows)"""
     def __init__(self,idImm,idSamp,scores,lenSamp):
@@ -109,7 +109,6 @@ class Imm:
         inp and out cannot both be None.
         """
         self.flush()
-        print "DBG: IMM scoring with %s" % (self.path,)
         cmd = [self.glImmScoreExe,"-N",self.path]
         closeInp = False
         closeOut = False

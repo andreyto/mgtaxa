@@ -393,7 +393,7 @@ class DbSql(MGTOptions):
         return inserter
 
     def createTableFromCsv(self,name,csvFile,fieldsMap={},defField=None,hasHeader=False,
-            dialect="excel-tab",dialect_options={},indices=None,preProc=None):
+            dialect="excel-tab",dialect_options={},indices=None,preProc=None,hdrPreProc=None):
         """Create and fill a table from CSV file.
         The intention is to provide a single command to load a CSV file into SQL table
         where reasonable default values can be generated for all options.
@@ -433,6 +433,8 @@ class DbSql(MGTOptions):
         """
         if preProc is None:
             preProc = lambda row,fields,nameToInd: ( row, )
+        if hdrPreProc is None:
+            hdrPreProc = lambda row: row
         if defField is None:
             defField = copy(self.defField)
         if isinstance(csvFile,str):
@@ -457,7 +459,7 @@ class DbSql(MGTOptions):
         else:
             firstRow = None
             nFields = 0
-            hdr = csvFile.next()
+            hdr = hdrPreProc(csvFile.next())
             #now fieldsMap is assumed to map names to SqlField, and we convert it
             #to positional map, checking first that all mapped fields are present
             #in the header
@@ -566,6 +568,96 @@ class DbSql(MGTOptions):
             out.write(epilog)
         if doClose:
             out.close()
+
+    def exportAsPivotCsv(self,sql,
+            rowField,colField,valField,
+            out,
+            withHeader=True,
+            rowFieldOut=None,
+            restval=0,
+            bufLen=100000,
+            dialect="excel-tab",
+            dialect_options={"lineterminator":"\n"},
+            comment=None,
+            sqlAsComment=False,
+            commentEscape='#',
+            epilog=None):
+        """Excecute SQL and export the result as CSV file.
+        @param sql SQL select statement to export results of
+        @param out Either file name, or file stream object, or CSV writer object
+        @param restval What to write for missing values in each cell (default is 0)
+        @param withHeader If True, write the field names as the header
+        @param bufLen Size (in number of records) of the internal memory buffer
+        used when moving SQL result set into the output file
+        @param dialect Dialect string defined in csv module
+        @param dialect_options Passed to csv.writer(**dialect_options)
+        @param comment if not None, this string will be printed at the top
+        @param sqlAsComment if True, will print sql statement as an extra comment line
+        @param commentEscape this string will be inserted at the start of every
+        comment line
+        @note To output any comments, out should not be a csv.writer instance
+        @note We set the default lineterminator to Linux style '\n', as opposed to 
+        Python's default of Windows style '\r\n'"""
+        cols = sorted(self.selectAs1Col("""
+        select distinct %s from 
+        ( %s ) a""" % (colField,sql)))
+        if rowFieldOut is None:
+            rowFieldOut = rowField
+        assert rowFieldOut.strip().lower() not in [ c.strip().lower() for c in cols ],\
+                "%s name for row ID header name conflicts with one of the pivot column names" % (rowFieldOut,)
+        names = [ rowFieldOut ] + cols
+        if isinstance(out,str):
+            out = openCompressed(out,'w')
+            doClose=True
+            w = csv.DictWriter(out, fieldnames=names, restval=restval,dialect=dialect,**dialect_options)
+        else:
+            doClose=False
+            if not (hasattr(out,"dialect") and hasattr(out,"writerows")):
+                #this is NOT a result of calling csv.writer() or compatible interface,
+                #so we assume it to be a file stream object, and call csv.writer()
+                #on it to create a CSV writer
+                w = csv.DictWriter(out, fieldnames=names, restval=restval,dialect=dialect,**dialect_options)
+            else:
+                if comment is not None or sqlAsComment:
+                    raise ValueError("Illegal to write comment lines into csv.writer")
+                w = out
+
+        if sqlAsComment:
+            if comment is None:
+                comment = sql
+            else:
+                comment = comment + '\n' + sql
+        if comment is not None:
+            for line in ( (commentEscape + l + '\n') for l in comment.split('\n') ):
+                out.write(line)
+        if withHeader:
+            w.writerow(dict([(name,name) for name in names]))
+        reader = self.makeBulkReader(sql=sql,format="list",bufLen=bufLen)
+        rdrCols = reader.fieldNames(format="dict")
+        # convert KeyError exception into more descriptive messages because naming mismatch between SQL
+        # output fields and requested key-value fields can be a fairly typical user error
+        try:
+            rowFieldInd = rdrCols[rowField]
+        except KeyError:
+            raise ValueError("Row key field name is not found in SQL cursor recordset: %s" % (rowField,))
+        try:
+            colFieldInd = rdrCols[colField]
+        except KeyError:
+            raise ValueError("Column key field name is not found in SQL cursor recordset: %s" % (colField,))
+        try:
+            valFieldInd = rdrCols[valField]
+        except KeyError:
+            raise ValueError("Value field name is not found in SQL cursor recordset: %s" % (valField,))
+        for rowKey,rows in it.groupby(reader.rows(),lambda r: r[rowFieldInd]):
+            rowOut = dict(( (row[colFieldInd],row[valFieldInd]) for row in rows ))
+            rowOut[rowFieldOut] = rowKey
+            w.writerow(rowOut)
+        reader.close()
+        if epilog is not None:
+            out.write(epilog)
+        if doClose:
+            out.close()
+
 
 def sqlInList(l):
     """Create a string that can be used after SQL 'IN' keyword from a given Python sequence"""
@@ -1157,6 +1249,12 @@ class BulkReader:
             else:
                 yield rows
 
+    def rows(self):
+        """Iterate row-by-row"""
+        for chunk in self.chunks():
+            for row in chunk:
+                yield row
+
     def allAsArray(self):
         """Return all (remaining) records as one numpy record array or nested list."""
         rows = self.curs.fetchall()
@@ -1168,8 +1266,18 @@ class BulkReader:
         else:
             return rows
 
-    def fieldNames(self):
-        return [ fld[0] for fld in self.curs.description ]
+    def fieldNames(self,format="list"):
+        """Return field names.
+        @param format If 'list' [ default ] - return a list of names,
+        if 'dict' - return a dict that maps field names to positions
+        """
+        ret = [ fld[0] for fld in self.curs.description ]
+        if format == "list":
+            return ret
+        elif format == "dict":
+            return dict([ (x[1],x[0]) for x in enumerate(ret) ])
+        else:
+            raise ValueError("Unknown value for 'format': %s" % (format,))
 
     def close(self):
         self.curs.close()

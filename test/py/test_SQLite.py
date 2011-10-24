@@ -5,7 +5,8 @@ csvHdrInp = pjoin(options.testDataDir,"sql","apis.hdr.csv")
 #input w/o header
 csvNhdrInp = pjoin(options.testDataDir,"sql","apis.nhdr.csv")
 
-db = DbSqlLite(dbpath=":memory:")
+#db = DbSqlLite(dbpath=":memory:")
+db = DbSqlLite(dbpath="tmp.db.sqlite")
 
 db.createTableFromCsv(name="test_csv_hdr",
         csvFile=csvHdrInp,
@@ -57,3 +58,14 @@ print "expected:"
 print expected,
 assert received == expected
 
+sql = "select f7,f10,count(*) as cnt from test_csv_hdr group by f7,f10 order by f7,f10"
+rowField = "f7"
+colField = "f10"
+valField = "cnt"
+
+db.exportAsPivotCsv(sql=sql,
+        out="test_pivot.csv",
+        rowField=rowField,colField=colField,valField=valField,
+        withHeader=True,
+        bufLen=100000,
+        dialect="excel-tab")
