@@ -3,9 +3,9 @@
 
 ## Source this file to set up custom build environment at JCVI
 
-if [ -z "$AT_ENV_BUILD_DONE" ]; then
+if [ -z "$MGT_PREFIX_ENV_BUILD_DONE" ]; then
 
-if [ -z "$AT_ENV_RUN_DONE" ]; then
+if [ -z "$MGT_PREFIX_ENV_RUN_DONE" ]; then
     echo "Environment error: You need to source first the .env_run.sh"
     exit 1
 fi
@@ -32,7 +32,7 @@ export CPPFLAGS="${CXXFLAGS}"
 export LDFLAGS="-L$INST_LIB_MACH -Wl,-R$INST_LIB_MACH -L${INST_LIB} -Wl,-R${INST_LIB} ${LDFLAGS}"
 
 
-export AT_ENV_BUILD_DONE=1
+export MGT_PREFIX_ENV_BUILD_DONE=1
 
-fi # [ -z "$AT_ENV_BUILD_DONE" ]
+fi # [ -z "$MGT_PREFIX_ENV_BUILD_DONE" ]
 

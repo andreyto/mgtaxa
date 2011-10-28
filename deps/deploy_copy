@@ -10,7 +10,7 @@ echo_files() {
 
 cd ~
 
-excludes="--exclude=packages/x86_64-rhel5/qpid-0.8/var/ --exclude=packages/x86_64-rhel5/gridway/var/ --exclude=packages/x86_64-rhel5/mgtaxa-galaxy/var/ --exclude=packages/x86_64-rhel5/pgsql/data/ --exclude=packages/x86_64-rhel5/pgsql/var/ --exclude=packages/x86_64-rhel5/mgtaxa-galaxy/database/"
+excludes="--exclude=packages/x86_64-rhel5/qpid-0.8/var/ --exclude=packages/x86_64-rhel5/gridway/var/ --exclude=packages/x86_64-rhel5/mgtaxa-galaxy/var/ --exclude=packages/x86_64-rhel5/pgsql/data/ --exclude=packages/x86_64-rhel5/pgsql/var/ --exclude=packages/x86_64-rhel5/mgtaxa-galaxy/database/ --exclude=mgtaxa/run_test/ --exclude=mgtaxa/build/"
 
 work_subdirs="gridway-proxy-mad mgtaxa mgtdata packages"
 
@@ -21,7 +21,7 @@ rsync -arv --files-from=rsync.flist.tmp $excludes mgtaxadev@mgtaxa-dev:work/ ~/w
 rsync -arv --files-from=rsync.flist.tmp $excludes ~/work/ mgtaxa@mgtaxa:work/
 
 
-home_profiles=".env_build.sh .env_run.sh .environ .bashrc .profile .mgtaxa .vimrc .vim .hgrc"
+home_profiles=".bashrc .profile .mgtaxa .vimrc .vim .hgrc"
 
 echo_files $home_profiles > rsync.flist.tmp
 

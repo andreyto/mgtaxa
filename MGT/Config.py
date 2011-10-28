@@ -115,12 +115,12 @@ class MGTOptions(Options):
         self.hdfTestFile = 'test.hdf'
         self.predictorTable = "pred"
         self.batchRun = Options(
-                PROJECT_CODE = "9223",
-                MEM = 2000,
-                ARCH = "lx*64",
+                lrmSiteOptions=r'-l memory=2000M -l medium -l arch="lx*64"',
+                lrmUserOptions='-P 0413',
                 maxQueued = 1500,
-                LENGTH = "medium", #fast
-                ENVRC = self.envRc)
+                envRc = self.envRc)
+        self.batchRunTerminator = deepcopy(self.batchRun)
+        self.batchRunTerminator.lrmSiteOptions=r'-l memory=200M -l fast -l arch="lx*64"'
         self.app = Options(
                 #override App.opt.runMode value if not "default" here. Other choices are "inproc"
                 runMode = "default",
@@ -136,6 +136,9 @@ class MGTOptions(Options):
                 )
         self.glimmer3.immBuildExe=pjoin(self.glimmer3.topDir,"bin","mgt-glm-build-icm")
         self.glimmer3.immScoreExe=pjoin(self.glimmer3.topDir,"bin","mgt-glm-simple-score")
+        self.icm = Options(
+                icmDb = pjoin(self.dataDir,"icm-refseq")
+                )
 
     def _setTaxaFileNames(self,topDir,sfx=""):
         setattr(self,'taxaDataDir'+sfx,topDir)

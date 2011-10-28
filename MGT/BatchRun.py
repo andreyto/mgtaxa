@@ -14,39 +14,13 @@ class BatchJob(Struct):
     """Description of submitted job"""
     pass
 
-_BatchJobTemplateTcsh = \
-"""#!/bin/tcsh
-#$$ -hard -P $PROJECT_CODE
-#$$ -l memory=${MEM}M $LLENGTH -l arch="$ARCH"
-#$$ -cwd
-#$$ -r n
-${OTHER_QSUB_OPTS}
-## Submit as 'qsub -b n -S /bin/tcsh script_name'. Apparently admins changed the default value of -b to 'y'
-## and by default qstat now thinks of script_name as a binary file and does not parse it for
-## embedded options (09/14/07).  Shell NEEDS to be correctly specified both at the top and (?) 
-## in qsub options for the user environment to be correctly sourced.
-## echo "Initial environment begin"
-## printenv | sort
-## echo "Initial environment end"
-## pstree
-source $$HOME/.cshrc
-
-## printenv | sort
-#hostname
-#uname -a
-#pwd
-#date
-#top -b -n 1 | head -n 15
-####
-"""
-
 _BatchJobTemplateBash = \
 """#!/bin/bash
-#$$ -hard -P $PROJECT_CODE
-#$$ -l memory=${MEM}M $LLENGTH -l arch="$ARCH"
+set -e
 #$$ -cwd
 #$$ -r n
-${OTHER_QSUB_OPTS}
+${lrmSiteOptions}
+${lrmUserOptions}
 ## Submit as 'qsub -b n -S /bin/bash script_name'. Apparently admins changed the default value of -b to 'y'
 ## and by default qstat now thinks of script_name as a binary file and does not parse it for
 ## embedded options (09/14/07).  Shell NEEDS to be correctly specified both at the top and (?) 
@@ -63,7 +37,8 @@ if [ -n "$$batchHostDebug" ]; then
 fi
 
 source ~/.profile
-${LENVRC}
+
+${envRc}
 
 if [ -n "$$batchHostDebug" ]; then
     echo "########## Execution environment begin"
@@ -89,35 +64,30 @@ class BatchSubmitter(object):
         # use global options
         if hasattr(options,"batchRun"):
             options.batchRun.updateOtherMissing(opts)
-        opts.setdefault('MEM',2000)
-        opts.setdefault('ARCH',"lx*64")
-        opts.setdefault('LENGTH',"medium")
+        opts.setdefault('lrmSiteOptions',r'-l memory=2000M -l medium -l arch="lx*64"')
+        opts.setdefault('lrmUserOptions',None)
         opts.setdefault("stdout",None)
         opts.setdefault("stderr",None)
-        opts.setdefault("OTHER_QSUB_OPTS","")
         opts.setdefault("batchHostDebug","") #should be empty for all web jobs
         return opts
     
     def __init__(self,**kw):
         opts = self.defaultOptions()
         self.opts = opts
-        opts.update(kw)
-        length = opts.pop("LENGTH")
-        if length is None:
-            length = ""
+        opts.updateFromDefinedOtherExisting(kw)
+        if opts.envRc is None:
+            opts.envRc = ""
         else:
-            length = "-l %s" % (length,)
-        opts.LLENGTH = length
-        envrc = opts.pop("ENVRC")
-        if envrc is None:
-            envrc = ""
-        else:
-            envrc = "source %s" % (envrc,)
-        opts.LENVRC = envrc        
+            opts.envRc = "source %s" % (opts.envRc,)
+        opts.setIfUndef("lrmUserOptions","")
         if opts.stdout is not None:
-            opts.OTHER_QSUB_OPTS += "%s -o %s\n" % (self.qsubOptsDelim,opts.stdout)
+            opts.lrmUserOptions += " -o %s" % (opts.stdout,)
         if opts.stderr is not None:
-            opts.OTHER_QSUB_OPTS += "%s -e %s\n" % (self.qsubOptsDelim,opts.stderr)
+            opts.lrmUserOptions += " -e %s" % (opts.stderr,)
+        if opts.lrmUserOptions:
+            opts.lrmUserOptions = "%s %s" % (self.qsubOptsDelim,opts.lrmUserOptions)
+        if opts.lrmSiteOptions:
+            opts.lrmSiteOptions = "%s %s" % (self.qsubOptsDelim,opts.lrmSiteOptions)
         self.header = varsub(_BatchJobTemplate,**opts.asDict())
         
     def submit(self,cmd,scriptName=None,cwd=None,sleepTime=0,depend=[],dryRun=False):

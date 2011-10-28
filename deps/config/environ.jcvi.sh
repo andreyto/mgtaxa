@@ -4,10 +4,25 @@
 ## The intention is to keep the files .env_run.sh and .env_build.sh relatively generic,
 ## and put site-specific stuff in this file.
 
-if [ -z "$AT_HOME_ENVIRON_DONE" ]; then
+if [ -z "$MGT_PREFIX_ENVIRON_ENTERED" ]; then
 
 ## This will guard against cyclical sourcing in MGTAXA profile
-export AT_HOME_ENVIRON_ENTERED=1
+export MGT_PREFIX_ENVIRON_ENTERED=1
+
+this_file="$BASH_SOURCE"
+## this file's abs dir
+this_file_dir=$(cd $(dirname "$this_file") && pwd)
+
+## this file's abs path
+export MGT_PREFIX_ENVIRON_RC=$this_file_dir/$(basename "$this_file")
+
+if [ -z "$MGT_PREFIX" ]; then
+    ## Root of MGT installation - where all dependencies are
+    ## In that case this file should be installed under packages/etc
+    ## below the prefix
+    export MGT_PREFIX=${this_file_dir%%/packages/etc}
+fi
+
 #export MGT_JCVI_DMZ=1
 
 ## JCVI used to have the only has functional gcc (with gfortran) in /usr/local, so we need to make sure
@@ -51,11 +66,9 @@ export PY_PREF_INTERP=/usr/local/packages/python-2.6.6
 ## will default to bin/python under the finally computed python prefix.
 export PYTHON=
 
-# absolute path to the user HOME under which everything is installed (by default - self)
-export AHOME=$HOME
-
+# now it is just an alias for MGT_PREFIX
 # this has to point to the area with enough space, e.g. project area
-export WORK=$HOME/work
+export WORK="$MGT_PREFIX"
 
 # Here we keep the source tree and the build area for all dependency packages
 # Although this var is used only during build phase, it is more convenient to define
@@ -65,16 +78,18 @@ export WORK=$HOME/work
 export DEP_SRC_TOP=$WORK/distros
 
 # project area shared scratch space
-if [ -z "$MGT_JCVI_DMZ" ]; then
-    export SCRATCH=/usr/local/projects/MGTAXA/scratch/$USER
-else
-    export SCRATCH=/opt/software/mgtaxa/scratch/$USER
+if [ -z "$SCRATCH" ]; then
+    if [ -z "$MGT_JCVI_DMZ" ]; then
+        export SCRATCH=/usr/local/projects/MGTAXA/scratch/$USER
+    else
+        export SCRATCH=/opt/software/mgtaxa/scratch/$USER
+    fi
 fi
 
 # This should be sourced at all times
-source ~/.env_run.sh
+source $MGT_PREFIX/packages/etc/env_run.sh
 # This can be commented out after everything is built
-source ~/.env_build.sh
+source $MGT_PREFIX/packages/etc/env_build.sh
 
 # Source MGTAXA config if exists
 [ -f $INST/mgtaxa/etc/mgtaxa.shrc ] && source $INST/mgtaxa/etc/mgtaxa.shrc
@@ -84,8 +99,8 @@ source ~/.env_build.sh
 #export GDFONTPATH=/usr/share/fonts/liberation
 #export GNUPLOT_DEFAULT_GDFONT=LiberationSans-Regular
 
-export AT_HOME_ENVIRON_DONE=1
+export MGT_PREFIX_ENVIRON_DONE=1
 
-fi # [ -z "$AT_HOME_ENVIRON_DONE" ]
+fi # [ -z "$MGT_PREFIX_ENVIRON_DONE" ]
 
 

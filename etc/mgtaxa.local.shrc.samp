@@ -1,0 +1,7 @@
+#!/bin/bash
+## Locally customized environment file for MGTAXA package. 
+    ## Start of variable block that can be redefined in ~/.mgtaxa
+    export MGT_DATA=$WORK/mgtdata
+    export MGT_TMP=$SCRATCH
+    export MGT_NCBI_DB=$MGT_DATA
+

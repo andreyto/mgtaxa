@@ -10,5 +10,5 @@
 ## This assumes that .bashrc has a guard conditional, so it is not sourced twice
 source ~/.bashrc
 #echo "Sourcing .profile"
-source ~/.environ
+source ~/work/packages/etc/environ.jcvi.sh
 

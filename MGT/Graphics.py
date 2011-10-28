@@ -189,7 +189,7 @@ def barHorizArea(data,xLabel,yLabel,outPrefix):
     def on_draw(event):
         if not state["chLab"]:
             #make x labels to reflect the area of bars instead of their linear size
-            ax.set_xticklabels([ int(x.get_text())**2 for x in ax.get_xticklabels() ],size="xx-small")
+            ax.set_xticklabels([ float(x.get_text())**2 for x in ax.get_xticklabels() ],size="xx-small")
             state["chLab"] = True
         for (rec,txt,irec) in zip(recs,txts,xrange(len(recs))):
             bbox = txt.get_window_extent()

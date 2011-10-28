@@ -2,7 +2,7 @@
 
 ## Source this file to set up custom run-time environment at JCVI
 
-if [ -z "$AT_ENV_RUN_DONE" ]; then
+if [ -z "$MGT_PREFIX_ENV_RUN_DONE" ]; then
 
 # I would want to get rid of /usr/local/bin. Lots of broken stuff.
 # But 'use localbins' somehow breaks sudo access. Sudo starts claiming that
@@ -121,8 +121,8 @@ if [ -n "$(which R)" ]; then
     export R_LIBS=$INSTMACH/lib/rpacks
 fi
 
-export AT_ENV_RUN_DONE=1
+export MGT_PREFIX_ENV_RUN_DONE=1
 
-fi # [ -z "$AT_ENV_RUN_DONE" ]
+fi # [ -z "$MGT_PREFIX_ENV_RUN_DONE" ]
 
 

@@ -1,4 +1,5 @@
-if [ -z "$AT_BASHRC_DONE" ]; then
+if [ -z "$AT_BASHRC_ENTERED" ]; then
+export AT_BASHRC_ENTERED=1
 
 _SHORT_HOST=$(hostname -s)
 if [[ "$_SHORT_HOST" == "mgtaxa" ]]; then
@@ -21,7 +22,7 @@ fi
 #
 #echo "Sourcing .bashrc"
 export PS1="[\u@\h \W]\$ "
-source ~/.environ
+source ~/work/packages/etc/environ.jcvi.sh
 export LS_COLORS="${LS_COLORS}:di=01;35"
 export AT_BASHRC_DONE=1
 fi

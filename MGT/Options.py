@@ -90,6 +90,7 @@ class Struct(object):
         for (key,value) in self.items():
             other.setdefault(key,value)
 
+    
     def updateFromOtherExisting(self,other):
         """Update in self keys that already present in self"""
         if isinstance(other,Struct):
@@ -101,6 +102,17 @@ class Struct(object):
             if key in o:
                 s[key] = o[key]
 
+    def updateFromDefinedOtherExisting(self,other):
+        """Update in self keys that already present in self and not undef in other"""
+        if isinstance(other,Struct):
+            o = other.__dict__
+        else:
+            o = other
+        s = self.asDict()
+        for key in list(s.keys()):
+            if key in o and o[key] is not None:
+                s[key] = o[key]
+    
     def isUndef(self,key):
         """Return True if the current value for the key is None or no key exists"""
         return self.get(key,None) is None
@@ -117,6 +129,11 @@ class Struct(object):
             return val
         return self[key]
 
+    def updateFromOtherUndef(self,other):
+        """Update in self keys that are not yet defined here (missing or None)"""
+        for (key,value) in other.items():
+            self.setIfUndef(key,value)
+    
     def asDict(self):
         return self.__dict__
 

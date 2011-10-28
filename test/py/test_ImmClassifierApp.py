@@ -8,9 +8,48 @@ seqDbPath2 = pjoin(options.testDataDir,"fasta")
 
 optTpl = Struct()
 optTpl.runMode = "batchDep"
-optTpl.PROJECT_CODE = "0413"
-optTpl.LENGTH = "medium"
+optTpl.lrmUserOptions = r"'-P 0413'"
 
+dryRun = True
+
+cmdPref = "python $MGT_HOME/MGT/ImmClassifierApp.py"
+cmdSfx = "--run-mode %s --lrm-user-options %s" %\
+        (optTpl.runMode,optTpl.lrmUserOptions)
+
+cmdLog = []
+
+def runAndLog(cmd,help):
+    cmd = "%s %s %s" % (cmdPref,cmd,cmdSfx)
+    cmdLog.append((dedent(help),cmd))
+    run(cmd,debug=True,dryRun=dryRun)
+
+
+def buildRefSeqDbCmd():
+    help="""Build the sequence DB for model training from NCBI RefSeq multi-FASTA file(s).
+    This currently filters the input by excluding plasmids and taxa w/o enough total sequence."""
+    cmd = "--mode make-ref-seqdb --inp-ncbi-seq '%s'" % \
+        (pjoin(seqDbPath1,"*.fasta.gz"),)
+    cmd += " --db-seq tmp.db-seq"
+    runAndLog(cmd,help)
+
+def trainRefCmd():
+    help="Train models based on a sequence DB built by make-ref-seqdb step."
+    cmd = "--mode train --db-seq tmp.db-seq --db-imm tmp.imm"
+    runAndLog(cmd,help)
+
+def predictAgainstRefCmd():
+    help="""Make a prediction for each sequence in the --inp-seq multi-FASTA file
+    against the --db-imm database of models. The output results are stored in
+    --pred-out-dir. Per-sequence predictions are stored in a CSV file. Aggregated
+    counts per clade at various taxonomic levels are provided in the stats sub-directory,
+    along with the auto-generated graphs. The same data is provided in a SQLite file.
+    Several extra options can change default locations of the individual output files.
+    If you omit the --db-imm option, the program will try to use a central DB of models
+    configured for this installation."""
+    cmd = "--mode predict --inp-seq %s --db-imm tmp.imm --pred-min-len-samp 1000" % \
+        (pjoin(seqDbPath1,"195.fasta.gz"),)
+    cmd += "--pred-out-dir tmp.results"
+    runAndLog(cmd,help)
 
 def trainRef(jobs):
 
@@ -136,11 +175,14 @@ def procScoresRefAgainstRef(jobs):
     imm.run(depend=jobs)
     return jobs
 
+buildRefSeqDbCmd()
+trainRefCmd()
+predictAgainstRefCmd()
 #jobs = trainRef(jobs)
 #jobs = scoreRefAgainstRef(jobs)
 #jobs = procScoresRefAgainstRef(jobs)
 
-jobs = trainCustom(jobs)
+#jobs = trainCustom(jobs)
 #print jobs
 #jobs = scoreRefAgainstCustom(jobs)
 #print jobs
@@ -148,4 +190,7 @@ jobs = trainCustom(jobs)
 #print jobs
 #jobs = scoreCustomAgainstJoint(jobs)
 #jobs = procScoresCustomAgainstJoint(jobs)
+for x in cmdLog:
+    print x[0]
+    print x[1]
 

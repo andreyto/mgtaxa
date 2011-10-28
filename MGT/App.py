@@ -7,8 +7,22 @@
 
 
 from MGT.Common import *
+from optparse import OptionParser, make_option
 
-__all__ = ["App","runAppAsScript"]
+__all__ = ["App","runAppAsScript","optParseMakeOption_Path"]
+
+def optParseCallback_StoreAbsPath(option, opt_str, value, parser):
+    setattr(parser.values, option.dest, os.path.abspath(value))
+
+def optParseMakeOption_Path(shortName,longName,dest,help=None,default=None):
+    #TODO: have it working for multi-entry options too
+    return make_option(shortName,longName,
+    action="callback", 
+    callback=optParseCallback_StoreAbsPath,
+    type="string",
+    dest=dest,
+    default=os.path.abspath(default) if default is not None else default,
+    help=help)
 
 class App:
     """Interface to application object. 
@@ -67,6 +81,7 @@ class App:
             curdir = os.getcwd()
             try:
                 if "cwd" in opt:
+                    makedir(opt["cwd"])
                     os.chdir(opt["cwd"])
                 #DBG:
                 #time.sleep(5)
@@ -94,17 +109,13 @@ class App:
     def submitTerminatorJob(self,depend):
         """Submit a do-nothing terminator job when multiple dependencies are present.
         A final top job in batchDep mode should call it e.g. when opt.web is True.
-        @todo Create a special global config key for small terminator job LRM params
         """
         opt = self.opt
         if opt.runMode != "inproc" and depend is not None and len(depend) > 1:
             assert opt.runMode == "batchDep","We only can see multiple dependencies in runMode=batchDep"
             optT = opt.copy()
             optT.runMode = "batch"
-            optT.LENGTH = "fast"
-            optT.MEM = 200
-            if hasattr(opt,"PROJECT_CODE"):
-                optT.PROJECT_CODE = opt.PROJECT_CODE
+            optT.lrmSiteOptions = copy(options.batchRunTerminator.lrmSiteOptions)
             appT = App(opt=optT)
             ret = appT.run(depend=depend)
             assert len(ret) == 1,"Terminator should always be a singleton job"
@@ -202,8 +213,12 @@ class App:
         the default values for all options. Thus, it is important the the implementation provides
         reasonable defaults in a context independent way (e.g. without including the current directory info).
         @param args command line arguments (pass [] to get default values, pass None to use sys.argv[1:])"""
-        from optparse import OptionParser, make_option
         option_list = [
+            
+            optParseMakeOption_Path(None, "--cwd",
+            dest="cwd",
+            default="work",
+            help="A directory to use as a 'current working directory' [%default]"),
             
             make_option(None, "--opt-file",
             action="store", 
@@ -218,7 +233,8 @@ class App:
             choices=("batch","inproc","batchDep"),
             dest="runMode",
             default="inproc",
-            help="Choose to batch-run or in-process"),
+            help="Set to 'batchDep' to batch-run as a DAG or to 'inproc' to run in-process "+\
+                    "'batchDep' will self-submit and print the ID to track completion with the LRM"),
             
             make_option(None, "--need-terminator",
             action="store_true", 
@@ -239,6 +255,15 @@ class App:
             dest="stderr",
             default=None,
             help="Optional name for standard error file in batch mode"),
+            
+            make_option(None, "--lrm-user-options",
+            action="store", 
+            type="string",
+            dest="lrmUserOptions",
+            default=None,
+            help="Extra options for the local resource manager (LRM) as an LRM-specific string. "+\
+                    "The string should be quoted if it contains blanks. "+\
+                    "Example is a SGE project code: '-P 1111'"),
             
             make_option(None, "--web",
             action="store_true",

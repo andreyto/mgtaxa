@@ -19,6 +19,9 @@
 # Software will be installed here
 prefix := $(INST)/mgtaxa
 
+# The run-time dependencies must be already installed here
+prefix_dep := $(MGT_PREFIX_ENVIRON_RC)
+
 # Data files will be stored here
 datadir := $(prefix)/var
 
@@ -230,6 +233,7 @@ mgtaxa.shrc: $(PROJ_DIR)/etc/mgtaxa.shrc.in
 	    -e 's|__MGT_EXEC_BIN__|$(exec_bindir)|' \
 	    -e 's|__MGT_PY_PATH__|$(prefix):$(libdir)|' \
 	    -e 's|__MGT_RC__|$(sysconfdir)/mgtaxa.shrc|' \
+	    -e 's|__MGT_PREFIX_ENVIRON_RC__|$(prefix_dep)|' \
 	    $(PROJ_DIR)/etc/mgtaxa.shrc.in > $@ || rm $@
 
 mgtaxa.insrc.shrc: $(PROJ_DIR)/etc/mgtaxa.shrc.in
@@ -240,6 +244,7 @@ mgtaxa.insrc.shrc: $(PROJ_DIR)/etc/mgtaxa.shrc.in
 	    -e 's|__MGT_EXEC_BIN__|$(BUILD_DIR)|' \
 	    -e 's|__MGT_PY_PATH__|$(PROJ_DIR):$(BUILD_DIR)|' \
 	    -e 's|__MGT_RC__|$(BUILD_DIR)/mgtaxa.insrc.shrc|' \
+	    -e 's|__MGT_PREFIX_ENVIRON_RC__|$(prefix_dep)|' \
 	    $(PROJ_DIR)/etc/mgtaxa.shrc.in > $@ || rm $@
 
 ############################ Compilation Rules #############################

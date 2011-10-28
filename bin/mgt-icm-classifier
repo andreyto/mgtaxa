@@ -1,0 +1,6 @@
+#!/bin/bash
+set -e
+#arguments need to be quoted otherwise those with spaces
+#inside (like --lrm-user-options "-P 1111" will ge busted
+exec python $MGT_HOME/MGT/ImmClassifierApp.py "$@"
+
