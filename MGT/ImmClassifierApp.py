@@ -24,7 +24,7 @@ def fastaReaderFilterNucDegen(fastaReader,extraFilter=None):
         for rec in fastaReader.records():
             hdr = rec.header()
             seq = compr(rec.sequence())
-            if not checkSaneAlphaHist(seq,nonDegenSymb,minNonDegenRatio=0.99):
+            if not checkSaneAlphaHist(seq,nonDegenSymb,minNonDegenRatio=0.98):
                 print "WARNING: ratio of degenerate symbols is too high, "+\
                         "skipping sequence with id %s" % (rec.getId(),)
             else:
