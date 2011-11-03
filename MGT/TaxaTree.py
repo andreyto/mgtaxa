@@ -483,6 +483,14 @@ class TaxaNode(object):
         Uses pre-computed nested sets indexes, which must be up-to-date."""
         return self.lnest >= other.lnest and self.rnest <= other.rnest
     
+    def isUnderAny(self,others):
+        """Return true if this node is a descendant of the any of the others node or one of the other nodes itself.
+        Uses pre-computed nested sets indexes, which must be up-to-date."""
+        for o in others:
+            if self.isUnder(o):
+                return True
+        return False
+    
     def isSubnodeAny(self,others):
         return self.whichSupernode(others) is not None
 
@@ -1079,10 +1087,7 @@ class TaxaLevels:
         _linn_ids = sorted([self.levelIds[lev] for lev in self.levels])
         self._linn_id_range = (_linn_ids[0],_linn_ids[1])
         #index of a given level name in the list 'levels'
-        levelPos = {}
-        for (i,level) in enumerate(self.levels):
-            levelPos[level] = i
-        self.levelPos = levelPos
+        self.levelPos = self.getLevelPos(order='ascend')
         if taxaTree is not None:
             self.setLevels(taxaTree)
 
@@ -1115,6 +1120,9 @@ class TaxaLevels:
         else:
             raise ValueError("Unknown value for 'order': " + str(order))
 
+    def getLevelPos(self,order="ascend"):
+        return dict([ (x[1],x[0]) for x in enumerate(self.getLevelNames(order=order)) ])
+    
     def isNodeLevelLessOrEqual(self,node,level):
         return self.getLevelId(node.level) <= self.getLevelId(level)
 
@@ -1169,11 +1177,14 @@ class TaxaLevels:
             return [ (levelIds[n.level],n.id) for n in self.lineage(node)]
 
     def lineageFixedList(self,node,null=None,format="id",fill=None):
-        """Return a list of taxids that correspond to the list of level names returned by getLevelNames("ascend").
+        """Return a sequence of taxids or nodes that correspond to the list of level names returned by getLevelNames("ascend").
+        You can also index the returned value by level name using getLevelPos method:
+        taxaLevels.lineageFixedList(node)[taxaLevels.getLevelPos("phylum")]
+        @todo update the description of 'fill' parameter
         @param node TaxaNode instance
         @param null If a given level is not present in this node's lineage, 
         and the parameter 'fill' is None, the corresponding element is set to 'null' value.
-        @param format Output format: if 'id', taxids will be returned, else node instances
+        @param format Output format: if 'id', taxids will be returned, if 'node' - node instances
         @param fill If None, entries for the absent levels will be set to 'null;
         If 'left', absent entries will be filled from the nearest non-absent entries
         to their right, but not for entries below or equal to the maximum level below

@@ -1,0 +1,22 @@
+#!/bin/bash
+## This will gzip all files, with one SGE task in array job per file
+## Pipe into this a list of file paths to zip, e.g. an output of the 
+## find command suc as "find ../refseq-seqdb/ -name '*.fasta'"
+## It makes sense to run it from a temporary working directory for easy
+## cleanup of stdou stream files afterwards
+set -ex
+fListF=each_file.list.txt
+cmdF=each_file.cmd.sh
+
+cat > $fListF
+#(while read f; do echo $f; done) > $fListF
+
+cat > $cmdF <<EOF
+#!/bin/bash
+files=( \$(cat $fListF) )
+file=\${files[((\$SGE_TASK_ID-1))]} 
+gzip \$file
+EOF
+
+qsub -cwd -b n -S /bin/bash -P 0413 -l fast -t 1-$(wc -l < $fListF) $cmdF
+

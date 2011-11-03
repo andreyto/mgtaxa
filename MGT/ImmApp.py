@@ -52,6 +52,7 @@ class ImmApp(App):
         opt.setIfUndef("incrementalWork",False)
         opt.setIfUndef("immDb","imm")
         opt.setIfUndef("nImmBatches",10)
+        opt.setIfUndef("trainMaxLenSampModel",10**9/2) #1G with rev-compl
         if not opt.isUndef("immIdToSeqIds"):
             opt.setIfUndef("immIds",opt.immIdToSeqIds)
         if not opt.isUndef("outDir"):
@@ -111,16 +112,11 @@ class ImmApp(App):
         imm = Imm(path=immPath)
         try:
             inp = imm.train()
-            #TMP: maxLen
-            #print "WARNING: maxLen=100000 is a temporary hack to use only 100Kbp seq for ICM training"
-            maxLen = None
-            seqDb.writeFastaBothStrands(ids=immSeqIds,out=inp,maxLen=maxLen)
+            seqDb.writeFastaBothStrands(ids=immSeqIds,out=inp,maxLen=opt.trainMaxLenSampModel)
             inp.close()
             imm.flush()
         except:
             # remove any unfinished ICM file if anything went wrong
-            ##@todo modify Imm to build in a temp file which gets
-            ##renamed in flush()
             rmf(immPath)
             raise
 
@@ -185,6 +181,7 @@ class ImmApp(App):
             rmfMany([ self.getScorePath(immId) for immId in immIds ])
         rmf(opt.outScoreComb)
         immIds = n.asarray(immIds,dtype="O")
+        nrnd.shuffle(immIds) # in case we doing together proks and euks
         for immIdsBatch in n.array_split(immIds,min(opt.nImmBatches,len(immIds))):
             immOpt = copy(opt)
             immOpt.mode = "score-batch"

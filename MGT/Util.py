@@ -909,10 +909,7 @@ class SubSamplerRandomStart:
         self.maxLen = maxLen
 
     def __call__(self,samp):
-        """Return subsequence [random,random).
-        We always take from the beginning rather than from a random start,
-        because when subsampling short taxa with concatenation, this gives 
-        a better chance of not hitting spacer junction."""
+        """Return subsequence [random,random)."""
         sampLen = len(samp)
         fragLen = nrnd.random_integers(min(sampLen,self.minLen),min(sampLen,self.maxLen))
         fragStart = nrnd.random_integers(0,sampLen-fragLen)

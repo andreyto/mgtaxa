@@ -10,7 +10,7 @@ optTpl = Struct()
 optTpl.runMode = "batchDep"
 optTpl.lrmUserOptions = r"'-P 0413'"
 
-dryRun = True
+dryRun = False
 
 cmdPref = "python $MGT_HOME/MGT/ImmClassifierApp.py"
 cmdSfx = "--run-mode %s --lrm-user-options %s" %\
@@ -34,7 +34,8 @@ def buildRefSeqDbCmd():
 
 def trainRefCmd():
     help="Train models based on a sequence DB built by make-ref-seqdb step."
-    cmd = "--mode train --db-seq tmp.db-seq --db-imm tmp.imm"
+    cmd = "--mode train --db-seq tmp.db-seq --db-imm tmp.imm "+\
+            "--train-max-len-samp-model 1000000 --incremental-work 1"
     runAndLog(cmd,help)
 
 def predictAgainstRefCmd():
@@ -175,9 +176,9 @@ def procScoresRefAgainstRef(jobs):
     imm.run(depend=jobs)
     return jobs
 
-buildRefSeqDbCmd()
+#buildRefSeqDbCmd()
 trainRefCmd()
-predictAgainstRefCmd()
+#predictAgainstRefCmd()
 #jobs = trainRef(jobs)
 #jobs = scoreRefAgainstRef(jobs)
 #jobs = procScoresRefAgainstRef(jobs)

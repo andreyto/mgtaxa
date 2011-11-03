@@ -65,13 +65,14 @@ class IdMap:
 
 class LoadSeqPreprocShred:
 
-    def __init__(self,sampLen,sampNum=0,sampOffset=0,makeUniqueId=False):
+    def __init__(self,sampLen,sampNum=0,sampOffset=0,makeUniqueId=False,sortByStarts=False):
         """Constructor.
         @param sampLen length of each output fragment
         @param sampNum if <=0 - return all sampLen long fragments, if other number - that many,
         otherwise it should be f(lab,seq,id) and return the number of shreds for a given sequence.
-        @param sampOffset optional offset between end of each shred and start of next
+        @param sampOffset optional offset between end of each shred and start of next (<0 for overlap)
         @param makeUniqueId if True, generate new UUIDs for shreds - getIdMap() can be used to get the mapping and coords
+        @note Results will be returned as a reference to input sequence data, not a copy.
         """
         self.sampLen = sampLen
         if isinstance(sampNum,int):
@@ -82,6 +83,7 @@ class LoadSeqPreprocShred:
         self.sampStride = sampLen + sampOffset
         self.sampCoord = []
         self.makeUniqueId = makeUniqueId
+        self.sortByStarts = sortByStarts
         assert sampLen > 0
         assert self.sampStride > 0
 
@@ -95,14 +97,21 @@ class LoadSeqPreprocShred:
         sampNumVal = self.sampNum(lab,seq,id)
         if  sampNumVal > 0 and sampNumVal < len(sampStarts):
             sampStarts = sampStarts[:sampNumVal]
-        sampSeq = [ seq[start:start+sampLen].copy() for start in sampStarts ]
+        if self.sortByStarts:
+            sampStarts.sort()
+        sampSeq = [ seq[start:start+sampLen] for start in sampStarts ]
         if self.makeUniqueId:
             ids = genId(n=len(sampSeq))
         else:
             ids = zeroId(n=len(sampSeq),val=id)
         oldIds = zeroId(n=len(sampSeq),val=id)
         self.sampCoord.append(n.rec.fromarrays([oldIds,ids,sampStarts,sampStarts+sampLen],names="oldId,id,sampStart,sampEnd"))
+        self.sampStarts = sampStarts
         return [lab]*len(sampSeq),sampSeq,ids
+
+    def getLastSampStarts(self):
+        """Return sample starts generated during the last call to __call__()"""
+        return self.sampStarts
 
     def getIdMap(self):
         return IdMap(records=n.concatenate(self.sampCoord))

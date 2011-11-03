@@ -46,10 +46,20 @@ class ImmClassifierApp(App):
     data for subnodes.
     This class can be mostly viewed as imposing a TaxaTree structure onto ImmApp."""
 
-    batchDepModes = ("predict","score","train")
+    batchDepModes = ("predict","score","train","make-ref-seqdb","fin-ref-seqdb")
 
     ## Special taxonomy ID value to mark rejected samples 
     rejTaxid = 0
+    
+    # Flag set on a TaxaNode node to show that the model should not be
+    # trained for this node
+    TRAIN_SEL_STATUS_IGNORE = 0x00
+    # Flag set on a TaxaNode node to show that the model can be trained
+    # because the node has directly attached sequence
+    TRAIN_SEL_STATUS_DIRECT = 0x01
+    # Flag set on a TaxaNode node to show that the model can be trained
+    # because the node has indirectly attached sequence
+    TRAIN_SEL_STATUS_INDIRECT = 0x02
 
     appOptHelp = \
     """This is a unified driver program for ICM-based classification and model training.
@@ -134,7 +144,7 @@ class ImmClassifierApp(App):
         from optparse import make_option
         
         optChoicesMode = ("make-ref-seqdb","train","predict","score","setup-train","proc-scores",
-                "export-predictions","stats-pred")
+                "export-predictions","stats-pred","extract-ref-seqdb","fin-ref-seqdb","fin-ref-seqdb-batch")
         
         option_list = [
             
@@ -242,9 +252,19 @@ class ImmClassifierApp(App):
             make_option(None, "--train-min-len-samp",
             action="store", 
             type="int",
-            default=100000,
             dest="trainMinLenSamp",
-            help="Min length of scaffolds to consider for training custom IMMs"),
+            help="Min length of leaf node sequence to consider the node for training modesl: "+\
+                    "default is 100000 if training custom models and 500000 if training "+\
+                    "reference models. For training custom models, this means that sequences"+\
+                    "shorter that this will be ignored"),
+            
+            make_option(None, "--train-max-len-samp-model",
+            action="store", 
+            type="int",
+            default=10**9/2, #1G with rev-compl
+            dest="trainMaxLenSampModel",
+            help="Max length of sequence to use when training one model. If the available "+\
+                    "sequence is longer, it will be subsampled [%default]"),
             
             make_option(None, "--new-tax-name-top",
             action="store", 
@@ -294,6 +314,15 @@ class ImmClassifierApp(App):
                     "--pred-min-len-samp=5000 if they were not defined. "+\
                     "'bac' [default] will try to assign bacterial taxonomy to the "+\
                     "input sequences."),
+            
+            make_option(None, "--incremental-work",
+            action="store",
+            type="int",
+            default=0,
+            dest="incrementalWork",
+            help="Work incrementally wherever possible (restart mode). Currently, this will "+\
+                    "affect 'train' and 'predict' modes [%default]. Set to non-zero number to "+\
+                    "activate"),
         ]
         return Struct(usage = klass.appOptHelp+"\n"+\
                 "Run with the --help options for a detailed description of individual arguments.",
@@ -330,8 +359,13 @@ class ImmClassifierApp(App):
             opt.setIfUndef("predMinLenSamp",300)
         else:
             raise ValueError("Unknown --pred-mode value: %s" % (opt.predMode,))
+        if opt.mode == "train":
+            if opt.inpTrainSeq:
+                defTrainMinLenSamp = 100000
+            else:
+                defTrainMinLenSamp = 500000
+            opt.setIfUndef("trainMinLenSamp",defTrainMinLenSamp)
         if opt.mode == "make-ref-seqdb":
-            opt.trainMinLenSamp = 500000
             globOpt = globals()["options"]
             opt.setIfUndef("inpNcbiSeq",pjoin(globOpt.refSeqDataDir,"microbial.genomic.fna.gz"))
 
@@ -394,8 +428,14 @@ class ImmClassifierApp(App):
             ret = self.combineScores(**kw)
         elif opt.mode == "make-ref-seqdb":
             ret = self.makeRefSeqDb(**kw)
+        elif opt.mode == "extract-ref-seqdb":
+            ret = self.extractRefSeqDb(**kw)
         elif opt.mode == "stats-pred":
             ret = self.statsPred(**kw)
+        elif opt.mode == "fin-ref-seqdb":
+            ret = self.finRefSeqDb(**kw)
+        elif opt.mode == "fin-ref-seqdb-batch":
+            ret = self.finRefSeqDbBatch(**kw)
         else:
             raise ValueError("Unknown mode value: %s" % (opt.mode,))
         return ret
@@ -421,6 +461,20 @@ class ImmClassifierApp(App):
 
     def makeRefSeqDb(self,**kw):
         """Create reference SeqDb (the "main" SeqDb)"""
+        opt = self.opt
+        optI = copy(opt)
+        optI.mode = "extract-ref-seqdb"
+        app = self.factory(opt=optI)
+        jobs = app.run(**kw)
+        optI = copy(opt)
+        optI.mode = "fin-ref-seqdb"
+        app = self.factory(opt=optI)
+        kwI = kw.copy()
+        kwI["depend"] = jobs
+        return app.run(**kwI)
+    
+    def extractRefSeqDb(self,**kw):
+        """Extract reference SeqDb from input database sequences"""
         return self.makeNCBISeqDb(**kw)
 
     def makeNCBISeqDb(self,**kw):
@@ -433,12 +487,37 @@ class ImmClassifierApp(App):
         seqDb.setTaxaTree(self.getTaxaTree())
         seqDb.importByTaxa(glob.glob(opt.inpNcbiSeq),filt=filt)
 
-        taxids = seqDb.getTaxaList()
-        for taxid in taxids:
-            taxidSeqLen = seqDb.seqLengths(taxid)["len"].sum()
-            if taxidSeqLen < opt.trainMinLenSamp:
-                seqDb.delById(taxid)
+        # For now, we filter by length when we build models.
+        #taxids = seqDb.getTaxaList()
+        #for taxid in taxids:
+        #    taxidSeqLen = seqDb.seqLengths(taxid)["len"].sum()
+        #    if taxidSeqLen < opt.trainMinLenSamp:
+        #        seqDb.delById(taxid)
 
+    def finRefSeqDb(self,**kw):
+        """Finalize creation of SeqDb for training ICM model from NCBI RefSeq"""
+        opt = self.opt
+        seqDb = self.getSeqDb()
+        taxids = seqDb.getIdList()
+        taxids = n.asarray(taxids,dtype="O")
+        nrnd.shuffle(taxids)
+        jobs = []
+        for taxidsBatch in n.array_split(taxids,min(1000,len(taxids))):
+            optI = copy(opt)
+            optI.mode = "fin-ref-seqdb-batch"
+            optI.seqDbIds = taxidsBatch
+            app = self.factory(opt=optI)
+            jobs += app.run(**kw)
+        return jobs
+    
+    def finRefSeqDbBatch(self,**kw):
+        """Sub-task of finalizing creation of SeqDb for training ICM model from NCBI RefSeq"""
+        opt = self.opt
+        seqDb = self.getSeqDb()
+        taxids = opt.seqDbIds
+        for taxid in taxids:
+            seqDb.finById(taxid)
+            print "DEBUG: finByid(%s) done" % (taxid,)
 
     ## Methods that assign training sequences to higher-level nodes
 
@@ -448,9 +527,11 @@ class ImmClassifierApp(App):
         a one-element list will be assigned.
         @post Attribute 'leafSeqDbIds' is assigned to EVERY node and contains a list of IDs, possibly empty.
         The empty list will be a reference to a single shared object, so it should be treated as immutable"""
+        opt = self.opt
         taxaTree = self.getTaxaTree()
         seqDb = self.getSeqDb()
-        taxaList = seqDb.getTaxaList()
+        taxaList = [ taxid for taxid in seqDb.getTaxaList() \
+                if seqDb.seqLengths(taxid)["len"].sum() >= opt.trainMinLenSamp ]
         emptyList = []
         taxaTree.setAttribute("leafSeqDbIds",emptyList,doCopy=False)
         for taxid in taxaList:
@@ -459,13 +540,14 @@ class ImmClassifierApp(App):
 
     def pickSeqOnTree(self,maxSeqIdCnt):
         """Assign to each node of the taxonomy tree the list of SeqDB IDs in the subtree under that node.
-        It picks a medium count of IDs from each child node and itself, clipped by maxSeqIdCnt.
+        It picks a median count of IDs from each child node and itself, clipped by maxSeqIdCnt.
         """
         taxaTree = self.getTaxaTree()
 
         def actor(node):
             if node.isLeaf() and len(node.leafSeqDbIds)>0:
                 node.pickedSeqDbIds = node.leafSeqDbIds
+                node.trainSelStatus = self.TRAIN_SEL_STATUS_DIRECT
             else:
                 chSeqIds = [c.pickedSeqDbIds for c in node.getChildren() if hasattr(c,"pickedSeqDbIds")]
                 chSeqIds.append(node.leafSeqDbIds)
@@ -473,18 +555,46 @@ class ImmClassifierApp(App):
                 if len(chSeqIds) > 0:
                     targLen = int(n.median([ len(x) for x in chSeqIds ]))
                     targLen = min(maxSeqIdCnt,targLen)
-                    chSeqIds = [ sampleBoundWOR(x,targLen) for x in chSeqIds ]
-                    node.pickedSeqDbIds = sum(chSeqIds,[])
+                    chSeqIdsSel = [ sampleBoundWOR(x,targLen) for x in chSeqIds ]
+                    node.pickedSeqDbIds = sum(chSeqIdsSel,[])
                     assert len(node.pickedSeqDbIds) > 0
+                    #We only train for nodes with directly attached sequence,
+                    #or at least two subnodes with some (possibly indirectly
+                    #attached) sequence. This is done to avoid creating a lineage
+                    #of identical models when there is only one sequence sample
+                    #at the bottom of the lineage. This implicitely selects the
+                    #most specific assignment for such lineages, unless we change
+                    #it at the prediction stage by looking at the location of models
+                    #on the tree.
+                    if len(node.leafSeqDbIds)>0:
+                        node.trainSelStatus = self.TRAIN_SEL_STATUS_DIRECT
+                    elif len(chSeqIds) >= 2:
+                        node.trainSelStatus = self.TRAIN_SEL_STATUS_INDIRECT
+
 
         taxaTree.visitDepthBottom(actor)
 
     def defineImms(self):
         taxaTree = self.getTaxaTree()
+        micNodes = [ taxaTree.getNode(taxid) for taxid in micTaxids ]
+        cellNode = taxaTree.getNode(cellTaxid)
+        #DEBUG:
+        #cntLeafSeq = sum([ len(node.leafSeqDbIds)>0 for node in taxaTree.iterDepthTop() if node.isUnder(cellNode) ])
+        #cntDirect = sum([ hasattr(node,"trainSelStatus") and node.trainSelStatus == self.TRAIN_SEL_STATUS_DIRECT for node in taxaTree.iterDepthTop() if node.isUnder(cellNode) ])
         immIdToSeqIds = {}
+        ##@todo Make it controlled by a node selection algebra passed by the user as json expression
         for node in taxaTree.iterDepthTop():
-            if hasattr(node,"pickedSeqDbIds"):
-                immIdToSeqIds[node.id] = node.pickedSeqDbIds
+            if hasattr(node,"trainSelStatus") and node.trainSelStatus != self.TRAIN_SEL_STATUS_IGNORE:
+                doPick = False
+                if node.isUnderAny(micNodes):
+                    doPick = True
+                elif node.isUnder(cellNode):
+                    if node.trainSelStatus == self.TRAIN_SEL_STATUS_DIRECT:
+                        doPick = True
+                if doPick:
+                    #DEBUG:
+                    #print "Training for: ", node.lineageStr()
+                    immIdToSeqIds[node.id] = node.pickedSeqDbIds
         dumpObj(immIdToSeqIds,self.opt.immIdToSeqIds)
 
     def _customTrainSeqIdToTaxaName(self,seqid):
@@ -551,6 +661,7 @@ class ImmClassifierApp(App):
                 fastaWriter = seqDb.fastaWriter(id=nextNewTaxid,lineLen=80)
                 fastaWriter.record(header=hdr,sequence=seq)
                 fastaWriter.close()
+                seqDb.finById(id=nextNewTaxid)
                 nextNewTaxid += 1
                 nNodesOut += 1
         print "DEBUG: written %s sequence files in SeqDbFasta" % (nNodesOut,)
@@ -744,7 +855,7 @@ class ImmClassifierApp(App):
 
     def _maskScoresNonSubtrees(self,taxaTree,immScores,posRoots):
         """Set to a negative infinity (numpy.NINF) all columns in score matrix that point to NOT subtrees of posRoots nodes.
-        This is used to mask all scores pointing to other than bacteria or archaea."""
+        This is used to mask all scores pointing to other than bacteria, archaea or eukaryots."""
         scores = immScores.scores
         idImms = immScores.idImm
         for (iCol,idImm) in enumerate(idImms):
@@ -753,6 +864,7 @@ class ImmClassifierApp(App):
             if not (node.isSubnodeAny(posRoots) or node in posRoots):
                 scores[:,iCol] = n.NINF
 
+    
     def _maskScoresByRanks(self,taxaTree,immScores):
         """Set to a negative infinity (numpy.NINF) all columns in score matrix that point to nodes of ranks not in desired range.
         """
@@ -822,6 +934,29 @@ class ImmClassifierApp(App):
         # at about 1.645 z-score for standard normal distribution
         return normScore
 
+    def _roundUpPredictions(self,predTaxids,rootNodes,rank):
+        """Make predictions less specific for selected subtrees.
+        For example, you can use this to make each eukaryotic prediction no
+        more specific than a phylum (or a nearest defined rank).
+        @param taxaTree TaxaTree instance
+        @param predTaxids an array of predicted taxids, one per sample
+        @param roots a sequence of TaxaNode instances defining subtrees that
+        will be affected
+        @param rank lowest rank allowed for selected subtrees"""
+        taxaTree = self.getTaxaTree()
+        taxaLevels = self.getTaxaLevels()
+        rankPos = taxaLevels.getLevelPos()[rank]
+        for (i,taxid) in enumerate(predTaxids):
+            if not taxid == self.rejTaxid:
+                node = taxaTree.getNode(taxid)
+                if node.isSubnodeAny(rootNodes):
+                    lin = taxaLevels.lineageFixedList(node,null=None,format="node",fill="up-down")
+                    rankNode = lin[rankPos]
+                    #assert rankNode is not None,("Logic error for predNode=%s" % (predNode,))
+                    #condition below should probably always be true...
+                    if rankNode:
+                        predTaxids[i] = rankNode.id
+
 
     def processImmScores(self,**kw):
         """Process raw IMM scores to predict taxonomy.
@@ -848,11 +983,12 @@ class ImmClassifierApp(App):
         idImms = sc.idImm
         micRoots = [ taxaTree.getNode(taxid) for taxid in micTaxids ]
         virRoot = taxaTree.getNode(virTaxid)
+        cellRoot = taxaTree.getNode(cellTaxid)
         #scVirRoot = scores[:,idImms == virTaxid][:,0]
         #scCellRoot = scores[:,idImms == cellTaxid][:,0]
         #cellTopColInd = n.concatenate([ n.where(idImms == taxid)[0] for taxid in micTaxids ])
         #scCellRootMax = scores[:,cellTopColInd].max(1)
-        self._maskScoresNonSubtrees(taxaTree,immScores=sc,posRoots=micRoots)
+        self._maskScoresNonSubtrees(taxaTree,immScores=sc,posRoots=(cellRoot,))
         if opt.rejectRanksHigher is not "superkingdom":
             self._maskScoresByRanks(taxaTree,immScores=sc)
         topTaxids = self._taxaTopScores(taxaTree,immScores=sc,topScoreN=10)
@@ -890,6 +1026,9 @@ class ImmClassifierApp(App):
                             min_linn_levid,max_linn_levid)):
                         predTaxids[i] = self.rejTaxid
 
+        #Round-up euk predictions to the phylum level because of high sequence identities between
+        #lower order clades
+        self._roundUpPredictions(predTaxids,rootNodes=(taxaTree.getNode(eukTaxid),),rank="phylum")
         pred = TaxaPred(idSamp=sc.idSamp,predTaxid=predTaxids,topTaxid=topTaxids,lenSamp=sc.lenSamp)
         makeFilePath(opt.predOutTaxa)
         dumpObj(pred,opt.predOutTaxa)
@@ -915,7 +1054,7 @@ class ImmClassifierApp(App):
     def _buildCustomTaxidToRefTaxidMap(self,predOutTaxa):
         """Helper method for transitive classification.
         This loads a prediction file created in a separate
-        run for assigning cutsom model sequences to a reference DB,
+        run for assigning custom model sequences to a reference DB,
         and returns a dict that maps custom taxonomic id generated
         here to assigned reference DB taxid"""
         opt = self.opt

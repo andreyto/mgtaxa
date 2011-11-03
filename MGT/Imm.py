@@ -59,6 +59,7 @@ class Imm:
     glImmBuildExe = options.glimmer3.immBuildExe
     glImmScoreExe = options.glimmer3.immScoreExe
 
+    workModelSfx = ".work"
 
     def __init__(self,path):
         """Ctor.
@@ -67,6 +68,7 @@ class Imm:
         self.path = path
         self.p = None
         self.cmd = None
+        self.postFlush = None
 
     def __del__(self):
         self.flush()
@@ -78,7 +80,8 @@ class Imm:
         and close it when done.
         """
         self.flush()
-        cmd = shlex.split(self.glImmBuildExe+" -d 10 -w 12 -p 1 %s" % self.path)
+        workPath = self.path + self.workModelSfx
+        cmd = shlex.split(self.glImmBuildExe+" -d 10 -w 12 -p 1 %s" % (workPath,))
         closeInp = False
         if inp is None:
             inp = PIPE
@@ -90,6 +93,12 @@ class Imm:
         p = Popen(cmd, stdin=inp, close_fds=True)
         self.p = p
         self.cmd = cmd
+        def _postFlushAction():
+            if os.path.isfile(workPath):
+                if os.path.getsize(workPath) == 0:
+                    raise ValueError("Model work file has size zero after training: %s" % (workPath,))
+                os.rename(workPath,self.path)
+        self.postFlush = _postFlushAction
         if closeInp:
             inp.close()
         if inp is not PIPE:
@@ -147,7 +156,7 @@ class Imm:
             return p.stdin
 
     def flush(self):
-        """Make sure that the any subprocess trully terminated.
+        """Make sure that any subprocess trully terminated.
         This is called automatically at the start of train() and score(),
         otherwise a sequence train(); score() fails on reading the IMM header
         by IMM executable, apparently because the model file is not yet flushed.
@@ -156,6 +165,8 @@ class Imm:
             self.p.wait()
             if self.p.returncode:
                 raise CalledProcessError(self.cmd,self.p.returncode)
+        if self.postFlush is not None:
+            self.postFlush()
 
     
     @classmethod

@@ -8,7 +8,8 @@
 
 """I/O of FASTA formatted sequence files"""
 
-__all__ = [ "FastaReader", "fastaReaderGzip", "FastaWriter", "splitFasta", "fastaLengths", "seqToLines" ]
+__all__ = [ "FastaReader", "fastaReaderGzip", "FastaWriter", 
+        "splitFasta", "fastaLengths", "seqToLines", "shredFasta" ]
 
 from MGT.Common import *
 from MGT.Util import openGzip, openCompressed
@@ -211,6 +212,7 @@ class FastaWriter:
 
 
 def splitFasta(inpFasta,outBase,maxChunkSize,sfxSep='_',lineLen=80):
+    """Split input multi-FASTA file into multiple files of fixed size"""
     inpSeq = FastaReader(inpFasta)
     iChunk = 0
     chunkSize = 0
@@ -239,6 +241,31 @@ def splitFasta(inpFasta,outBase,maxChunkSize,sfxSep='_',lineLen=80):
     out.close()
     inpSeq.close()
     return iChunk
+
+def shredFasta(inpFasta,outFasta,fragSize,fragCountRatio=1.,lineLen=80,outMode="w"):
+    """Shred each record in multi-FASTA file into multiple records of fixed size"""
+    from MGT.FeatIO import LoadSeqPreprocShred
+    inpSeq = FastaReader(inpFasta)
+    outSeq = FastaWriter(out=outFasta,lineLen=lineLen,mode=outMode)
+    if fragCountRatio < 1.:
+        sampNum = lambda lab,seq,id: int(len(seq)/(fragSize/2)*fragCountRatio) 
+    else:
+        sampNum = 0
+    shredder = LoadSeqPreprocShred(sampLen=fragSize,sampNum=sampNum,
+            sampOffset=-fragSize/2,makeUniqueId=False,
+            sortByStarts=True)
+    for rec in inpSeq.records():
+        hdr = rec.header()
+        id = rec.getId()
+        seq = rec.sequence()
+        labFr,seqFr,idFr = shredder(0,seq,id)
+        startsFr = shredder.getLastSampStarts()
+        for iF,sF in enumerate(seqFr):
+            stF = startsFr[iF]
+            idF = "%s_%s_%s-%s" % (id,iF,stF,stF+fragSize)
+            outSeq.record(header=idF,sequence=sF)
+    inpSeq.close()
+    outSeq.close()
 
 def fastaWriteOnce(records,out,lineLen=None,mode="w"):
     """Open out file, write several records at once as FASTA, and close the file.

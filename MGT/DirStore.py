@@ -20,6 +20,7 @@ class DirStore:
     dumpName = "store.pkl"
     stemName = "all"
     objExt = ".pkl"
+    metaExt = ".meta.pkl"
 
     @classmethod
     def open(klass,path,mode="a",**kw):
@@ -85,6 +86,17 @@ class DirStore:
     def isStore(klass,path):
         return os.path.isdir(klass._metaPath(path))
 
+    def getFileMetaPath(self,name):
+        return pjoin(self._metaPath(self.path),name+self.metaExt)
+
+    def loadFileMetaData(self,name):
+        p = self.getFileMetaPath(name)
+        return loadObj(p)
+    
+    def saveFileMetaData(self,obj,name):
+        p = self.getFileMetaPath(name)
+        dumpObj(obj,p)
+    
     def getFilePath(self,name):
         return pjoin(self.path,name)
     
