@@ -16,6 +16,247 @@ from MGT.DirStore import *
 from MGT.SeqDbFasta import *
 import UUID
 
+from MGT.Hdf import *
+
+class ImmScores(object):
+    """Class that stores and manipulates Imm scores for a set of samples and a set of Imms.
+    This is an abstract class that describes the interface.
+    """
+
+    def __init__(self,fileName,mode,**kw):
+        """Constructor.
+        In this default constructor, all parameters are assigned as attributes 
+        to the object (by reference) and used later when the actual data 
+        operations are requested.
+        @param fileName name of the new object in storage
+        @param mode One of w|r|c with a semantic similar to the open() builtin
+        """
+        self.fileName = fileName
+        self.mode = mode
+        for key,val in kw.items():
+            setattr(self,key,val)
+
+    def appendScore(self,idImm,score):
+        """Append to the dataset a score vector for one Imm.
+        @param idImm Id of the Imm
+        @param score numpy.recarray(names="id","score")
+        """
+        pass
+
+    def close(self):
+        """Semantics is similar to a close() method on the file object (can be a noop)"""
+        pass
+    
+    def catImms(self,fileNames,idImms=None):
+        """Concatenate into self a sequence of ImmScores objects representing different Imms for the same set of samples.
+        @param fileNames sequence of object names to be concatenated
+        @param immIds optional sequence of all immIds that are expected to be present in the inputs;
+        KeyError exception will be raised if any is missing"""
+        pass
+
+class ImmScoresHdf(ImmScores):
+    """Base for implementations of ImmScores which use HDF5 as storage.
+    """
+    
+    def setLenSamp(self,lenSamp):
+        g = self.getData()
+        assert n.all(g.idSamp[:] == lenSamp["id"]),"Sample IDs do not match for sample length array"
+        f.createArray(g, 'lenSamp', lenSamp["len"],"Sample length")
+    
+    def getKind(self):
+        return self.getData()._v_attrs.kind
+    
+    def getData(self):
+        return self.hdfFile.root.immScores
+    
+    def open(self):
+        self.hdfFile = pt.openFile(self.fileName, mode = self.mode)
+
+    def close(self):
+        """Semantics is similar to a close() method on the file object (can be a noop)"""
+        if hasattr(self,"hdfFile"):
+            self.hdfFile.close()
+
+class ImmScoresReducedHdf(ImmScoresHdf):
+    """Implementation of ImmScores that does score reduction and uses HDF5 as storage.
+    Reduction means that at every appendScore call, only the best scores and
+    associated Imm IDs are retained, in order to minimize intermediate storage.
+    """
+    
+    def appendScore(self,idImm,score):
+        """Append to the dataset a score vector for one Imm.
+        @param idImm Id of the Imm
+        @param score numpy.recarray(names=("id","score"))
+        """
+        if not self.initStorageIf(idImm,score):
+            #existed already with data
+            g = self.getData()
+            #For PyTables datasets, the indexing operator [] is never called
+            #implicitely unlike for Numpy arrays, hence [:] below.
+            #Note that any [] also returns a Numpy array in memory, so beware of
+            #data size.
+            assert n.all(score["id"] == g.idSamp[:]),"Sample IDs do not match for scores"
+            whereNewIsLarger = n.where(score["score"] > g.score[:])
+            g.score[whereNewIsLarger] = score["score"][whereNewIsLarger] #Do I really need rhs selection?
+            g.idImm[whereNewIsLarger] = idImm
+
+
+    def initStorageIf(self,idImm,score):
+        if not hasattr(self,"hdfFile"):
+            self.open()
+            f = self.hdfFile
+            g = f.root.createGroup(f.root,"immScores")
+            g._v_attrs.kind = "ImmScoresReduced"
+            f.createArray(g, 'idSamp', score["id"],"Sample ID")
+            idImmArr = n.zeros(len(score),dtype=idDtype)
+            idImmArr[:] = idImm
+            f.createArray(g, 'idImm', idImmArr, "Imm ID")
+            f.createArray(g, 'score', score["score"],"Score")
+            return True
+        else:
+            return False
+
+    
+    def catImms(self,fileNames,idImmSel=None):
+        """Concatenate into self a sequence of ImmScores objects representing different Imms for the same set of samples.
+        @param fileNames sequence of object names to be concatenated
+        @param idImmSel optional sequence of all immIds that are expected to be present in the inputs;
+        KeyError exception will be raised if any is missing"""
+        assert len(fileNames) > 0,"Need a non-empty sequence of input object names"
+        firstFileName = fileNames[0]
+        pt.copyFile(firstFileName,self.fileName, overwrite=True)
+        self.mode = "r+"
+        self.open()
+        f = self.hdfFile
+        g = f.root.immScores
+        for fileName in fileNames[1:]:
+            fo = pt.openFile(fileName,mode="r")
+            go = fo.root.immScores
+            #For PyTables datasets, the indexing operator [] is never called
+            #implicitely unlike for Numpy arrays, hence [:] below.
+            #Note that any [] also returns a Numpy array in memory, so beware of
+            #data size.
+            assert n.all(go.idSamp[:] == g.idSamp[:]),"Sample IDs do not match for scores"
+            whereNewIsLarger = n.where(go.score[:] > g.score[:])
+            g.score[whereNewIsLarger] = go.score[whereNewIsLarger] #Do I really need rhs selection?
+            g.idImm[whereNewIsLarger] = go.idImm[whereNewIsLarger]
+            if "lenSamp" not in g and "lenSamp" in go:
+                go.lenSamp._f_copy(g)
+            fo.close()
+
+class ImmScoresDenseMatrixHdf(ImmScoredHdf):
+    """Implementation of ImmScores that accumulates scores in a dense matrix and uses HDF5 as storage.
+    """
+
+    def appendScore(self,idImm,score):
+        """Append to the dataset a score vector for one Imm.
+        @param idImm Id of the Imm
+        @param score numpy.recarray(names=("id","score"))
+        """
+        self.initStorageIf(score)
+        g = self.getData()
+        #For PyTables datasets, the indexing operator [] is never called
+        #implicitely unlike for Numpy arrays, hence [:] below.
+        #Note that any [] also returns a Numpy array in memory, so beware of
+        #data size.
+        assert n.all(score["id"] == g.idSamp[:]),"Sample IDs do not match for scores"
+        idImmPos = self.idImmInd[idImm]
+        g.score[idImmPos,:] = score["score"]
+
+
+    def initStorageIf(self,score):
+        if not hasattr(self,"hdfFile"):
+            self.initStorage(idSamp=samp["id"],
+                    idImm=n.asarray(self.idImm,dtype=idDtype),
+                    dtype=score["score"].dtype)
+            return True
+        else:
+            return False
+    
+    def initStorage(self,idSamp,idImm,dtype):
+        self.open()
+        f = self.hdfFile
+        g = f.root.createGroup(f.root,"immScores")
+        g._v_attrs.kind = "ImmScoresDenseMatrix"
+        f.createArray(g, 'idSamp', idSamp,"Sample ID")
+        f.createArray(g, 'idImm', idImm, "Imm ID")
+        self.idImmInd = dict(((x[1],x[0]) for x in enumerate(idImm)))
+        #Strangely, simple Array cannot be created not from data object,
+        #and so it should always fit into RAM. Hence, we use CArray here.
+        #We put Imms into rows, so that adding Imms is efficient.
+        #During classifcation, reduction will be done along columns (samples),
+        #and we will need to do in blocks of rows (or load entire matrix at once)
+        #because reading by single columns will be very I/O inefficient.
+        #There are various chunkshape tricks to play for making a compromise
+        #between reading and writing along different dimensions, but we are
+        #not trying them yet.
+        f.createCArray(g, 
+                'score', 
+                atom=pt.Atom.from_dtype(dtype),
+                shape=(len(idImm),len(score)),
+                title="Score")
+
+    def catImms(self,fileNames,idImmSel=None):
+        """Concatenate into self a sequence of ImmScores objects representing different Imms for the same set of samples.
+        @param fileNames sequence of object names to be concatenated
+        @param idImmSel optional sequence of all immIds that are expected to be present in the inputs;
+        KeyError exception will be raised if any is missing"""
+        assert len(fileNames) > 0,"Need a non-empty sequence of input object names"
+        idSamp = None
+        lenSamp = None
+        idImm = []
+        dtype = None
+        for (iFile,fileName) in enumerate(fileNames):
+            fo = pt.openFile(fileName,mode="r")
+            go = fo.root.immScores
+            if iFile == 0:
+                idSamp = go.idSamp[:]
+                dtype = go.score.dtype
+            else:
+                assert n.all(go.idSamp[:] == idSamp[:]),"Sample IDs do not match for scores"
+                assert dtype == go.score.dtype,"Dtypes do not match for concatenated datasets"
+            idImm.append(go.idImm[:])
+            fo.close()
+        idImm = n.concatenate(idImm)
+        assert isUniqueArray(idImm), "This method expects non-intersecting sets of Imm IDs"
+
+        self.mode = "w"
+        self.initStorage(idSamp=idSamp,
+                idImm=idImm,
+                dtype=dtype)
+
+        f = self.hdfFile
+        g = f.root.immScores
+        startImmPos = 0
+        for (iFile,fileName) in enumerate(fileNames):
+            fo = pt.openFile(fileName,mode="r")
+            go = fo.root.immScores
+            endImmPos = startImmPos + len(go.score)
+            for pos in xrange(startImmPos,endImmPos):
+                g.score[pos] = go.score[pos-startImmPos]
+            startImmPos = endImmPos
+            if "lenSamp" not in g and "lenSamp" in go:
+                go.lenSamp._f_copy(g)
+            fo.close()
+            g.score.flush()
+
+
+def makeImmScores(opt,*l,**kw):
+    """Factory method to make a proper derivative of ImmScores class based on App options.
+    """
+    if opt.reduceScoresEarly:
+        typeDescr = "reduced"
+    elif:
+        typeDescr = "dense"
+    else:
+        raise ValueError("Unknown value of opt.reduceScoresEarly: %s" % (opt.reduceScoresEarly,))
+    if typeDescr == "reduced":
+        return ImmScoresReducedHdf(*l,**kw)
+    elif typeDescr == "dense":
+        return ImmScoresDenseMatrixHdf(*l,**kw)
+    else:
+        raise ValueError("Unknown 'typeDescr' value: %s" % (typeDescr,))
+
 class ImmStore(SampStore):
     
     immSfx = ".imm"
@@ -44,7 +285,7 @@ class ImmApp(App):
     maxSeqIdLen = UUID.maxIdLen
     maxSeqPartIdLen = UUID.maxIdLen
 
-    scoreSfx = ".score.pkl.gz"
+    scoreSfx = ".score"
 
     @classmethod
     def parseCmdLinePost(klass,options,args,parser):
@@ -95,8 +336,8 @@ class ImmApp(App):
     def getImmPath(self,immId):
         return self.immStore.getImmPath(immId)
 
-    def getScorePath(self,immId):
-        return pjoin(self.opt.outDir,"%s%s" % (immId,self.scoreSfx))
+    def getScoreBatchPath(self,scoreBatchId):
+        return pjoin(self.opt.outDir,"%s%s" % (scoreBatchId,self.scoreSfx))
     
     def trainOne(self,**kw):
         """Train and save one IMM.
@@ -155,12 +396,14 @@ class ImmApp(App):
         opt = self.opt
         immIds = opt.immIds
         inpFastaFile = opt.inpSeq
+        outScoreBatchFile = self.getScoreBatchPath(opt.scoreBatchId)
+        immScores = openImmScores(opt,fileName=outScoreBatchFile,mode="w",idImm=immIds)
         for immId in immIds:
-            outScoreFile = self.getScorePath(immId)
             imm = Imm(path=self.getImmPath(immId))
             scores = imm.score(inp=inpFastaFile)
-            dumpObj(scores,outScoreFile)
+            immScores.appendScore(idImm=immId,scores=scores)
             imm.flush()
+        immScores.close()
 
     def scoreMany(self,**kw):
         """Score with many IMMs.
@@ -176,20 +419,31 @@ class ImmApp(App):
         jobs = []
         immIds = sorted(loadObj(opt.immIds))
         if opt.incrementalWork:
-            immIds = [ immId for immId in immIds  if not os.path.exists(self.getScorePath(immId)) ]
+            #after we switched to combining within batches, it is harder to properly
+            #implement the incremental scoring. In any case, it will become moot
+            #after we switch to makeflow execution
+            raise ValueError("Incremental mode is currently not supported for scoring")
         else:
             rmfMany([ self.getScorePath(immId) for immId in immIds ])
         rmf(opt.outScoreComb)
         immIds = n.asarray(immIds,dtype="O")
         nrnd.shuffle(immIds) # in case we doing together proks and euks
-        for immIdsBatch in n.array_split(immIds,min(opt.nImmBatches,len(immIds))):
+        scoreBatchIds = [] # accumulate batch ids to pass to combiner
+        batches = [ x for x in enumerate(n.array_split(immIds,min(opt.nImmBatches,len(immIds)))) ]
+        
+        rmfMany([ self.getScoreBatchPath(scoreBatchId) for (scoreBatchId,immIdsBatch) in batches ])
+
+        for (scoreBatchId,immIdsBatch) in batches:
             immOpt = copy(opt)
             immOpt.mode = "score-batch"
             immOpt.immIds = immIdsBatch #now this is a sequence, not a file name
+            immOpt.scoreBatchId = scoreBatchId
             immApp = ImmApp(opt=immOpt)
             jobs += immApp.run(**kw)
+            scoreBatchIds.append(scoreBatchId)
         coOpt = copy(opt)
         coOpt.mode = "combine-scores"
+        coOpt.scoreBatchIds = scoreBatchIds
         coApp = self.factory(opt=coOpt)
         kw = kw.copy()
         kw["depend"] = jobs
@@ -208,18 +462,16 @@ class ImmApp(App):
         scores = None
         idSamp = None
         immIds = sorted(loadObj(opt.immIds))
-        for (iImm,immId) in enumerate(immIds):
-            inpScoreFile = pjoin(opt.outDir,"%s%s" % (immId,self.scoreSfx))
-            score = loadObj(inpScoreFile)
-            if scores is None:
-                scores = n.resize(score["score"],(len(score),len(immIds)))
-                idSamp = score["id"].copy()
-            else:
-                assert n.all(idSamp == score["id"])
-            scores[:,iImm] = score["score"]
+        immScores = openImmScores(opt,fileName=outScoreComb,mode="w")
+        outScoreBatchFiles = [ self.getScoreBatchPath(scoreBatchId) \
+                for scoreBatchId in opt.scoreBatchIds ]
+        immScores.catImms(fileNames=outScoreBatchFiles,idImmSel=immIds)
+        #@todo This will need an overhaul - we have to convert the input FASTA
+        #to random access format first, and filter by length at that time, before
+        #we score - otherwise we are wasting time scoring short sequences.
         lenSamp = fastaLengths(opt.inpSeq)
-        assert n.all(idSamp == lenSamp["id"])
-        dumpObj(ImmScores(idImm=immIds,idSamp=idSamp,scores=scores,lenSamp=lenSamp["len"]),opt.outScoreComb)
+        immScores.setLenSamp(lenSamp)
+        immScores.close()
     
 
 if __name__ == "__main__":

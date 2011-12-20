@@ -3,4 +3,6 @@ LDFLAGS="$LDFLAGS -shared" python setup.py build --fcompiler=gnu95 install --pre
 #w/o modified LDFLAGS, the above will fail on gfortran linking of .so file
 #w/o --fcompiler=gnu95, it will ignore gfortran in PATH and pick g77 from /usr/bin, which is wrong if ATLAS
 #was compiled with gfortran (check with ldd <path_to_atlas_shared_lib>)
-
+#also can do:
+#LDFLAGS="$LDFLAGS -shared" F77=/usr/local/bin/gfortran pip install --upgrade numpy
+#

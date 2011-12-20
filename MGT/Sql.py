@@ -15,12 +15,13 @@ def dbClose(dbObj):
 
 class SqlResultAssertionError(StandardError):
     
-    def __init__(self,receive,expect):
+    def __init__(self,receive,expect,message=None):
         self.receive = receive
         self.expect = expect
+        self.message = message
     
     def __str__(self):
-        return "SqlResultAssertionError\nReceived:\n%s\n\nExpected:\n%s\n" % (self.receive,self.expect)
+        return "SqlResultAssertionError\nMessage:%s\nReceived:\n%s\n\nExpected:\n%s\n" % (self.message,self.receive,self.expect)
 
 
 
@@ -115,6 +116,8 @@ class DbSql(MGTOptions):
     @todo Convert this to using SQL Alchemy. SQL Alchemy imposed too big abstraction penalty in the past,
     but this might not be the case anymore assuming carefully following its best use practices.
     We will still likely to need our bulk loading methods.
+    SQAlchemy also supports a very limited set of backends, and implementing a new backend
+    interface seems rather tedious where.
     """
         
     ## Default SQL field definition - a fall-back field type to create
@@ -211,25 +214,25 @@ class DbSql(MGTOptions):
             print curs.fetchall()
             curs.close()
     
-    def executeAndAssert(self,sql,expect,**kw):
+    def executeAndAssert(self,sql,expect,message=None,**kw):
         if self.debug > 0:
             print "Asserting that query will return this: %s" % (expect,)
         curs = self.execute(sql,**kw)
         if curs is None:
-            raise SqlResultAssertionError(receive=None,expect=expect)
+            raise SqlResultAssertionError(receive=None,expect=expect,message=message)
         rows = curs.fetchall()
         if len(rows) != len(expect):
-            raise SqlResultAssertionError(receive=rows,expect=expect)
+            raise SqlResultAssertionError(receive=rows,expect=expect,message=message)
         for rowReceive, rowExpect in zip(rows,expect):
             if list(rowReceive) != list(rowExpect):
-                raise SqlResultAssertionError(receive=rows,expect=expect)
+                raise SqlResultAssertionError(receive=rows,expect=expect,message=message)
         curs.close()
  
-    def executeAndAssertEmpty(self,sql,**kw):
-        self.executeAndAssert(sql,tuple(),**kw)
+    def executeAndAssertEmpty(self,sql,message=None,**kw):
+        self.executeAndAssert(sql,tuple(),message=message,**kw)
  
-    def executeAndAssertZero(self,sql,**kw):
-        self.executeAndAssert(sql,((0,),),**kw)
+    def executeAndAssertZero(self,sql,message=None,**kw):
+        self.executeAndAssert(sql,((0,),),message=message,**kw)
 
     def selectAll(self,sql,**kw):
         """Convenience method that does for select statement and execute+fetchall in one step.
@@ -701,17 +704,30 @@ class DbSqlLite(DbSql):
     
     defField = SqlField(name="fld",type="text")
     
-    def __init__(self,dbpath,strType=str,dryRun=False):
-        #from pysqlite2 import dbapi2 as dbmod
-        #it is a standard Python module since python 2.5:
+    def __init__(self,dbpath,strType=str,dryRun=False,strategy="default",**kw):
+        """Constructor.
+        @param strategy A string either of exclusive_unsafe|default; exclusive_unsafe
+        attempts to maximize speed for use patterns where the database is created from
+        scratch by a single process and will be re-created if the application fails, 
+        so we can turn off transactions (by switching off journal creation) and lock
+        the database file exclusively.
+        """
+        #use the standard Python module (python >=2.5):
         import sqlite3 as dbmod
+        kw = kw.copy()
         self.dbmod = dbmod
         DbSql.__init__(self)
         self.strType = strType
         self.dbpath = dbpath
         self.dryRun = dryRun
-        self.con = self.dbmod.connect(self.dbpath)
+        if strategy not in ("default","exclusive_unsafe"):
+            raise ValueError,"Unknown value of 'strategy': %s" % (strategy,)
+        if strategy=="exclusive_unsafe":
+            kw.setdefault("isolation_level",“EXCLUSIVE”)
+        self.con = self.dbmod.connect(self.dbpath,**kw)
         self.con.text_factory = self.strType
+        if strategy=="exclusive_unsafe":
+            self.execute("PRAGMA journal_mode = OFF")
 
 
     def close(self):
@@ -720,6 +736,9 @@ class DbSqlLite(DbSql):
             self.con.close()
             delattr(self,'con')
 
+    def dialectMatch(self,dialect):
+        return dialect is None or dialect == "sqlite"
+    
     def makeBulkInserterFile(self,**kw):
         #@todo There is a lot of room for optimizing bulk insertion
         #in SQLite. E.g. this
