@@ -392,7 +392,7 @@ class ImmClassifierApp(App):
         makedir(opt.cwd)
         makedir(opt.immDbWorkDir)
         makedir(opt.scoreWorkDir)
-        print "Options used:\n", opt
+        #print "Options used:\n", opt
    
 
     def doWork(self,**kw):
