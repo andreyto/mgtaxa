@@ -7,7 +7,7 @@ seqDbPath1 = pjoin(options.testDataDir,"seqdb-fasta")
 seqDbPath2 = pjoin(options.testDataDir,"fasta")
 
 optTpl = Struct()
-optTpl.runMode = "batchDep"
+optTpl.runMode = "inproc"
 optTpl.lrmUserOptions = r"'-P 0413'"
 
 dryRun = False
@@ -176,9 +176,9 @@ def procScoresRefAgainstRef(jobs):
     imm.run(depend=jobs)
     return jobs
 
-#buildRefSeqDbCmd()
+buildRefSeqDbCmd()
 trainRefCmd()
-#predictAgainstRefCmd()
+predictAgainstRefCmd()
 #jobs = trainRef(jobs)
 #jobs = scoreRefAgainstRef(jobs)
 #jobs = procScoresRefAgainstRef(jobs)

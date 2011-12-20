@@ -323,6 +323,19 @@ class ImmClassifierApp(App):
             help="Work incrementally wherever possible (restart mode). Currently, this will "+\
                     "affect 'train' and 'predict' modes [%default]. Set to non-zero number to "+\
                     "activate"),
+            
+            make_option(None, "--reduce-scores-early",
+            action="store",
+            type="int",
+            default=1,
+            dest="reduceScoresEarly",
+            help="Try to perform score reduction/model selection as early as possible "+\
+                    "and incrementally during the execution of the distributed scoring "+\
+                    "pipeline in order to minimize per-process memory requirements and "+\
+                    "overall speed. This is the default mode [set to 1]. It will be set to 0 "+\
+                    "automatically during benchmark execution. If set to 0, a vector of all "+\
+                    "model scores will be accumulated per each sample and processed in the "+\
+                    "final reduction job-task."),
         ]
         return Struct(usage = klass.appOptHelp+"\n"+\
                 "Run with the --help options for a detailed description of individual arguments.",
@@ -830,11 +843,10 @@ class ImmClassifierApp(App):
         @param outScoreComb Name for output file with combined scores
         """
         opt = self.opt
-        subScores = [ loadObj(subScoreFile) for subScoreFile in opt.outSubScores ]
-        # calling class method:
-        scoreComb = subScores[0].catImms(subScores)
         makeFilePath(opt.outScoreComb)
-        dumpObj(scoreComb,opt.outScoreComb)
+        immScores = openImmScores(opt,fileName=outScoreComb,mode="w")
+        immScores.catImms(fileNames=opt.outSubScores)
+        immScores.close()
 
     def predict(self,**kw):
         """Score input sequences and predict taxonomy"""
@@ -957,45 +969,65 @@ class ImmClassifierApp(App):
                     if rankNode:
                         predTaxids[i] = rankNode.id
 
-
-    def processImmScores(self,**kw):
-        """Process raw IMM scores to predict taxonomy.
+    def scoresToPredictions(self,immScores,**kw):
+        """Generate taxonomic predictions from raw IMM scores.
         This handles both classification of bacterial sequences and host assignment 
         for viral sequences.
-        Parameters are taken from self.opt.
-        @param outScoreComb File with ImmScores object
+        @param immScores ImmScores object.
+        
+        Other parameters are taken from self.opt.
         @param rndScoreComb File with ImmScores object for random query sequences
         @param predOutTaxa Output file with predicted taxa
         """
-        opt = self.opt
-        sc = loadObj(opt.outScoreComb)
+        sc = immScores.getData()
         #assume idImm are str(taxids):
-        sc.idImm = n.asarray(sc.idImm,dtype=int)
-        #scRnd = loadObj(opt.rndScoreComb)
-        #sc.scores = self._normalizeScores(sc,scRnd)
-        #normalize to Z-score along each row
-        #sc.scores = ((sc.scores.T - sc.scores.mean(1))/sc.scores.std(1)).T
-        #normalize to Z-score over entire matrix
-        #sc.scores = ((sc.scores - sc.scores.mean())/sc.scores.std())
+        idImm = n.asarray(sc.idImm[:],dtype=int)
+        kind = sc.getKind()
+        if kind == "ImmScoresReduced":
+            predTaxids = idImm
+        elif kind == "ImmScoresDenseMatrix":
+            #scRnd = loadObj(opt.rndScoreComb)
+            #sc.scores = self._normalizeScores(sc,scRnd)
+            #normalize to Z-score along each row
+            #sc.scores = ((sc.scores.T - sc.scores.mean(1))/sc.scores.std(1)).T
+            #normalize to Z-score over entire matrix
+            #sc.scores = ((sc.scores - sc.scores.mean())/sc.scores.std())
+            scores = sc.scores[:]
+            #taxaTree = self.getTaxaTree()
+            #taxaLevels = self.getTaxaLevels()
+            #micRoots = [ taxaTree.getNode(taxid) for taxid in micTaxids ]
+            #virRoot = taxaTree.getNode(virTaxid)
+            #cellRoot = taxaTree.getNode(cellTaxid)
+            #scVirRoot = scores[:,idImms == virTaxid][:,0]
+            #scCellRoot = scores[:,idImms == cellTaxid][:,0]
+            #cellTopColInd = n.concatenate([ n.where(idImms == taxid)[0] for taxid in micTaxids ])
+            #scCellRootMax = scores[:,cellTopColInd].max(1)
+            #self._maskScoresNonSubtrees(taxaTree,immScores=sc,posRoots=(cellRoot,))
+            #if opt.rejectRanksHigher is not "superkingdom":
+            #    self._maskScoresByRanks(taxaTree,immScores=sc)
+            #topTaxids = self._taxaTopScores(taxaTree,immScores=sc,topScoreN=10)
+            argmaxSc = scores.argmax(0)
+            #maxSc = scores.max(0)
+            predTaxids = idImm[argmaxSc]
+        else:
+            raise ValueError("Unknown kind of score object: %s" % (kind,))
+        return predTaxids
+
+    def filterPredictions(self,immScores,predTaxids,**kw):
+        """Generate taxonomic predictions from raw IMM scores.
+        This handles both classification of bacterial sequences and host assignment 
+        for viral sequences.
+        @param immScores ImmScores object.
+        @param predTaxids[in,out] array with predicted taxonomy per sample
+        
+        Other parameters are taken from self.opt.
+        """
+        opt = self.opt
         taxaTree = self.getTaxaTree()
         taxaLevels = self.getTaxaLevels()
-        scores = sc.scores
-        idImms = sc.idImm
         micRoots = [ taxaTree.getNode(taxid) for taxid in micTaxids ]
         virRoot = taxaTree.getNode(virTaxid)
         cellRoot = taxaTree.getNode(cellTaxid)
-        #scVirRoot = scores[:,idImms == virTaxid][:,0]
-        #scCellRoot = scores[:,idImms == cellTaxid][:,0]
-        #cellTopColInd = n.concatenate([ n.where(idImms == taxid)[0] for taxid in micTaxids ])
-        #scCellRootMax = scores[:,cellTopColInd].max(1)
-        self._maskScoresNonSubtrees(taxaTree,immScores=sc,posRoots=(cellRoot,))
-        if opt.rejectRanksHigher is not "superkingdom":
-            self._maskScoresByRanks(taxaTree,immScores=sc)
-        topTaxids = self._taxaTopScores(taxaTree,immScores=sc,topScoreN=10)
-        argmaxSc = scores.argmax(1)
-        maxSc = scores.max(1)
-        ## @todo in case of score ties, pick the lowest rank if it is a single entry
-        predTaxids = idImms[argmaxSc]
         #predTaxids[maxSc<0] = self.rejTaxid
         # this will reject any sample that has top level viral score more
         # that top level cellular org score, on the assumption that easily
@@ -1029,7 +1061,22 @@ class ImmClassifierApp(App):
         #Round-up euk predictions to the phylum level because of high sequence identities between
         #lower order clades
         self._roundUpPredictions(predTaxids,rootNodes=(taxaTree.getNode(eukTaxid),),rank="phylum")
-        pred = TaxaPred(idSamp=sc.idSamp,predTaxid=predTaxids,topTaxid=topTaxids,lenSamp=sc.lenSamp)
+    
+    def processImmScores(self,**kw):
+        """Process raw IMM scores to predict taxonomy.
+        This handles both classification of bacterial sequences and host assignment 
+        for viral sequences.
+        Parameters are taken from self.opt.
+        @param outScoreComb File with ImmScores object
+        @param rndScoreComb File with ImmScores object for random query sequences
+        @param predOutTaxa Output file with predicted taxa
+        """
+        opt = self.opt
+        immScores = openImmScores(opt,fileName=opt.outScoreComb,mode="r")
+        predTaxids = self.scoresToPredictions(immScores=immScores,**kw)
+        self.filterPredictions(immScores=immScores,predTaxids=predTaxids)
+        sc = immScores.getData()
+        pred = TaxaPred(idSamp=sc.idSamp[:],predTaxid=predTaxids,lenSamp=sc.lenSamp[:])
         makeFilePath(opt.predOutTaxa)
         dumpObj(pred,opt.predOutTaxa)
         self.exportPredictions()
@@ -1112,7 +1159,7 @@ class ImmClassifierApp(App):
     def _reExportPredictionsWithSql(self):
         opt = self.opt    
         makeFilePath(opt.predOutDbSqlite)
-        db = DbSqlLite(dbpath=opt.predOutDbSqlite)
+        db = DbSqlLite(dbpath=opt.predOutDbSqlite,strategy="exclusive_unsafe")
         db.createTableFromCsv(name="scaff_pred_1",
                 csvFile=opt.predOutTaxaCsv,
                 hasHeader=True,
@@ -1132,7 +1179,15 @@ class ImmClassifierApp(App):
                     select distinct id,1.0 as weight
                     from scaff_pred_1""",
                     indices={"names":("id",)})
-
+        #make sure all samples can be matched up with attribute records
+        db.executeAndAssertZero(\
+                """select count(*) from scaff_pred_1 a
+                where a.id not in (select id from scaff_attr)
+                limit 1
+                """,
+                message="Some samples do not have matching sample attribute records - "+\
+                        "check your --inp-seq-attrib file - it has to be strictly tab-delimited "+\
+                        "with no extra spaces around fields.")
         sql = \
                 """select a.*,b.weight as weight
                 from scaff_pred_1 a, scaff_attr b
