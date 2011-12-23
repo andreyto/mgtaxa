@@ -48,6 +48,8 @@ export JAVA_HOME=/usr/local/packages/java/current
 ## ANT (the Java make) is installed at JCVI, but ANT_HOME has to be defined,
 ## otherwise Globus Toolkit build fails when ant cannot find xmlvalidate module ("task")
 export ANT_HOME=/usr/local/packages/apache-ant
+## QPID needs java 6+
+export JAVA_6_HOME=/usr/local/packages/java/1.6.0
 
 ## We support these types of Python install:
 ## already built under a separate prefix and we do not have write support

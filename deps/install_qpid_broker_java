@@ -3,6 +3,7 @@ set -ex
 
 [ -n "$DEP_SRC_TOP" ] || exit 1
 [ -n "$QPID_VER" ] || exit 1
+[ -n "$PRIV_DATA" ] || exit 1
 
 VER=$QPID_VER
 BUILD=qpid-$VER

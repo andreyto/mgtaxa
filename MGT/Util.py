@@ -865,7 +865,7 @@ def countRecArray(arr,keyFields,format="dict"):
     return binCount(selFieldsArray(arr,fields=keyFields),format=format)
 
 def isUniqueArray(arr):
-    return len(n.unique1d(arr)) == len(n.ravel(arr))
+    return len(n.unique(arr)) == len(n.ravel(arr))
 
 
 def saveRecArrayAsCsv(arr,out,withHeader=True,sep=','):
@@ -881,6 +881,20 @@ def saveRecArrayAsCsv(arr,out,withHeader=True,sep=','):
         out.write(sep.join([ "%s" % (x,) for x in rec ])+'\n')
     if closeOut:
         out.close()
+
+def rndRound(x):
+    """Round real non-negative scalar to the nearest integer in a random way.
+    The closer x to its ceil(), the larger the probability for
+    x to be rounded to ceil().
+    This is useful when we need to pick a multiple times count of random samples
+    which is a fraction of something, such that the total is on average the same.
+    @return rounded value of type int
+    """
+    assert x >= 0
+    b = n.floor(x)
+    c = x - b
+    p = nrnd.random()
+    return b + (c > p)
 
 class SubSamplerUniRandomEnd:
     """Uniform random [0,rnd_length] subsampler where rnd_length is in [minLen,maxLen]"""

@@ -1093,6 +1093,9 @@ class TaxaLevels:
 
     def getLevelId(self,name):
         return self.levelIds[name]
+    
+    def getLevelIds(self):
+        return self.levelIds
 
     def getLevel(self,idlevel):
         return self.idToLevel[idlevel]
@@ -1120,6 +1123,10 @@ class TaxaLevels:
         else:
             raise ValueError("Unknown value for 'order': " + str(order))
 
+    def getLevelIdForNames(self,names):
+        nameToId = self.getLevelIds()
+        return [ nameToId[name] for name in names ]
+    
     def getLevelPos(self,order="ascend"):
         return dict([ (x[1],x[0]) for x in enumerate(self.getLevelNames(order=order)) ])
     

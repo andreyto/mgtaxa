@@ -723,7 +723,7 @@ class DbSqlLite(DbSql):
         if strategy not in ("default","exclusive_unsafe"):
             raise ValueError,"Unknown value of 'strategy': %s" % (strategy,)
         if strategy=="exclusive_unsafe":
-            kw.setdefault("isolation_level",“EXCLUSIVE”)
+            kw.setdefault("isolation_level","EXCLUSIVE")
         self.con = self.dbmod.connect(self.dbpath,**kw)
         self.con.text_factory = self.strType
         if strategy=="exclusive_unsafe":

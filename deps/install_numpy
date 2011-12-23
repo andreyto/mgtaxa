@@ -5,4 +5,6 @@ LDFLAGS="$LDFLAGS -shared" python setup.py build --fcompiler=gnu95 install --pre
 #was compiled with gfortran (check with ldd <path_to_atlas_shared_lib>)
 #also can do:
 #LDFLAGS="$LDFLAGS -shared" F77=/usr/local/bin/gfortran pip install --upgrade numpy
-#
+#And for python 2.6 and numpy 1.6 (but not for python 2.5), it just works (assuming blas is in place)
+#(and the same for easy_install):
+#pip install --upgrade numpy

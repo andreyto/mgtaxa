@@ -47,9 +47,20 @@ def predictAgainstRefCmd():
     Several extra options can change default locations of the individual output files.
     If you omit the --db-imm option, the program will try to use a central DB of models
     configured for this installation."""
-    cmd = "--mode predict --inp-seq %s --db-imm tmp.imm --pred-min-len-samp 1000" % \
-        (pjoin(seqDbPath1,"195.fasta.gz"),)
-    cmd += "--pred-out-dir tmp.results"
+    run("zcat %s %s > tmp.pred.fasta" % tuple([ pjoin(seqDbPath1,f) \
+            for f in ("100226.fasta.gz","101510.fasta.gz") ]),\
+            shell=True)
+    cmd = "--mode predict --inp-seq tmp.pred.fasta --db-imm tmp.imm --pred-min-len-samp 1000"
+    cmd += " --reduce-scores-early 1"
+    cmd += " --pred-out-dir tmp.results"
+    runAndLog(cmd,help)
+
+def makeBenchCmd():
+    help="""Create benchmark dataset based on a sequence DB built by make-ref-seqdb step.
+    It also uses information from the model database built by train step."""
+    cmd = "--mode make-bench  --db-seq tmp.db-seq --db-imm tmp.imm "+\
+            "--db-bench tmp.db-bench --db-bench-frag tmp.bench.fna "+\
+            "--db-bench-frag-size 400 --db-bench-frag-count-max 100"
     runAndLog(cmd,help)
 
 def trainRef(jobs):
@@ -176,9 +187,10 @@ def procScoresRefAgainstRef(jobs):
     imm.run(depend=jobs)
     return jobs
 
-buildRefSeqDbCmd()
-trainRefCmd()
-predictAgainstRefCmd()
+#buildRefSeqDbCmd()
+#trainRefCmd()
+makeBenchCmd()
+#predictAgainstRefCmd()
 #jobs = trainRef(jobs)
 #jobs = scoreRefAgainstRef(jobs)
 #jobs = procScoresRefAgainstRef(jobs)

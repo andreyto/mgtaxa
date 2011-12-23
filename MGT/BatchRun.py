@@ -128,7 +128,21 @@ class BatchSubmitter(object):
                     depids.append(depid)
                 qsubCmd.extend(["-hold_jid",','.join(depids)])
             qsubCmd.append(scriptName)
-            outp = backsticks(qsubCmd,dryRun=dryRun,dryRet="your job 0 ")
+            
+            nToTry = 3
+
+            while True:
+                try:
+                    outp = backsticks(qsubCmd,dryRun=dryRun,dryRet="your job 0 ")
+                except CalledProcessError,msg:
+                    nToTry -= 1
+                    if nToTry > 0:
+                        print "Warning: qsub returned error code, trying %s more times: %s" % (nToTry,msg)
+                    else:
+                        raise
+                else:
+                    break
+
             jobId = outp.lower().split("your job")[1].strip().split()[0]
             strToFile(jobId,scriptName+".jobid",dryRun=dryRun)
             if not dryRun:

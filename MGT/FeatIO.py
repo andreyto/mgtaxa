@@ -68,7 +68,7 @@ class LoadSeqPreprocShred:
     def __init__(self,sampLen,sampNum=0,sampOffset=0,makeUniqueId=False,sortByStarts=False):
         """Constructor.
         @param sampLen length of each output fragment
-        @param sampNum if <=0 - return all sampLen long fragments, if other number - that many,
+        @param sampNum if < 0 - return all sampLen long fragments, if other number - that many,
         otherwise it should be f(lab,seq,id) and return the number of shreds for a given sequence.
         @param sampOffset optional offset between end of each shred and start of next (<0 for overlap)
         @param makeUniqueId if True, generate new UUIDs for shreds - getIdMap() can be used to get the mapping and coords
@@ -92,11 +92,15 @@ class LoadSeqPreprocShred:
         sampStride = self.sampStride
         sampStartEnd = len(seq)-sampLen+1
         if sampStartEnd <= 0:
+            self.sampStarts = n.asarray([],dtype=int)
             return [],[],[]
         sampStarts = nrnd.permutation(n.arange(0,sampStartEnd,sampStride,dtype=int))
         sampNumVal = self.sampNum(lab,seq,id)
         if  sampNumVal > 0 and sampNumVal < len(sampStarts):
             sampStarts = sampStarts[:sampNumVal]
+        elif sampNumVal == 0:
+            self.sampStarts = n.asarray([],dtype=int)
+            return [],[],[]
         if self.sortByStarts:
             sampStarts.sort()
         sampSeq = [ seq[start:start+sampLen] for start in sampStarts ]

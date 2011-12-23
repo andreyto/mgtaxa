@@ -61,12 +61,14 @@ class ImmScoresHdf(ImmScores):
     def setLenSamp(self,lenSamp):
         g = self.getData()
         assert n.all(g.idSamp[:] == lenSamp["id"]),"Sample IDs do not match for sample length array"
-        f.createArray(g, 'lenSamp', lenSamp["len"],"Sample length")
+        self.hdfFile.createArray(g, 'lenSamp', lenSamp["len"],"Sample length")
     
     def getKind(self):
         return self.getData()._v_attrs.kind
     
     def getData(self):
+        if not hasattr(self,"hdfFile"):
+            self.open()
         return self.hdfFile.root.immScores
     
     def open(self):
@@ -105,13 +107,14 @@ class ImmScoresReducedHdf(ImmScoresHdf):
         if not hasattr(self,"hdfFile"):
             self.open()
             f = self.hdfFile
-            g = f.root.createGroup(f.root,"immScores")
+            g = f.createGroup(f.root,"immScores")
             g._v_attrs.kind = "ImmScoresReduced"
             f.createArray(g, 'idSamp', score["id"],"Sample ID")
             idImmArr = n.zeros(len(score),dtype=idDtype)
             idImmArr[:] = idImm
             f.createArray(g, 'idImm', idImmArr, "Imm ID")
             f.createArray(g, 'score', score["score"],"Score")
+            f.flush()
             return True
         else:
             return False
@@ -143,8 +146,9 @@ class ImmScoresReducedHdf(ImmScoresHdf):
             if "lenSamp" not in g and "lenSamp" in go:
                 go.lenSamp._f_copy(g)
             fo.close()
+        f.flush()
 
-class ImmScoresDenseMatrixHdf(ImmScoredHdf):
+class ImmScoresDenseMatrixHdf(ImmScoresHdf):
     """Implementation of ImmScores that accumulates scores in a dense matrix and uses HDF5 as storage.
     """
 
@@ -162,11 +166,12 @@ class ImmScoresDenseMatrixHdf(ImmScoredHdf):
         assert n.all(score["id"] == g.idSamp[:]),"Sample IDs do not match for scores"
         idImmPos = self.idImmInd[idImm]
         g.score[idImmPos,:] = score["score"]
+        g.score.flush()
 
 
     def initStorageIf(self,score):
         if not hasattr(self,"hdfFile"):
-            self.initStorage(idSamp=samp["id"],
+            self.initStorage(idSamp=score["id"],
                     idImm=n.asarray(self.idImm,dtype=idDtype),
                     dtype=score["score"].dtype)
             return True
@@ -176,7 +181,7 @@ class ImmScoresDenseMatrixHdf(ImmScoredHdf):
     def initStorage(self,idSamp,idImm,dtype):
         self.open()
         f = self.hdfFile
-        g = f.root.createGroup(f.root,"immScores")
+        g = f.createGroup(f.root,"immScores")
         g._v_attrs.kind = "ImmScoresDenseMatrix"
         f.createArray(g, 'idSamp', idSamp,"Sample ID")
         f.createArray(g, 'idImm', idImm, "Imm ID")
@@ -193,7 +198,7 @@ class ImmScoresDenseMatrixHdf(ImmScoredHdf):
         f.createCArray(g, 
                 'score', 
                 atom=pt.Atom.from_dtype(dtype),
-                shape=(len(idImm),len(score)),
+                shape=(len(idImm),len(idSamp)),
                 title="Score")
 
     def catImms(self,fileNames,idImmSel=None):
@@ -241,15 +246,13 @@ class ImmScoresDenseMatrixHdf(ImmScoredHdf):
             g.score.flush()
 
 
-def makeImmScores(opt,*l,**kw):
+def openImmScores(opt,*l,**kw):
     """Factory method to make a proper derivative of ImmScores class based on App options.
     """
     if opt.reduceScoresEarly:
         typeDescr = "reduced"
-    elif:
-        typeDescr = "dense"
     else:
-        raise ValueError("Unknown value of opt.reduceScoresEarly: %s" % (opt.reduceScoresEarly,))
+        typeDescr = "dense"
     if typeDescr == "reduced":
         return ImmScoresReducedHdf(*l,**kw)
     elif typeDescr == "dense":
@@ -401,7 +404,7 @@ class ImmApp(App):
         for immId in immIds:
             imm = Imm(path=self.getImmPath(immId))
             scores = imm.score(inp=inpFastaFile)
-            immScores.appendScore(idImm=immId,scores=scores)
+            immScores.appendScore(idImm=immId,score=scores)
             imm.flush()
         immScores.close()
 
@@ -423,8 +426,6 @@ class ImmApp(App):
             #implement the incremental scoring. In any case, it will become moot
             #after we switch to makeflow execution
             raise ValueError("Incremental mode is currently not supported for scoring")
-        else:
-            rmfMany([ self.getScorePath(immId) for immId in immIds ])
         rmf(opt.outScoreComb)
         immIds = n.asarray(immIds,dtype="O")
         nrnd.shuffle(immIds) # in case we doing together proks and euks
@@ -459,10 +460,8 @@ class ImmApp(App):
         @param outScoreComb name for output file with combined scores
         """
         opt = self.opt
-        scores = None
-        idSamp = None
         immIds = sorted(loadObj(opt.immIds))
-        immScores = openImmScores(opt,fileName=outScoreComb,mode="w")
+        immScores = openImmScores(opt,fileName=opt.outScoreComb,mode="w")
         outScoreBatchFiles = [ self.getScoreBatchPath(scoreBatchId) \
                 for scoreBatchId in opt.scoreBatchIds ]
         immScores.catImms(fileNames=outScoreBatchFiles,idImmSel=immIds)

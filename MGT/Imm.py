@@ -3,6 +3,7 @@
 
 from MGT.Common import *
 
+import tempfile
 
 class Imm:
     glImmBuildExe = options.glimmer3.immBuildExe
@@ -90,7 +91,15 @@ class Imm:
         if out is PIPE and inp is PIPE:
             raise ValueError("Both inp and out parameters cannot be None at the same time - set one to a real file/stream")
         stderr = open(os.devnull,"w") #incompat with close_fds on Windows
-        p = Popen(cmd, stdin=inp, stdout=out, stderr=stderr,close_fds=True)
+        #There are reports that PIPE can fail or block on large outputs,
+        #so we replace it here with a temp file in the current working
+        #directory
+        #@todo make arguments consistent with the above - e.g. PIPE
+        #check can be relaxed now
+        outTmpName = None
+        if out is PIPE:
+            out,outTmpName = tempfile.mkstemp(suffix=".tmp", prefix="imm.score.", dir=os.getcwd())
+        p = Popen(cmd, stdin=inp, stdout=out, stderr=stderr)
         stderr.close()
         self.p = p
         self.cmd = cmd
@@ -102,8 +111,14 @@ class Imm:
             strData=p.communicate()[0]
             if self.p.returncode:
                 raise CalledProcessError(self.cmd,self.p.returncode)
-            if strData is not None:
-                return self.parseScores(strData.splitlines())
+            if outTmpName is not None:
+                out = os.fdopen(out,"r")
+                out.seek(0)
+                ret = self.parseScores(out)
+                #os.close(out)
+                out.close()
+                os.remove(outTmpName)
+                return ret
         else:
             return p.stdin
 
@@ -137,5 +152,5 @@ class Imm:
             records.append((words[0],float(words[1])))
         if closeInp:
             inp.close()
-        return n.asarray(records,dtype=[("id",idDtype),("score",self.scoreDtype)])
+        return n.asarray(records,dtype=[("id",idDtype),("score",klass.scoreDtype)])
 

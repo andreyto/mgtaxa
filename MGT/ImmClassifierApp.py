@@ -6,7 +6,7 @@
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
 
-"""Applicaion for  building and using IMM-based taxonomic classifier in the spirit of Phymm"""
+"""Application for  building and using IMM-based taxonomic classifier in the spirit of Phymm"""
 
 from MGT.ImmApp import *
 from MGT.Taxa import *
@@ -14,6 +14,7 @@ from MGT.App import *
 from MGT.DirStore import *
 from MGT.SeqDbFasta import *
 from MGT.ArchiveApp import *
+from MGT.ImmClassifierBench import *
 
 import functools
 
@@ -46,7 +47,7 @@ class ImmClassifierApp(App):
     data for subnodes.
     This class can be mostly viewed as imposing a TaxaTree structure onto ImmApp."""
 
-    batchDepModes = ("predict","score","train","make-ref-seqdb","fin-ref-seqdb")
+    batchDepModes = ("predict","score","train","make-ref-seqdb","fin-ref-seqdb","make-bench")
 
     ## Special taxonomy ID value to mark rejected samples 
     rejTaxid = 0
@@ -143,8 +144,14 @@ class ImmClassifierApp(App):
     def makeOptionParserArgs(klass):
         from optparse import make_option
         
-        optChoicesMode = ("make-ref-seqdb","train","predict","score","setup-train","proc-scores",
-                "export-predictions","stats-pred","extract-ref-seqdb","fin-ref-seqdb","fin-ref-seqdb-batch")
+        optChoicesMode = ("make-ref-seqdb","train","predict","score","make-bench",
+                "setup-train","proc-scores",
+                "export-predictions","stats-pred",
+                "extract-ref-seqdb","fin-ref-seqdb",
+                "fin-ref-seqdb-batch",
+                "make-bench-batch",
+                "make-bench-fin",
+                "proc-bench-scores")
         
         option_list = [
             
@@ -336,6 +343,40 @@ class ImmClassifierApp(App):
                     "automatically during benchmark execution. If set to 0, a vector of all "+\
                     "model scores will be accumulated per each sample and processed in the "+\
                     "final reduction job-task."),
+            
+            optParseMakeOption_Path(None, "--db-bench",
+            dest="dbBench",
+            help="BenchDb path, used either to create a new BenchDb from SeqDb "+\
+                "or to use an existing BenchDb for benchmarking the models."),
+            
+            optParseMakeOption_Path(None, "--db-bench-frag",
+            dest="dbBenchFrag",
+            help="Path of a single FASTA file that contains samples extracted from "+\
+                "the BenchDb."),
+            
+            make_option(None, "--db-bench-frag-size",
+            action="store",
+            type="int",
+            default=400,
+            dest="dbBenchFragSize",
+            help="Length of fragments to generate in benchmark"),
+            
+            make_option(None, "--db-bench-frag-count-max",
+            action="store",
+            type="int",
+            default=100,
+            dest="dbBenchFragCountMax",
+            help="Maximum count of fragments to select for benchmark per genome"),
+            
+            optParseMakeOption_Path(None, "--bench-out-dir",
+            default="bench_results",
+            dest="benchOutDir",
+            help="Output directory for benchmarking results [%default]"),
+            
+            optParseMakeOption_Path(None, "--bench-out-csv",
+            dest="benchOutCsv",
+            help="Output CSV file with benchmarking results; default is --bench-out-dir/"+\
+                    "bench.csv"),
         ]
         return Struct(usage = klass.appOptHelp+"\n"+\
                 "Run with the --help options for a detailed description of individual arguments.",
@@ -349,11 +390,12 @@ class ImmClassifierApp(App):
             parser.error("--mode option is required")
         opt.setIfUndef("cwd",os.getcwd())
         if ( not opt.immDbArchive and not opt.immDb ):
-            if opt.mode == "predict":
+            if opt.mode in ("predict","make-bench","run-bench"):
                 opt.immDb = [ globOpt.icm.icmDb ]
         klass.pathMultiOptToAbs(opt,"immDb")           
         klass.pathMultiOptToAbs(opt,"immDbArchive")           
         opt.setIfUndef("seqDb",pjoin(opt.cwd,"seqDb"))
+        opt.setIfUndef("dbBench",pjoin(opt.cwd,"dbBench"))
         opt.setIfUndef("immIds",opt.immIdToSeqIds)
         opt.setIfUndef("outScoreComb",pjoin(opt.outDir,"combined"+ImmApp.scoreSfx))
         opt.setIfUndef("predOutTaxa",pjoin(opt.predOutDir,"pred-taxa"))
@@ -364,6 +406,8 @@ class ImmClassifierApp(App):
         opt.setIfUndef("newTaxidTop",mgtTaxidFirst)
         opt.setIfUndef("immDbWorkDir",pjoin(opt.cwd,"immDbWorkDir"))
         opt.setIfUndef("scoreWorkDir",pjoin(opt.cwd,"scoreWorkDir"))
+        opt.setIfUndef("benchOutCsv",pjoin(opt.benchOutDir,"bench.csv"))
+        opt.setIfUndef("benchOutDbSqlite",pjoin(opt.benchOutDir,"bench.sqlite"))
         if opt.predMode == "host": 
             opt.setIfUndef("rejectRanksHigher","order")
             opt.setIfUndef("predMinLenSamp",5000)
@@ -449,6 +493,14 @@ class ImmClassifierApp(App):
             ret = self.finRefSeqDb(**kw)
         elif opt.mode == "fin-ref-seqdb-batch":
             ret = self.finRefSeqDbBatch(**kw)
+        elif opt.mode == "make-bench":
+            ret = self.makeBenchFromSeqDb(**kw)
+        elif opt.mode == "make-bench-batch":
+            ret = self.makeBenchFromSeqDbBatch(**kw)
+        elif opt.mode == "make-bench-fin":
+            ret = self.makeBenchFromSeqDbFin(**kw)
+        elif opt.mode == "proc-bench-scores":
+            ret = self.procBenchScores(**kw)
         else:
             raise ValueError("Unknown mode value: %s" % (opt.mode,))
         return ret
@@ -530,8 +582,58 @@ class ImmClassifierApp(App):
         taxids = opt.seqDbIds
         for taxid in taxids:
             seqDb.finById(taxid)
-            print "DEBUG: finByid(%s) done" % (taxid,)
+            #print "DEBUG: finByid(%s) done" % (taxid,)
 
+    ## Methods that generate benchmark dataset
+
+    def makeBenchFromSeqDb(self,**kw):
+        """Generate a benchmark dataset from SeqDb that was used to train ICM models"""
+        opt = self.opt
+        seqDb = self.getSeqDb()
+        immDbs = [ ImmStore.open(path=immDb,mode='r') for immDb in opt.immDb ]
+        bench = ImmClassifierBenchmark.open(path=opt.dbBench,mode="c")
+        bench.seqDb = seqDb
+        ids = bench.selectIdsDb(immDbs=immDbs)
+        ids = n.asarray(ids,dtype="O")
+        nrnd.shuffle(ids)
+        jobs = []
+        for idsBatch in n.array_split(ids,min(200,len(ids))):
+            optI = copy(opt)
+            optI.mode = "make-bench-batch"
+            optI.benchIds = idsBatch
+            app = self.factory(opt=optI)
+            jobs += app.run(**kw)
+        
+        coOpt = copy(opt)
+        coOpt.mode = "make-bench-fin"
+        coOpt.benchIds = ids
+        coApp = self.factory(opt=coOpt)
+        kw = kw.copy()
+        kw["depend"] = jobs
+        jobs = coApp.run(**kw)
+        return jobs
+    
+    def makeBenchFromSeqDbBatch(self,**kw):
+        """Sub-task of benchmark generation"""
+        opt = self.opt
+        seqDb = self.getSeqDb()
+        ids = opt.benchIds
+        bench = ImmClassifierBenchmark.open(path=opt.dbBench,mode="r")
+        #bench.save() should not be called with seqDb attribute assigned
+        #or it will try to dump it as well
+        bench.seqDb = seqDb
+        for id in ids:
+            bench.makeSample(idDb=id,
+                    fragSize=opt.dbBenchFragSize,
+                    fragCountMax=opt.dbBenchFragCountMax)
+        
+    def makeBenchFromSeqDbFin(self,**kw):
+        """Final task of benchmark generation"""
+        opt = self.opt
+        ids = opt.benchIds
+        bench = ImmClassifierBenchmark.open(path=opt.dbBench,mode="r")
+        bench.catSamples(outFile=opt.dbBenchFrag,idsDb=ids)
+    
     ## Methods that assign training sequences to higher-level nodes
 
     def mapSeqToTree(self):
@@ -844,7 +946,7 @@ class ImmClassifierApp(App):
         """
         opt = self.opt
         makeFilePath(opt.outScoreComb)
-        immScores = openImmScores(opt,fileName=outScoreComb,mode="w")
+        immScores = openImmScores(opt,fileName=opt.outScoreComb,mode="w")
         immScores.catImms(fileNames=opt.outSubScores)
         immScores.close()
 
@@ -982,32 +1084,32 @@ class ImmClassifierApp(App):
         sc = immScores.getData()
         #assume idImm are str(taxids):
         idImm = n.asarray(sc.idImm[:],dtype=int)
-        kind = sc.getKind()
+        kind = immScores.getKind()
         if kind == "ImmScoresReduced":
             predTaxids = idImm
         elif kind == "ImmScoresDenseMatrix":
             #scRnd = loadObj(opt.rndScoreComb)
-            #sc.scores = self._normalizeScores(sc,scRnd)
+            #sc.score = self._normalizeScores(sc,scRnd)
             #normalize to Z-score along each row
-            #sc.scores = ((sc.scores.T - sc.scores.mean(1))/sc.scores.std(1)).T
+            #sc.score = ((sc.score.T - sc.score.mean(1))/sc.score.std(1)).T
             #normalize to Z-score over entire matrix
-            #sc.scores = ((sc.scores - sc.scores.mean())/sc.scores.std())
-            scores = sc.scores[:]
+            #sc.score = ((sc.score - sc.score.mean())/sc.score.std())
+            score = sc.score[:]
             #taxaTree = self.getTaxaTree()
             #taxaLevels = self.getTaxaLevels()
             #micRoots = [ taxaTree.getNode(taxid) for taxid in micTaxids ]
             #virRoot = taxaTree.getNode(virTaxid)
             #cellRoot = taxaTree.getNode(cellTaxid)
-            #scVirRoot = scores[:,idImms == virTaxid][:,0]
-            #scCellRoot = scores[:,idImms == cellTaxid][:,0]
+            #scVirRoot = score[:,idImms == virTaxid][:,0]
+            #scCellRoot = score[:,idImms == cellTaxid][:,0]
             #cellTopColInd = n.concatenate([ n.where(idImms == taxid)[0] for taxid in micTaxids ])
-            #scCellRootMax = scores[:,cellTopColInd].max(1)
+            #scCellRootMax = score[:,cellTopColInd].max(1)
             #self._maskScoresNonSubtrees(taxaTree,immScores=sc,posRoots=(cellRoot,))
             #if opt.rejectRanksHigher is not "superkingdom":
             #    self._maskScoresByRanks(taxaTree,immScores=sc)
             #topTaxids = self._taxaTopScores(taxaTree,immScores=sc,topScoreN=10)
-            argmaxSc = scores.argmax(0)
-            #maxSc = scores.max(0)
+            argmaxSc = score.argmax(0)
+            #maxSc = score.max(0)
             predTaxids = idImm[argmaxSc]
         else:
             raise ValueError("Unknown kind of score object: %s" % (kind,))
@@ -1253,7 +1355,7 @@ class ImmClassifierApp(App):
         opt = self.opt
         taxaLevels = self.getTaxaLevels()
         levNames = taxaLevels.getLevelNames("ascend")
-        db = DbSqlLite(dbpath=opt.predOutDbSqlite)
+        db = DbSqlLite(dbpath=opt.predOutDbSqlite,strategy="exclusive_unsafe")
         rmrf(opt.predOutStatsDir)
         makeFilePath(opt.predOutStatsCsv)
         outCsv = openCompressed(opt.predOutStatsCsv,'w')
@@ -1268,6 +1370,139 @@ class ImmClassifierApp(App):
             self._graphicsReport(db=db,dbTableRep=dbTableRep,levName=levName,fldRep="sum_weight",
                     outPrefix=pjoin(opt.predOutStatsDir,dbTableRep),maxClades=20)
         outCsv.close()
+        db.close()
+
+    def procBenchScores(self,**kw):
+        """Process benchmark IMM scores and generate performance metrics.
+        Parameters are taken from self.opt.
+        @param outScoreComb File with ImmScores object
+        @param benchOutCsv Output file with metrics in CSV format
+        @param benchOutDbSqlite Output file with metrics in SQLite format
+        """
+        opt = self.opt
+        immScores = openImmScores(opt,fileName=opt.outScoreComb,mode="r")
+        makeFilePath(opt.benchOutCsv)
+        makeFilePath(opt.benchOutDbSqlite)
+        sc = immScores.getData()
+        #assume idImm are str(taxids):
+        idImm = n.asarray(sc.idImm[:],dtype=int)
+        kind = immScores.getKind()
+        assert kind == "ImmScoresDenseMatrix","Matrix Score dataset is required for benchmark"
+        taxaTree = self.getTaxaTree()
+        taxaLevels = self.getTaxaLevels()
+        print "DEBUG: Loaded taxa tree and level"
+        eukRoot = taxaTree.getNode(eukTaxid)
+        levNames = taxaLevels.getLevelNames("ascend")
+        levIdNames = taxaLevels.getLevelIdForNames(levNames)
+        levPosSuperking = levNames.index("superkingdom")
+        missTaxid = self.rejTaxid - 1
+        db = DbSqlLite(dbpath=opt.benchOutDbSqlite,strategy="exclusive_unsafe")
+        db.ddl("""
+        create table bench_samp 
+        ( 
+        i_samp integer NOT NULL, 
+        i_lev_exc integer NOT NULL,
+        i_lev_per integer NOT NULL,
+        i_lev_test_real integer,
+        i_lev_pred_real integer,
+        taxid_lev_test integer,
+        taxid_lev_pred integer,
+        taxid_superking integer
+        )
+        """,dropList=["table bench_samp"])
+        inserter = db.makeBulkInserterFile(table="bench_samp")
+        def _outTestRec(iS,iLevFS,iLevFP,nodLinFS_FP,nodLinFP,nodSuperkingS,
+                inserter=inserter,levIdNames=levIdNames,
+                missTaxid=missTaxid):
+            rec = (iS,
+                    levIdNames[iLevFS],
+                    levIdNames[iLevFP],
+                    nodLinFS_FP.idlevel,
+                    nodLinFP.idlevel,
+                    nodLinFS_FP.id,
+                    nodLinFP.id if nodLinFP is not None else missTaxid,
+                    nodSuperkingS.id)
+            inserter(rec)
+        sampTaxids = set()
+        for iS,idS in enumerate(sc.idSamp[:]):
+            taxid,itS = idS.strip().split('_')
+            taxid,itS = int(taxid),int(itS)
+            sampTaxids.add(taxid)
+        #If we select columns directly from hdf file with row-optimized
+        #chunkshape, the performance is horrible and we spend 100% CPU in
+        #system mode calls. For now, we load entire array into numpy.
+        #@todo add copy to column-optimized chunkshape to make the final 
+        #hdf5 (per pytables' author recipe), then select from file directly.
+        score = sc.score[:]
+        print "DEBUG: Loaded score matrix of total elements %i" % (score.shape[0]*score.shape[1],)
+        #rows are models, columns are samples
+        #samples ID was generate by bench generator and is "$taxid_$sampIndInTaxid"
+        #we cache variables that depend only on true sample taxid or predicted sample
+        #taxid because the former go in series, and the later often too (when predictions
+        #are correct, for instance)
+        tidS = None #taxid sample (true value)
+        nodS = None #node(taxid sample)
+        linS = None #lineage sample
+        linSetS = None #lineage sample as set
+        linFS = None #lineage fixed list for sample
+        tidP = None #taxid predicted
+        nodP = None #node(taxid predicted)
+        linP = None #lineage predicted
+        fill = "up-down" #None #"up-down"
+        iSel = sorted(sampleRatioWOR(n.arange(len(sc.idSamp)).tolist(),0.1))
+        for iS,idS in it.izip(iSel,sc.idSamp[iSel]):
+        #for iS,idS in enumerate(sc.idSamp):
+            taxid,itS = idS.strip().split('_')
+            taxid,itS = int(taxid),int(itS)
+            if tidS is None or tidS != taxid:
+                tidS = taxid
+                nodS = taxaTree.getNode(tidS)
+                linS = nodS.lineage()
+                linSetS = set(linS)
+                linFS = taxaLevels.lineageFixedList(nodS,null=None,format="node",fill=fill)
+            ordP = (-(score[:,iS])).argsort()
+            startOrdP = 0
+            nodSuperkingS = linFS[levPosSuperking]
+            nodLinFS_Prev = None
+            #iLevFS is exclusion level
+            for iLevFS,nodLinFS in enumerate(linFS):
+                if nodLinFS is not None: #level present in lineage of a true node
+                    for iOrdP,vOrdP in enumerate(ordP,startOrdP):
+                        tidP = idImm[vOrdP]
+                        nodP = taxaTree.getNode(tidP)
+                        #first condition excludes mixed models
+                        #TMP:tidP in sampTaxids and 
+                        if not nodP.isUnder(eukRoot) and ((nodP not in linSetS \
+                            and not nodP.isUnder(nodLinFS))):
+                                linFP = taxaLevels.lineageFixedList(nodP,null=None,format="node",fill=fill)
+                                #climb the levels and output (test,pred) pairs
+                                #iLevFP is prediction level, >= iLevFS
+                                for iLevFP,nodLinFP in enumerate(linFP[iLevFS:],iLevFS):
+                                    #TMP:
+                                    if True or nodLinFP is not None: #level present in lineage of predicted node
+                                        nodLinFS_FP = linFS[iLevFP] #corresponding true node
+                                        if nodLinFS_FP is not None: #level present in lineage of a true node
+                                            _outTestRec(iS,iLevFS,iLevFP,nodLinFS_FP,nodLinFP,nodSuperkingS)
+                                break
+                    #next exclusion level is above current, its exclusion zone contains 
+                    #the current zone,
+                    #so it can ignore already scanned and rejected model indices
+                    #and start from the last accepted index (careful that it does 
+                    #not depend on the presence of levels in the lineage, but only
+                    #on sub-tree relationship (it does not now).
+                    startOrdP = iOrdP
+                    nodLinFS_Prev = nodLinFS
+            del ordP
+        inserter.close()
+        del score
+        immScores.close()
+        db.createIndices(table="bench_samp",
+        names=[
+        "i_lev_exc",
+        "i_lev_per",
+        "taxid_lev_test",
+        "taxid_lev_pred"
+        ])
         db.close()
 
 if __name__ == "__main__":

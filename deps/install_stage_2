@@ -9,7 +9,9 @@ cd git/git && ${topdir}/install_git && cd ${topdir}
 cd cmake && ${topdir}/install_cmake && cd ${topdir}
 cd mysql/mysql && ${topdir}/install_mysql && cd ${topdir}
 cd egenix/egenix-mx-base && ${topdir}/install_egenix && cd ${topdir}
-cd numpy/numpy && ${topdir}/install_numpy && cd ${topdir}
+#For python 2.6 and numpy 1.6, easy_install works
+#cd numpy/numpy && ${topdir}/install_numpy && cd ${topdir}
+easy_install --prefix=$INSTMACH --upgrade numpy
 #cd pymol && ${topdir}/install_pymol && cd ${topdir}
 cd reportlab/reportlab && ${topdir}/install_reportlab && cd ${topdir}
 cd biopython/biopython && ${topdir}/install_biopython && cd ${topdir}

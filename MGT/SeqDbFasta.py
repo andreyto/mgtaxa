@@ -117,7 +117,8 @@ class SeqDbFasta(DirStore):
                     #strategy when we are dealing with already short 
                     #sequences from a WGS project.
                     #at the opposing end, long sequences should be 
-                    #subsampled as a series of random fragments each
+                    #subsampled as a series of random fragments each.
+                    #Look at preproc in FastaIO
                     #
                     #This gets a substring of a given length starting at a 
                     #random position within the full sequence
@@ -127,8 +128,8 @@ class SeqDbFasta(DirStore):
                         fsout = FastaWriter(out,lineLen=reader.lineLen())
                     fsout.record(header=header,sequence=seq)
                     fsout.record(header=header,sequence=revCompl(seq))
-                    print "DEBUG:     id=%s seqLen=%s seqLenWritten=%s" % (id,seqLen,len(seq))
+                    #print "DEBUG:     id=%s seqLen=%s seqLenWritten=%s" % (id,seqLen,len(seq))
                     totalWritten += len(seq)
             reader.close()
-        print "DEBUG: id=%s maxLen=%s lenRatio=%s totalWritten=%s" % (id,maxLen,lenRatio,totalWritten)
+        #print "DEBUG: id=%s maxLen=%s lenRatio=%s totalWritten=%s" % (id,maxLen,lenRatio,totalWritten)
 
