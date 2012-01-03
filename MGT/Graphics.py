@@ -143,7 +143,7 @@ class LabelMapper:
         return col
 
 
-def barHorizArea(data,xLabel,yLabel,outPrefix):
+def barHorizArea(data,xLabel,yLabel,outBackend):
     """
     Make a horizontal bar histogram of assigned clade counts.
     The area of each bar is equal to the corresponding count.
@@ -167,7 +167,7 @@ def barHorizArea(data,xLabel,yLabel,outPrefix):
     fig = pl.figure(figsize=(4, 5), dpi=600)
     #fig.subplots_adjust(right=0.5)
     ax = fig.add_subplot(111)
-    recs = ax.bar(left=bottom,height=width,width=height,bottom=left,orientation='horizontal')
+    recs = ax.bar(left=bottom,height=width,width=height,bottom=left,orientation='horizontal',color="cyan")
     txts = []
     min_bar_wid = height.min()
     txt_to_bar_dist = min_bar_wid*0.3
@@ -204,7 +204,7 @@ def barHorizArea(data,xLabel,yLabel,outPrefix):
                 txt.set_x(rec.get_x()+rec.get_width()-txt_to_bar_dist)
                 txt.set_y(rec.get_y()+rec.get_height()*0.1)
                 txt.set_ha("right")
-                txt.set_color("white")
+                #txt.set_color("green")
         #fig.canvas.draw()
         #return False
 
@@ -220,8 +220,7 @@ def barHorizArea(data,xLabel,yLabel,outPrefix):
     #this makes visible changes made by on_draw() event handler
     #we cannot call it from on_draw() because it would cause infinite recursion
     fig.canvas.draw()
-    for format in ("svg","png"):
-        fig.savefig(outPrefix+"."+format,format=format,dpi=600)
+    outBackend.savefig(figure=fig)
 
 def barHorizArea2(data,xLabel,yLabel,outPrefix):
     import pylab as pl

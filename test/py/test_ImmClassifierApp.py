@@ -12,7 +12,9 @@ optTpl.lrmUserOptions = r"'-P 0413'"
 
 dryRun = False
 
-cmdPref = "python $MGT_HOME/MGT/ImmClassifierApp.py"
+debugger = True
+
+cmdPref = "python %s $MGT_HOME/MGT/ImmClassifierApp.py" % ("-m pdb" if debugger else "",)
 cmdSfx = "--run-mode %s --lrm-user-options %s" %\
         (optTpl.runMode,optTpl.lrmUserOptions)
 
@@ -50,7 +52,7 @@ def predictAgainstRefCmd():
     run("zcat %s %s > tmp.pred.fasta" % tuple([ pjoin(seqDbPath1,f) \
             for f in ("100226.fasta.gz","101510.fasta.gz") ]),\
             shell=True)
-    cmd = "--mode predict --inp-seq tmp.pred.fasta --db-imm tmp.imm --pred-min-len-samp 1000"
+    cmd = "--mode proc-scores --inp-seq tmp.pred.fasta --db-imm tmp.imm --pred-min-len-samp 1000"
     cmd += " --reduce-scores-early 1"
     cmd += " --pred-out-dir tmp.results"
     runAndLog(cmd,help)
@@ -189,8 +191,8 @@ def procScoresRefAgainstRef(jobs):
 
 #buildRefSeqDbCmd()
 #trainRefCmd()
-makeBenchCmd()
-#predictAgainstRefCmd()
+#makeBenchCmd()
+predictAgainstRefCmd()
 #jobs = trainRef(jobs)
 #jobs = scoreRefAgainstRef(jobs)
 #jobs = procScoresRefAgainstRef(jobs)

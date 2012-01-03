@@ -300,6 +300,16 @@ class ImmClassifierApp(App):
             help="Existing output file with predicted taxa for custom training sequences to be used "+\
                     "in transitive classification [Optional]"),
             
+            optParseMakeOption_Path(None, "--pred-out-stats-csv",
+            dest="predOutStatsCsv",
+            help="Output CSV file with statistics on predicted taxa; default is --pred-out-taxa "+\
+                    "+ 'stats/stats.csv'"),
+            
+            optParseMakeOption_Path(None, "--pred-out-stats-pdf",
+            dest="predOutStatsPdf",
+            help="Output PDF file with statistics on predicted taxa; default is --pred-out-taxa "+\
+                    "+ 'stats/stats.pdf'"),
+            
             make_option(None, "--rej-ranks-higher",
             action="store", 
             type="string",
@@ -403,6 +413,7 @@ class ImmClassifierApp(App):
         opt.setIfUndef("predOutDbSqlite",opt.predOutTaxa+".sqlite")
         opt.setIfUndef("predOutStatsDir", pjoin(opt.predOutDir,"stats"))
         opt.setIfUndef("predOutStatsCsv", pjoin(opt.predOutStatsDir,"stats.csv"))
+        opt.setIfUndef("predOutStatsPdf", pjoin(opt.predOutStatsDir,"stats.pdf"))
         opt.setIfUndef("newTaxidTop",mgtTaxidFirst)
         opt.setIfUndef("immDbWorkDir",pjoin(opt.cwd,"immDbWorkDir"))
         opt.setIfUndef("scoreWorkDir",pjoin(opt.cwd,"scoreWorkDir"))
@@ -773,6 +784,7 @@ class ImmClassifierApp(App):
                 taxaNode.setParent(newTaxaTop)
                 # that will be used by the following call to defineImms()
                 taxaNode.pickedSeqDbIds = [ taxaNode.id ]
+                taxaNode.trainSelStatus = self.TRAIN_SEL_STATUS_DIRECT
                 fastaWriter = seqDb.fastaWriter(id=nextNewTaxid,lineLen=80)
                 fastaWriter.record(header=hdr,sequence=seq)
                 fastaWriter.close()
@@ -1332,7 +1344,7 @@ class ImmClassifierApp(App):
                     epilog="\n")
         return dbTableRep
     
-    def _graphicsReport(self,db,dbTableRep,levName,fldRep="sum_weight",outPrefix=None,maxClades=20):
+    def _graphicsReport(self,db,dbTableRep,levName,outBackend,fldRep="sum_weight",maxClades=20):
         import matplotlib
         matplotlib.use('AGG')
         from MGT import Graphics
@@ -1342,12 +1354,10 @@ class ImmClassifierApp(App):
             order by %(fldRep)s desc
             limit %(maxClades)s
             """ % (dict(dbTableRep=dbTableRep,maxClades=maxClades,fldRep=fldRep)))
-        if not outPrefix:
-            outPrefix = dbTableRep
         Graphics.barHorizArea(data=data,
                 xLabel="Count of assignments",
                 yLabel=("Assigned %s" % (levName,)) if levName else "Lowest assigned clade",
-                outPrefix=outPrefix)
+                outBackend=outBackend)
 
 
     def statsPred(self,**kw):
@@ -1359,6 +1369,8 @@ class ImmClassifierApp(App):
         rmrf(opt.predOutStatsDir)
         makeFilePath(opt.predOutStatsCsv)
         outCsv = openCompressed(opt.predOutStatsCsv,'w')
+        from matplotlib.backends.backend_pdf import PdfPages
+        outBackend = PdfPages(opt.predOutStatsPdf)
         sqlAsComment = True
         sqlpar = dict(lenMin = opt.predMinLenSamp)
         db.ddl("""\
@@ -1368,8 +1380,9 @@ class ImmClassifierApp(App):
         for levName in levNames+[""]: #"" is for lowest clade
             dbTableRep = self._sqlReport(db=db,dbTable="scaff_pred_filt",levName=levName,outCsv=outCsv)
             self._graphicsReport(db=db,dbTableRep=dbTableRep,levName=levName,fldRep="sum_weight",
-                    outPrefix=pjoin(opt.predOutStatsDir,dbTableRep),maxClades=20)
+                    outBackend=outBackend,maxClades=20)
         outCsv.close()
+        outBackend.close()
         db.close()
 
     def procBenchScores(self,**kw):
