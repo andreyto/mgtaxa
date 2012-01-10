@@ -8,6 +8,7 @@
 
 from MGT.Common import *
 from optparse import OptionParser, make_option
+import tempfile
 
 __all__ = ["App","runAppAsScript","optParseMakeOption_Path"]
 
@@ -217,8 +218,7 @@ class App:
             
             optParseMakeOption_Path(None, "--cwd",
             dest="cwd",
-            default="work",
-            help="A directory to use as a 'current working directory' [%default]"),
+            help="A directory to use as a 'current working directory' [work]"),
             
             make_option(None, "--opt-file",
             action="store", 
@@ -291,6 +291,10 @@ class App:
         if options.optFile is not None:
             options = loadObj(options.optFile)
         else:
+            d = tempfile.mkdtemp(suffix=".work",
+                prefix=klass.getAppName()+".",
+                dir=os.getcwd())
+            options.setIfUndef("cwd",d)
             klass.parseCmdLinePost(options=options,args=args,parser=parser)
         return options,args
 
@@ -345,10 +349,11 @@ class App:
         This is called from __init__() and has access to the execution context (such as current dir)."""
         pass
 
-    
-    def getAppName(self):
+    @classmethod    
+    def getAppName(klass):
         """Return mnemonic name for this application to use for example as a prefix of batch script name"""
-        s = self.__class__.__name__
+        #s = self.__class__.__name__
+        s = klass.__name__
         return s[0].lower()+s[1:]
 
     def factory(self,**kw):
@@ -379,7 +384,9 @@ class App:
         @param cwd optional directory for the new file (current dir by default)
         @ret Struct(optFile,cmd) where optFile is file name, cmd is command line, 
         such as self.getCmd()+' --opt-file '+optFile."""
-        out,optFile = makeTmpFile(suffix=".opt.pkl",prefix=self.getAppName()+'.',dir=cwd,withTime=True)
+        opt = self.opt
+        makedir(opt.cwd)
+        out,optFile = makeTmpFile(suffix=".opt.pkl",prefix=self.getAppName()+'.',dir=opt.cwd,withTime=True)
         out.close()
         return Struct(optFile=optFile,cmd=self.getCmd() + " --opt-file %s" % optFile)
 

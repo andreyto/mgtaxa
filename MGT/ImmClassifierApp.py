@@ -47,7 +47,9 @@ class ImmClassifierApp(App):
     data for subnodes.
     This class can be mostly viewed as imposing a TaxaTree structure onto ImmApp."""
 
-    batchDepModes = ("predict","score","train","make-ref-seqdb","fin-ref-seqdb","make-bench")
+    batchDepModes = ("predict","score","train","make-ref-seqdb",
+            "fin-ref-seqdb","make-bench","bench-one-frag-len",
+            "bench")
 
     ## Special taxonomy ID value to mark rejected samples 
     rejTaxid = 0
@@ -151,7 +153,9 @@ class ImmClassifierApp(App):
                 "fin-ref-seqdb-batch",
                 "make-bench-batch",
                 "make-bench-fin",
-                "proc-bench-scores")
+                "proc-bench-scores",
+                "bench-one-frag-len",
+                "bench")
         
         option_list = [
             
@@ -189,7 +193,6 @@ class ImmClassifierApp(App):
                     "with the list defined with --db-imm option."),
             
             optParseMakeOption_Path(None, "--imm-seq-ids",
-            default="imm-seq-ids",
             dest="immIdToSeqIds",
             help="File that maps IMM IDs to lists of seq IDs during IMM training"),
             
@@ -234,14 +237,12 @@ class ImmClassifierApp(App):
                     "(leading to separate jobs in batch run-mode)"),
             
             optParseMakeOption_Path(None, "--score-out-dir",
-            default="scores",
             dest="outDir",
-            help="Directory name for output score files [%default]"),
+            help="Directory name for output score files [--cwd/scores]"),
             
             optParseMakeOption_Path(None, "--out-score-comb",
             dest="outScoreComb",
-            help="Output file for combined raw scores. Default "+\
-                    "is 'combined'+ImmApp.scoreSfx inside --out-dir"),
+            help="Output file for combined raw scores [--out-dir/combined.%s]"%(ImmApp.scoreSfx,)),
         
             optParseMakeOption_Path(None, "--taxa-tree-pkl",
             dest="taxaTreePkl",
@@ -281,19 +282,16 @@ class ImmClassifierApp(App):
             help="Root name for custom reference sequences"),
             
             optParseMakeOption_Path(None, "--pred-out-dir",
-            default="results",
             dest="predOutDir",
-            help="Output directory for classification results [%default]"),
+            help="Output directory for classification results [--cwd/results]"),
             
             optParseMakeOption_Path(None, "--pred-out-taxa",
             dest="predOutTaxa",
-            help="Output file with predicted taxa; default is pred-taxa inside "+\
-                    "--pred-out-dir"),
+            help="Output file with predicted taxa [--pred-out-dir/pred-taxa]"),
             
             optParseMakeOption_Path(None, "--pred-out-taxa-csv",
             dest="predOutTaxaCsv",
-            help="Output CSV file with predicted taxa; default is --pred-out-taxa "+\
-                    "+ '.csv'"),
+            help="Output CSV file with predicted taxa; default is --pred-out-taxa.csv"),
             
             optParseMakeOption_Path(None, "--trans-pred-out-taxa",
             dest="transPredOutTaxa",
@@ -302,13 +300,11 @@ class ImmClassifierApp(App):
             
             optParseMakeOption_Path(None, "--pred-out-stats-csv",
             dest="predOutStatsCsv",
-            help="Output CSV file with statistics on predicted taxa; default is --pred-out-taxa "+\
-                    "+ 'stats/stats.csv'"),
+            help="Output CSV file with statistics on predicted taxa [--pred-out-dir/stats/stats.csv]"),
             
             optParseMakeOption_Path(None, "--pred-out-stats-pdf",
             dest="predOutStatsPdf",
-            help="Output PDF file with statistics on predicted taxa; default is --pred-out-taxa "+\
-                    "+ 'stats/stats.pdf'"),
+            help="Output PDF file with statistics on predicted taxa [--pred-out-taxa/stats/stats.pdf]"),
             
             make_option(None, "--rej-ranks-higher",
             action="store", 
@@ -354,21 +350,28 @@ class ImmClassifierApp(App):
                     "model scores will be accumulated per each sample and processed in the "+\
                     "final reduction job-task."),
             
+            make_option(None, "--bench-frag-len-list",
+            action="store",
+            type="string",
+            default="100,400,1000,10000",
+            dest="benchFragLenList",
+            help="List of fragment lengths to generate and score in benchmark"),
+            
             optParseMakeOption_Path(None, "--db-bench",
             dest="dbBench",
             help="BenchDb path, used either to create a new BenchDb from SeqDb "+\
-                "or to use an existing BenchDb for benchmarking the models."),
+                "or to use an existing BenchDb for benchmarking the models [-cwd/dbBench]"),
             
             optParseMakeOption_Path(None, "--db-bench-frag",
             dest="dbBenchFrag",
             help="Path of a single FASTA file that contains samples extracted from "+\
-                "the BenchDb."),
+                "the BenchDb [--cwd/dbBenchFrag]"),
             
-            make_option(None, "--db-bench-frag-size",
+            make_option(None, "--db-bench-frag-len",
             action="store",
             type="int",
             default=400,
-            dest="dbBenchFragSize",
+            dest="dbBenchFragLen",
             help="Length of fragments to generate in benchmark"),
             
             make_option(None, "--db-bench-frag-count-max",
@@ -379,14 +382,16 @@ class ImmClassifierApp(App):
             help="Maximum count of fragments to select for benchmark per genome"),
             
             optParseMakeOption_Path(None, "--bench-out-dir",
-            default="bench_results",
             dest="benchOutDir",
-            help="Output directory for benchmarking results [%default]"),
+            help="Output directory for benchmarking results [-cwd/benchResults]"),
             
             optParseMakeOption_Path(None, "--bench-out-csv",
             dest="benchOutCsv",
-            help="Output CSV file with benchmarking results; default is --bench-out-dir/"+\
-                    "bench.csv"),
+            help="Output CSV file with benchmarking results [--bench-out-dir/bench.csv]"),
+            
+            optParseMakeOption_Path(None, "--bench-out-db-sqlite",
+            dest="benchOutDbSqlite",
+            help="Output SQLite database file with benchmarking results [--bench-out-dir/bench.sqlite]"),
         ]
         return Struct(usage = klass.appOptHelp+"\n"+\
                 "Run with the --help options for a detailed description of individual arguments.",
@@ -400,12 +405,18 @@ class ImmClassifierApp(App):
             parser.error("--mode option is required")
         opt.setIfUndef("cwd",os.getcwd())
         if ( not opt.immDbArchive and not opt.immDb ):
-            if opt.mode in ("predict","make-bench","run-bench"):
+            if opt.mode in ("predict","make-bench","bench"):
                 opt.immDb = [ globOpt.icm.icmDb ]
+        if isinstance(opt.benchFragLenList,str):
+            opt.benchFragLenList = [ int(x) for x in opt.benchFragLenList.split(",") ]
         klass.pathMultiOptToAbs(opt,"immDb")           
         klass.pathMultiOptToAbs(opt,"immDbArchive")           
+        opt.setIfUndef("immIdToSeqIds",pjoin(opt.cwd,"imm-seq-ids"))
+        opt.setIfUndef("outDir",pjoin(opt.cwd,"scores"))
+        opt.setIfUndef("predOutDir",pjoin(opt.cwd,"results"))
         opt.setIfUndef("seqDb",pjoin(opt.cwd,"seqDb"))
         opt.setIfUndef("dbBench",pjoin(opt.cwd,"dbBench"))
+        opt.setIfUndef("dbBenchFrag",pjoin(opt.cwd,"dbBenchFrag.fna"))
         opt.setIfUndef("immIds",opt.immIdToSeqIds)
         opt.setIfUndef("outScoreComb",pjoin(opt.outDir,"combined"+ImmApp.scoreSfx))
         opt.setIfUndef("predOutTaxa",pjoin(opt.predOutDir,"pred-taxa"))
@@ -417,6 +428,8 @@ class ImmClassifierApp(App):
         opt.setIfUndef("newTaxidTop",mgtTaxidFirst)
         opt.setIfUndef("immDbWorkDir",pjoin(opt.cwd,"immDbWorkDir"))
         opt.setIfUndef("scoreWorkDir",pjoin(opt.cwd,"scoreWorkDir"))
+        opt.setIfUndef("benchWorkDir",pjoin(opt.cwd,"benchWorkDir"))
+        opt.setIfUndef("benchOutDir",pjoin(opt.cwd,"benchResults"))
         opt.setIfUndef("benchOutCsv",pjoin(opt.benchOutDir,"bench.csv"))
         opt.setIfUndef("benchOutDbSqlite",pjoin(opt.benchOutDir,"bench.sqlite"))
         if opt.predMode == "host": 
@@ -460,6 +473,7 @@ class ImmClassifierApp(App):
         makedir(opt.cwd)
         makedir(opt.immDbWorkDir)
         makedir(opt.scoreWorkDir)
+        makedir(opt.benchWorkDir)
         #print "Options used:\n", opt
    
 
@@ -512,6 +526,12 @@ class ImmClassifierApp(App):
             ret = self.makeBenchFromSeqDbFin(**kw)
         elif opt.mode == "proc-bench-scores":
             ret = self.procBenchScores(**kw)
+        elif opt.mode == "bench-one-frag-len":
+            ret = self.benchOneFragLen(**kw)
+        elif opt.mode == "bench":
+            ret = self.bench(**kw)
+        elif opt.mode == "bench-many-frag-len-fin":
+            ret = self.benchManyFragLenFin(**kw)
         else:
             raise ValueError("Unknown mode value: %s" % (opt.mode,))
         return ret
@@ -635,7 +655,7 @@ class ImmClassifierApp(App):
         bench.seqDb = seqDb
         for id in ids:
             bench.makeSample(idDb=id,
-                    fragSize=opt.dbBenchFragSize,
+                    fragLen=opt.dbBenchFragLen,
                     fragCountMax=opt.dbBenchFragCountMax)
         
     def makeBenchFromSeqDbFin(self,**kw):
@@ -644,7 +664,80 @@ class ImmClassifierApp(App):
         ids = opt.benchIds
         bench = ImmClassifierBenchmark.open(path=opt.dbBench,mode="r")
         bench.catSamples(outFile=opt.dbBenchFrag,idsDb=ids)
+
+    ## Methods that integrate all steps of benchmark generation and evaluation
+
+    def bench(self,**kw):
+        """Generate and evaluate the entire benchmark suite"""
+        return self.benchManyFragLen(**kw)
+
+    def benchManyFragLen(self,**kw):
+        """Generate and evaluate benchmark for a range of fragment lengths."""
+        opt = self.opt
+        jobs = []
+        optsI = []
+        for fragLen in opt.benchFragLenList:
+            optI = Struct()
+            optI.runMode = opt.runMode
+            optI.lrmUserOptions = opt.lrmUserOptions
+            optI.mode = "bench-one-frag-len"
+            optI.immDb = opt.immDb
+            optI.seqDb = opt.seqDb
+            optI.dbBenchFragLen = fragLen
+            optI.dbBenchFragCountMax = opt.dbBenchFragCountMax
+            optI.cwd = pjoin(opt.benchWorkDir,str(fragLen))
+            #this sets default and derived options
+            #@todo we need to create two kinds of properties in Struct():
+            #fixed values and lazy-evaluated values (similar to variables
+            #in "make" assigned with "=" and ":="). This will allow changing
+            #just one option in a copy of the parent option object (e.g.
+            #the working directory), with dependent options (e.g. various
+            #filenames) dynamically recomputed.
+            app = self.factory(opt=optI)
+            optsI.append(app.opt)
+            jobs += app.run(**kw)
+        
+        optI = copy(opt)
+        optI.mode = "bench-many-frag-len-fin"
+        optI.optsOneFragLen = optsI
+        app = self.factory(opt=optI)
+        kw = kw.copy()
+        kw["depend"] = jobs
+        jobs = app.run(**kw)
+
+        return jobs
     
+    def benchManyFragLenFin(self,**kw):
+        """Combiner phase of benchManyFragLen()"""
+        return kw.get("depend",None)
+    
+    def benchOneFragLen(self,**kw):
+        """Generate and evaluate benchmark for a given fragment length."""
+        opt = self.opt
+        optI = copy(opt)
+        optI.mode = "make-bench"
+        app = self.factory(opt=optI)
+        jobs = app.run(**kw)
+        
+        optI = copy(opt)
+        optI.mode = "predict"
+        optI.inpSeq = opt.dbBenchFrag
+        optI.predMinLenSamp = 1
+        optI.reduceScoresEarly = 0
+        app = self.factory(opt=optI)
+        kw = kw.copy()
+        kw["depend"] = jobs
+        jobs = app.run(**kw)
+        
+        optI = copy(opt)
+        optI.mode = "proc-bench-scores"
+        app = self.factory(opt=optI)
+        kw = kw.copy()
+        kw["depend"] = jobs
+        jobs = app.run(**kw)
+
+        return jobs
+
     ## Methods that assign training sequences to higher-level nodes
 
     def mapSeqToTree(self):
@@ -1408,22 +1501,54 @@ class ImmClassifierApp(App):
         levNames = taxaLevels.getLevelNames("ascend")
         levIdNames = taxaLevels.getLevelIdForNames(levNames)
         levPosSuperking = levNames.index("superkingdom")
-        missTaxid = self.rejTaxid - 1
+        #this value as prediction result should be treated as
+        #always incorrect when computing performance metrics
+        wrongTaxid = self.rejTaxid - 1
+
+        def _mapModelIds(taxaTree,idImm):
+            """Map model ids to the taxonomy tree and store for each node the
+            number of immediate children that have models in their subtrees.
+            This will be used to include into the performance counters only
+            those samples for which a correct model exists at a given exclusion
+            level"""
+            root = taxaTree.getRootNode()
+            root.setAttribute("tmpHasMod",0)
+            for taxid in idImm:
+                node = taxaTree.getNode(taxid)
+                node.tmpHasMod = 1
+            root.setTotal("tmpHasMod","tmpCntMod")
+            root.setReduction(extractor=lambda n: 0,
+                    dstAttr="tmpChWMod",
+                    childExtractor=lambda n: n.tmpCntMod > 0)
+
+
+        _mapModelIds(taxaTree=taxaTree,idImm=idImm)
+        print "DEBUG: mapped models to tree"
+
         db = DbSqlLite(dbpath=opt.benchOutDbSqlite,strategy="exclusive_unsafe")
+        tblSfx = ""
+        storeDb = NodeStorageDb(db=db,tableSfx=tableSfx)
+        storeDbLev = LevelsStorageDb(db=db,tableSfx=tableSfx)
+        storeDbLev.save(taxaLevels)
+        storeDb.saveName(taxaTree)
+
+        create table  
+        ( 
         db.ddl("""
         create table bench_samp 
         ( 
         i_samp integer NOT NULL, 
         i_lev_exc integer NOT NULL,
-        i_lev_per integer NOT NULL,
+        i_lev_pred integer NOT NULL,
         i_lev_test_real integer,
         i_lev_pred_real integer,
         taxid_lev_test integer,
         taxid_lev_pred integer,
-        taxid_superking integer
+        taxid_superking integer,
+        n_lev_test_models integer
         )
         """,dropList=["table bench_samp"])
-        inserter = db.makeBulkInserterFile(table="bench_samp")
+        inserter = db.makeBulkInserter(table="bench_samp")
         def _outTestRec(iS,iLevFS,iLevFP,nodLinFS_FP,nodLinFP,nodSuperkingS,
                 inserter=inserter,levIdNames=levIdNames,
                 missTaxid=missTaxid):
@@ -1431,10 +1556,11 @@ class ImmClassifierApp(App):
                     levIdNames[iLevFS],
                     levIdNames[iLevFP],
                     nodLinFS_FP.idlevel,
-                    nodLinFP.idlevel,
+                    nodLinFP.idlevel if nodLinFP is not None else levIdNames[iLevFP],
                     nodLinFS_FP.id,
-                    nodLinFP.id if nodLinFP is not None else missTaxid,
-                    nodSuperkingS.id)
+                    nodLinFP.id if nodLinFP is not None else wrongTaxid,
+                    nodSuperkingS.id,
+                    nodLinFS_FP.tmpChWMod)
             inserter(rec)
         sampTaxids = set()
         for iS,idS in enumerate(sc.idSamp[:]):
@@ -1461,7 +1587,8 @@ class ImmClassifierApp(App):
         tidP = None #taxid predicted
         nodP = None #node(taxid predicted)
         linP = None #lineage predicted
-        fill = "up-down" #None #"up-down"
+        fill = None #None #"up-down" "up"
+        assert fill is None,"The consequences of using fill for fixed lineage are not fully understood yet"
         iSel = sorted(sampleRatioWOR(n.arange(len(sc.idSamp)).tolist(),0.1))
         for iS,idS in it.izip(iSel,sc.idSamp[iSel]):
         #for iS,idS in enumerate(sc.idSamp):
@@ -1476,25 +1603,50 @@ class ImmClassifierApp(App):
             ordP = (-(score[:,iS])).argsort()
             startOrdP = 0
             nodSuperkingS = linFS[levPosSuperking]
-            nodLinFS_Prev = None
+            #nodLinFS_Prev = None
             #iLevFS is exclusion level
-            for iLevFS,nodLinFS in enumerate(linFS):
-                if nodLinFS is not None: #level present in lineage of a true node
+            for iLevFS,nodLinFS in enumerate(linFS[:-1]):
+                if nodLinFS is not None: 
+                    #The condition above checks that the exclusion level is present in lineage 
+                    #of a true node. Clearly, we cannot speak of excluding related models 
+                    #at a certain level if the test sample does not have that level defined.
+                    #So, the above omits such records from consideration regardless of the
+                    #predicted taxa.
                     for iOrdP,vOrdP in enumerate(ordP,startOrdP):
                         tidP = idImm[vOrdP]
                         nodP = taxaTree.getNode(tidP)
                         #first condition excludes mixed models
-                        #TMP:tidP in sampTaxids and 
-                        if not nodP.isUnder(eukRoot) and ((nodP not in linSetS \
+                        #TMP:tidP in sampTaxids and
+                        #not nodP.isUnder(eukRoot) and
+                        if \
+                            ((nodP not in linSetS \
                             and not nodP.isUnder(nodLinFS))):
                                 linFP = taxaLevels.lineageFixedList(nodP,null=None,format="node",fill=fill)
                                 #climb the levels and output (test,pred) pairs
-                                #iLevFP is prediction level, >= iLevFS
-                                for iLevFP,nodLinFP in enumerate(linFP[iLevFS:],iLevFS):
-                                    #TMP:
-                                    if True or nodLinFP is not None: #level present in lineage of predicted node
-                                        nodLinFS_FP = linFS[iLevFP] #corresponding true node
-                                        if nodLinFS_FP is not None: #level present in lineage of a true node
+                                #iLevFP is prediction level > iLevFS
+                                for iLevFP,nodLinFP in enumerate(linFP[iLevFS+1:],iLevFS+1):
+                                    nodLinFS_FP = linFS[iLevFP] #true node at prediction level
+                                    if nodLinFS_FP is not None: 
+                                        #The above checks that the prediction level is 
+                                        #present in lineage of a true (test) node
+                                        #Assuming the "fill" parameter for the fixed
+                                        #lineage generation is None (so no fill), if the predicted
+                                        #node does not have that level in its lineage (nodLinFP is None),
+                                        #then it is a different lineage at that level and, therefore,
+                                        #an incorrect prediction. We save a special value of "always
+                                        #wrong taxid" as prediction value into a (test,predict) 
+                                        #database record.
+                                        #This reasoning is not that obvious when the fill is used
+                                        #(although should probably work when fill=="up"), so we
+                                        #restrict fill to None for now.
+
+                                        #Check that sample is not the only child with model at this 
+                                        #prediction level.
+                                        #Phymm Methods for unexplained reason says they required 
+                                        #"two others", which must mean 3 total, so we also save the 
+                                        #number as part of the record to filter on it later when 
+                                        #computing the metrics.
+                                        if nodLinFS_FP.tmpChWMod >= 2: 
                                             _outTestRec(iS,iLevFS,iLevFP,nodLinFS_FP,nodLinFP,nodSuperkingS)
                                 break
                     #next exclusion level is above current, its exclusion zone contains 
@@ -1503,8 +1655,8 @@ class ImmClassifierApp(App):
                     #and start from the last accepted index (careful that it does 
                     #not depend on the presence of levels in the lineage, but only
                     #on sub-tree relationship (it does not now).
-                    startOrdP = iOrdP
-                    nodLinFS_Prev = nodLinFS
+                    #startOrdP = iOrdP
+                    #nodLinFS_Prev = nodLinFS
             del ordP
         inserter.close()
         del score

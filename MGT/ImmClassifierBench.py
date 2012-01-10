@@ -30,10 +30,10 @@ class ImmClassifierBenchmark(DirStore):
         seqIds = set((str(x) for x in self.seqDb.getIdList()))
         return list(immIds & seqIds)
 
-    def makeSample(self,idDb,fragSize,fragCountMax):
+    def makeSample(self,idDb,fragLen,fragCountMax):
         """Make a sample FASTA file for a given SeqDb ID"""
         outFasta = self.getFastaPath(idDb)
-        self.shredFasta(idDb=idDb,outFasta=outFasta,fragSize=fragSize,
+        self.shredFasta(idDb=idDb,outFasta=outFasta,fragLen=fragLen,
                 fragCountMax=fragCountMax)
 
     def catSamples(self,outFile,idsDb=None):
@@ -57,13 +57,13 @@ class ImmClassifierBenchmark(DirStore):
         if outClose:
             outFile.close()
 
-    def shredFasta(self,idDb,outFasta,fragSize,
+    def shredFasta(self,idDb,outFasta,fragLen,
             fragCountMax,lineLen=80,outMode="w"):
         """Shred each record in multi-FASTA file into multiple records of fixed size"""
         from MGT.FeatIO import LoadSeqPreprocShred
         seqDb = self.seqDb
         seqLenTot = seqDb.seqLengths(idDb)["len"].sum()
-        seqLenRatio = (fragCountMax*fragSize)/float(seqLenTot)
+        seqLenRatio = (fragCountMax*fragLen)/float(seqLenTot)
 
         if seqLenRatio < 1.:
             #PreprocShredder treats sampNum()=0 as "all samples", so we need to set it
@@ -71,16 +71,16 @@ class ImmClassifierBenchmark(DirStore):
             #all samples. Maybe shredder's behaviour should be changed to sampNum<0 => all.
             #@todo Pick coords on a virtual concatenation of all sequences, otherwise
             #it will never be quite right.
-            sampNum = lambda lab,seq,id: int(rndRound(len(seq)*seqLenRatio/fragSize))
+            sampNum = lambda lab,seq,id: int(rndRound(len(seq)*seqLenRatio/fragLen))
         else:
             sampNum = 0
         inpSeq = seqDb.fastaReader(idDb)
         outSeq = FastaWriter(out=outFasta,lineLen=lineLen,mode=outMode)
-        shredder = LoadSeqPreprocShred(sampLen=fragSize,
+        shredder = LoadSeqPreprocShred(sampLen=fragLen,
                 sampNum=sampNum,
                 makeUniqueId=False,
                 sortByStarts=True)
-        catLen = min(max(seqLenTot/(fragCountMax/10),fragSize*fragCountMax*10),10**8)
+        catLen = min(max(seqLenTot/(fragCountMax/10),fragLen*fragCountMax*10),10**8)
         seqCat = []
         seqCatLen = 0
         seqCatStart = 0

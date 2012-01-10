@@ -750,13 +750,49 @@ class DbSqlLite(DbSql):
         k = {}
         if kw.has_key("bufLen"):
             k["bufLen"] = kw["bufLen"]
-        tbl = kw["table"]
-        if not hasattr(tbl,"insertSql"):
-            tbl = SqlTable.fromDb(db=self,name=tbl)
-        k["sql"] = tbl.insertSql()
+        k["table"] = kw["table"]
         return self.makeBulkInserter(**k)
    
 
+    def createIndices(self,table,names=None,primary=None,compounds=None,attrib={}):
+        """This is a specialization for SQLite, which does not support ALTER TABLE ... ADD INDEX ... ADD INDEX.
+        @param attrib - optional index attributes. Currently supported is 'unique', e.g. attrib={'id':{'unique':True}}
+        @note primary cannot be created in sqlite outside of create table statement, so we fake it with a unique index,
+        which is still not equal to 'primary' constraint because we cannot add 'not null' constraint."""
+        dropNames = []
+        sqlTpl = "CREATE %%s INDEX %%s ON %s (%%s)" % (table,)
+        if primary is not None:
+            if names is None:
+                names = []
+            else:
+                names = list(names)
+            names.append(primary)
+            attrib[primary] = {"unique":True}
+        addindex = []
+        if names is not None:
+            for name in names:
+                dropNames.append(name)
+                unique = ""
+                try:
+                    if attrib[name]["unique"]:
+                        unique = "UNIQUE"
+                except KeyError:
+                        pass
+                addindex.append(sqlTpl % (unique,"ix_%s_%s" % (table,name),name))
+        if compounds is not None:
+            for name in compounds.keys():
+                dropNames.append(name)
+                unique = ""
+                try:
+                    if attrib[name]["unique"]:
+                        unique = "UNIQUE"
+                except KeyError:
+                        pass
+                addindex.append(sqlTpl % (unique,"ix_%s_%s" % (table,name),compounds[name]))
+        for name in dropNames:
+            self.dropIndex(name,table)
+        for sql in addindex:
+            self.ddl(sql)
 
 class DbSqlMy(DbSql):
     """Derivative of DbSql specific for MySQL DB engine"""
@@ -968,9 +1004,13 @@ class IntIdGenerator(object):
 
 class BulkInserter:
     
-    def __init__(self,db,sql,bufLen=100000):
+    def __init__(self,db,sql=None,bufLen=100000,table=None):
+        assert (sql is None) ^ (table is None),"Either sql or table arguments must be provided, but not both"
         self.db = db
         self.bufLen = bufLen
+        if table is not None and not hasattr(table,"insertSql"):
+            table = SqlTable.fromDb(db=self.db,name=table)
+        sql = table.insertSql()
         self.sql = sql
         self.buf = []
         

@@ -1096,6 +1096,9 @@ class TaxaLevels:
     
     def getLevelIds(self):
         return self.levelIds
+    
+    def getIdToLevel(self):
+        return self.idToLevel
 
     def getLevel(self,idlevel):
         return self.idToLevel[idlevel]

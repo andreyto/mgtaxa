@@ -37,7 +37,6 @@ class NodeStorageDb:
     ## in the future, in which case we will use specific name table for each tree.
     ## It will still make sense to keep the names in a separate table because they
     ## are long and rarely needed strings.
-    ## Currently we just expect the 'tblNames' to be loaded into the database already.
     
     tblNames = "taxa_names"
 
@@ -95,8 +94,8 @@ class NodeStorageDb:
                       n.idpar,
                       n.lnest,
                       n.rnest,
-                      n.seq_len,
-                      n.seq_len_tot,
+                      n.seq_len if hasattr(self,"seq_len") else None,
+                      n.seq_len_tot if hasattr(self,"seq_len") else None,
                       n.idlevel,
                       n.depth,
                       n.rank,
@@ -107,10 +106,30 @@ class NodeStorageDb:
                 names=["idpar","lnest","rnest","idlevel","depth","rank","divid"],
                 attrib={"lnest":{"unique":True},"rnest":{"unique":True}})
 
+    def saveName(self,tree):
+        """Save node names into a separate table called by self.tblNames attribute.
+        @param Tree object"""
+        #this method could be also implemented by a single call to self.saveAttributes()
+        db = self.db
+        db.ddl("""\
+        create table %s
+        (
+        id integer,
+        name  varchar(180)
+        )
+        """ % (self.tblNames,),
+        dropList=["table %s" % (self.tblNames,)])
+        inserter = db.makeBulkInserterFile(table=self.tblNames,bufLen=500000)
+        for n in tree.iterDepthTop():
+            inserter((n.id,
+                      n.name))
+        inserter.flush()
+        db.ddl("ANALYZE TABLE %s" % (self.tblNames,),ifDialect="mysql")
+        db.createIndices(table=self.tblNames,primary="id")
 
     def loadAttribute(self,tree,name,sql,default=None,setDefault=True,ignoreKeyError=True,typeCast=None):
         """Execute 'sql' which should return a unique mapping taxid -> value and assign result to each node.
-        @param name - name of the new treee nodee attribbute to set
+        @param name - name of the new tree node attribbute to set
         @param sql - statement to execute. It must return (id,value) pairs (in that order) with 'id' corresponding to tree node id's.
         Actual column names do not matter.
         @param default - assign this value to those nodes for which taxid is not present in the 'sql' result set (if 'setDeafult' is True)
@@ -139,7 +158,7 @@ class NodeStorageDb:
     def saveAttributes(self,tree,nameToSql,table):
         """Save attribute values of tree nodes as a new table indexed by node id.
         @param tree - tree to work on
-        @nameToSql - mapping of attribute names into SQL, by example: {'rankUpper':{'name':'rank_upper','type':'char(20)','createIndex':True,default=0}}. If 'name' is not present, the key of the dictionary will be used as is for SQL column
+        @param nameToSql - mapping of attribute names into SQL, by example: {'rankUpper':{'name':'rank_upper','type':'char(20)','createIndex':True,default=0}}. If 'name' is not present, the key of the dictionary will be used as is for SQL column
         name. That might lead to problems if SQL server converts all names to lower case, for instance. It is not a good
         idea to rely on identifier case in SQL code anyway.
         @param table - SQL table name to create
@@ -179,7 +198,7 @@ class NodeStorageDb:
             vals.insert(0,n.id)
             inserter(vals)
         inserter.flush()
-        namesToIndex = [ name for name in nameToSql if nameToSql[name].get('createIndex',False) ]
+        namesToIndex = [ nameToSql[name].get('name',name) for name in nameToSql if nameToSql[name].get('createIndex',False) ]
         db.createIndices(table=table,primary="id",names=namesToIndex)
 
 
@@ -198,4 +217,42 @@ class NodeStorageDb:
                            ignoreKeyError=True,
                            typeCast=long)
         tree.setTotal(srcAttr=name,dstAttr=name+"_tot")
+
+class LevelsStorageDb:
+    """Taxonomy levels storage in SQL DB"""
+
+    tblPrefix = options.taxaLevelsTablePrefix
+
+    def __init__(self,db,tableSfx=""):
+
+        self.db = db
+        self.tableSfx = tableSfx
+        self.tblLevels = self.tblPrefix+tableSfx
+
+    def save(self,taxaLevels):
+        db = self.db
+        db.ddl("""
+        create table %s
+        (
+        id tinyint,
+        level char(20),
+        is_linn bool,
+        pos tinyint
+        )
+        """ % (self.tblLevels,),
+        dropList=["table %s" % (self.tblLevels,)])
+        levelIds = taxaLevels.getIdToLevel() # has no_rank
+        levelPos = taxaLevels.getLevelPos(order="ascend") # does not have no_rank
+        inserter = db.makeBulkInserter(table=self.tblLevels,bufLen=500000)
+        for (idlevel,level) in sorted(levelIds.items()):
+            is_linn = level in levelPos
+            inserter((idlevel,
+                      level,
+                      is_linn,
+                      levelPos[level] if is_linn else None))
+        inserter.flush()
+        db.ddl("ANALYZE TABLE %s" % (self.tblLevels,),ifDialect="mysql")
+        db.createIndices(table=self.tblLevels,primary="id",
+                names=["level","is_linn","pos"],
+                attrib={"level":{"unique":True},"pos":{"unique":True}})
 

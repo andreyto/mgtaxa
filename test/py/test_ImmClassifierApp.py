@@ -7,12 +7,12 @@ seqDbPath1 = pjoin(options.testDataDir,"seqdb-fasta")
 seqDbPath2 = pjoin(options.testDataDir,"fasta")
 
 optTpl = Struct()
-optTpl.runMode = "inproc"
+optTpl.runMode = "batchDep"
 optTpl.lrmUserOptions = r"'-P 0413'"
 
-dryRun = False
+dryRun = True
 
-debugger = True
+debugger = False
 
 cmdPref = "python %s $MGT_HOME/MGT/ImmClassifierApp.py" % ("-m pdb" if debugger else "",)
 cmdSfx = "--run-mode %s --lrm-user-options %s" %\
@@ -58,11 +58,29 @@ def predictAgainstRefCmd():
     runAndLog(cmd,help)
 
 def makeBenchCmd():
-    help="""Create benchmark dataset based on a sequence DB built by make-ref-seqdb step.
+    help="""Create benchmark dataset for a given fragment length based on a sequence DB built by make-ref-seqdb step.
     It also uses information from the model database built by train step."""
     cmd = "--mode make-bench  --db-seq tmp.db-seq --db-imm tmp.imm "+\
             "--db-bench tmp.db-bench --db-bench-frag tmp.bench.fna "+\
-            "--db-bench-frag-size 400 --db-bench-frag-count-max 100"
+            "--db-bench-frag-len 400 --db-bench-frag-count-max 100"
+    runAndLog(cmd,help)
+
+def benchOneFragLenCmd():
+    help="""Create benchmark dataset for a given fragment length based on a 
+    sequence DB built by make-ref-seqdb step and evaluate the benchmark performance.
+    It also uses information from the model database built by train step."""
+    cmd = "--mode bench-one-frag-len  --db-seq tmp.db-seq --db-imm tmp.imm "+\
+            "--db-bench tmp.db-bench --db-bench-frag tmp.bench.fna "+\
+            "--db-bench-frag-len 400 --db-bench-frag-count-max 100"
+    runAndLog(cmd,help)
+
+def benchCmd():
+    help="""Create benchmark dataset for a given list of fragment lengths based on a 
+    sequence DB built by make-ref-seqdb step and evaluate the benchmark performance.
+    It also uses information from the model database built by train step."""
+    cmd = "--mode bench  --db-seq tmp.db-seq --db-imm tmp.imm "+\
+            "--db-bench tmp.db-bench --db-bench-frag tmp.bench.fna "+\
+            "--bench-frag-len-list 100,400 --db-bench-frag-count-max 100"
     runAndLog(cmd,help)
 
 def trainRef(jobs):
@@ -192,7 +210,9 @@ def procScoresRefAgainstRef(jobs):
 #buildRefSeqDbCmd()
 #trainRefCmd()
 #makeBenchCmd()
-predictAgainstRefCmd()
+#benchOneFragLenCmd()
+benchCmd()
+#predictAgainstRefCmd()
 #jobs = trainRef(jobs)
 #jobs = scoreRefAgainstRef(jobs)
 #jobs = procScoresRefAgainstRef(jobs)

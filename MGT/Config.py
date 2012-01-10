@@ -63,6 +63,7 @@ class MGTOptions(Options):
         self._setTaxaFileNames(pjoin(self.testDataDir,"taxonomy"),sfx="Test")
         self.taxaTreeTablePrefix = "txtr"
         self.taxaTreeTableSfxMain = ""
+        self.taxaLevelsTablePrefix = "txlv"
         #self.kmerTxtDir = os.environ['PHYLA_KMERS']
         #self.kmerTestFile = os.path.join(self.kmerTxtDir,'6mers_1K.gz')
         self.hdfSeqFile = _pdata('seq.hdf')

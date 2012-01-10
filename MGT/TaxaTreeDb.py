@@ -20,9 +20,7 @@ class TaxaLevelsDb(TaxaLevels,MGTOptions):
     def __init__(self,db,taxaTree):
         MGTOptions.__init__(self)
         self.taxaTree = taxaTree
-        TaxaLevels.__init__(self)
-        if self.taxaTree is not None:
-            self.setLevels(taxaTree)
+        TaxaLevels.__init__(self,taxaTree=taxaTree)
         self.db = db
 
     def getLevelColumns(self,order="ascend"):
