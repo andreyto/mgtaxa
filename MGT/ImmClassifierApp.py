@@ -1507,11 +1507,16 @@ class ImmClassifierApp(App):
         makeFilePath(opt.benchOutCsv)
         makeFilePath(opt.benchOutDbSqlite)
         db = DbSqlLite(dbpath=opt.benchOutDbSqlite,strategy="exclusive_unsafe")
-        storesDb = self.prepBenchSql(db=db)
-        self.procBenchScoreMatr(db=db)
+        #storesDb = self.prepBenchSql(db=db)
+        #TMP:
+        #tblLevels = storesDb.storeDbLev.tblLevels
+        #tblNames = storesDb.storeDbNode.tblNames
+        tblLevels = "txlv"
+        tblNames = "taxa_names"
+        #self.procBenchScoreMatr(db=db)
         sqlBenchMetr = ImmClassifierBenchMetricsSql(db=db,
-                taxaLevelsTbl=storesDb.storeDbLev.tblLevels,
-                taxaNamesTbl=storesDb.storeDbNode.tblNames)
+                taxaLevelsTbl=tblLevels,
+                taxaNamesTbl=tblNames)
         sqlBenchMetr.makeMetrics(nLevTestModelsMin=opt.benchNLevTestModelsMin,
                 csvAggrOut=opt.benchOutAggrCsv)
 
@@ -1522,7 +1527,7 @@ class ImmClassifierApp(App):
         taxaTree = self.getTaxaTree()
         taxaLevels = self.getTaxaLevels()
         print "DEBUG: Loaded taxa tree and level"
-        tblSfx = ""
+        tableSfx = ""
         storeDbNode = NodeStorageDb(db=db,tableSfx=tableSfx)
         storeDbNode.saveName(taxaTree)
         storeDbLev = LevelsStorageDb(db=db,tableSfx=tableSfx)
@@ -1576,9 +1581,6 @@ class ImmClassifierApp(App):
         _mapModelIds(taxaTree=taxaTree,idImm=idImm)
         print "DEBUG: mapped models to tree"
 
-
-        create table  
-        ( 
         db.ddl("""
         create table bench_samp 
         ( 
@@ -1596,7 +1598,7 @@ class ImmClassifierApp(App):
         inserter = db.makeBulkInserter(table="bench_samp")
         def _outTestRec(iS,iLevFS,iLevFP,nodLinFS_FP,nodLinFP,nodSuperkingS,
                 inserter=inserter,levIdNames=levIdNames,
-                missTaxid=missTaxid):
+                wrongTaxid=wrongTaxid):
             rec = (iS,
                     levIdNames[iLevFS],
                     levIdNames[iLevFP],

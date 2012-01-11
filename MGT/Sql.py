@@ -584,6 +584,7 @@ class DbSql(MGTOptions):
             mode="w",
             withHeader=True,
             rowFieldOut=None,
+            colFieldOrderBy=None,
             restval=0,
             bufLen=100000,
             dialect="excel-tab",
@@ -591,7 +592,8 @@ class DbSql(MGTOptions):
             comment=None,
             sqlAsComment=False,
             commentEscape='#',
-            epilog=None):
+            epilog=None,
+            valFormatStr="%s"):
         """Excecute SQL and export the result as CSV file.
         @param sql SQL select statement to export results of
         @param out Either file name, or file stream object, or CSV writer object
@@ -609,9 +611,16 @@ class DbSql(MGTOptions):
         @note To output any comments, out should not be a csv.writer instance
         @note We set the default lineterminator to Linux style '\n', as opposed to 
         Python's default of Windows style '\r\n'"""
-        cols = sorted(self.selectAs1Col("""
-        select distinct %s from 
-        ( %s ) a""" % (colField,sql)))
+        if colFieldOrderBy is None:
+            colFieldOrderBy = colField
+        cols = self.selectAs1Col("""
+        select 
+            distinct %s 
+        from 
+            ( %s ) a
+        order by
+            %s
+        """ % (colField,sql,colFieldOrderBy))
         if rowFieldOut is None:
             rowFieldOut = rowField
         assert rowFieldOut.strip().lower() not in [ c.strip().lower() for c in cols ],\
@@ -660,7 +669,7 @@ class DbSql(MGTOptions):
         except KeyError:
             raise ValueError("Value field name is not found in SQL cursor recordset: %s" % (valField,))
         for rowKey,rows in it.groupby(reader.rows(),lambda r: r[rowFieldInd]):
-            rowOut = dict(( (row[colFieldInd],row[valFieldInd]) for row in rows ))
+            rowOut = dict(( (row[colFieldInd],valFormatStr % (row[valFieldInd],)) for row in rows ))
             rowOut[rowFieldOut] = rowKey
             w.writerow(rowOut)
         reader.close()

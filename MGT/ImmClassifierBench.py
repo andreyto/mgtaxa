@@ -130,6 +130,8 @@ class ImmClassifierBenchMetricsSql(object):
     sensAggrTbl = sensTbl+"_aggr"
     ##specificity aggregate table name with a group (i_lev_exc,i_lev_per)
     specAggrTbl = specTbl+"_aggr"
+    ##accuracy aggregate table name with a group (i_lev_exc,i_lev_per)
+    accuAggrTbl = "accu_aggr"
     ##suffix for euk tables
     eukSfx = "_euk"
     ##suffix for mic tables
@@ -144,13 +146,14 @@ class ImmClassifierBenchMetricsSql(object):
         self.makeConfusion()
         self.makeSensitivity(nLevTestModelsMin=nLevTestModelsMin)
         self.makeSpecificity(nLevTestModelsMin=nLevTestModelsMin)
+        self.makeAccuracy(nLevTestModelsMin=nLevTestModelsMin)
         self.makeAggrMetrics()
         self.repAggrMetrics(csvOut=csvAggrOut)
 
     def makeConfusion(self):
         """Create a table with a confusion matrix in a sparse row_ind,col_ind,count format"""
         db = self.db
-        db.createTableAs(self.sensTbl,
+        db.createTableAs(self.confTbl,
                 """select i_lev_exc,
                 i_lev_per,
                 taxid_lev_test,
@@ -167,7 +170,7 @@ class ImmClassifierBenchMetricsSql(object):
                     taxid_superking,
                     n_lev_test_models
                 """,
-                indices={names:
+                indices={"names":
                     ["i_lev_exc",
                     "i_lev_per",
                     "taxid_lev_test",
@@ -181,17 +184,19 @@ class ImmClassifierBenchMetricsSql(object):
         db.createTableAs(self.sensTbl,
                 """select i_lev_exc,
                 i_lev_per,
-                taxid_lev_test as taxid, 
-                sum(taxid_lev_test==taxid_lev_pred)/cast(sum(cnt) as REAL) as metr_clade
+                taxid_lev_test as taxid,
+                taxid_superking,
+                sum((taxid_lev_test==taxid_lev_pred)*cnt)/cast(sum(cnt) as REAL) as metr_clade
                 from %(confTbl)s 
+                where 
+                    n_lev_test_models >= %(nLevTestModelsMin)s
                 group by  
                     i_lev_exc,
                     i_lev_per, 
                     taxid_lev_test,
                     taxid_superking
-                where n_lev_test_models >= %(nLevTestModelsMin)s
                 """ % dict(confTbl=self.confTbl,nLevTestModelsMin=nLevTestModelsMin),
-                indices={names:
+                indices={"names":
                     ["i_lev_exc",
                     "i_lev_per",
                     "taxid",
@@ -201,33 +206,61 @@ class ImmClassifierBenchMetricsSql(object):
         """Create a table with specificity metrics"""
         db = self.db
         #"where taxid_lev_pred > 0" excludes the reject group
+        #"where taxid_lev_pred in (select ...)" only computes specificity
+        #for clades that have positive testing samples, because otherwise we have
+        #no chance at all to observe a specificity above zero.
         db.createTableAs(self.specTbl,
                 """select i_lev_exc,
                 i_lev_per,
                 taxid_lev_pred as taxid, 
-                sum(taxid_lev_test==taxid_lev_pred)/cast(sum(cnt) as REAL) as metr_clade
+                sum((taxid_lev_test=taxid_lev_pred)*cnt)/cast(sum(cnt) as REAL) as metr_clade
                 from %(confTbl)s 
+                where 
+                    taxid_lev_pred in 
+                        (select 
+                            taxid_lev_test 
+                            from %(confTbl)s
+                            where 
+                                n_lev_test_models >= %(nLevTestModelsMin)s
+                        )
+                    and 
+                    taxid_lev_pred > 0
                 group by  
                     i_lev_exc,
                     i_lev_per, 
-                    taxid_lev_pred,
-                    taxid_superking
-                where n_lev_test_models >= %(nLevTestModelsMin)s
-                and taxid_lev_pred > 0
-                """ % dict(confTbl=self.confTbl),
-                indices={names:
+                    taxid_lev_pred
+                """ % dict(confTbl=self.confTbl,nLevTestModelsMin=nLevTestModelsMin),
+                indices={"names":
                     ["i_lev_exc",
                     "i_lev_per",
-                    "taxid",
-                    "taxid_superking"]})
+                    "taxid"]})
 
+    def makeAccuracy(self,nLevTestModelsMin):
+        """Create a table with accuracy metrics (over all samples)"""
+        db = self.db
+        db.createTableAs(self.accuAggrTbl,
+                """select i_lev_exc,
+                i_lev_per,
+                sum((taxid_lev_test==taxid_lev_pred)*cnt)/cast(sum(cnt) as REAL) as metr_lev
+                from %(confTbl)s 
+                where 
+                    n_lev_test_models >= %(nLevTestModelsMin)s
+                group by  
+                    i_lev_exc,
+                    i_lev_per 
+                """ % dict(confTbl=self.confTbl,nLevTestModelsMin=nLevTestModelsMin),
+                indices={"names":
+                    ["i_lev_exc",
+                    "i_lev_per"]})
+    
     def makeAggrMetrics(self):
         """Make tables with the aggregate metrics"""
         db = self.db
         for (tblPerCladeName,tblAggrName) in ((self.sensTbl,self.sensAggrTbl),
                 (self.specTbl,self.specAggrTbl)):
             db.createTableAs(tblAggrName,
-                    """select i_lev_exc,
+                    """select 
+                    i_lev_exc,
                     i_lev_per,
                     avg(metr_clade) as metr_lev
                     from %(tblPerCladeName)s 
@@ -235,7 +268,7 @@ class ImmClassifierBenchMetricsSql(object):
                         i_lev_exc,
                         i_lev_per 
                     """ % dict(tblPerCladeName=tblPerCladeName),
-                    indices={names:
+                    indices={"names":
                         ["i_lev_exc",
                         "i_lev_per"]})
 
@@ -244,11 +277,17 @@ class ImmClassifierBenchMetricsSql(object):
         for (iTbl,(tblAggrName,comment)) in enumerate(
                 (
                 (self.sensAggrTbl,"Average per-clade sensitivity"),
-                (self.specAggrTbl,"Average per-clade specificity")
+                (self.specAggrTbl,"Average per-clade specificity"),
+                (self.accuAggrTbl,"Accuracy")
                 )
                 ):
             sql = """
-            select b.level as lev_exc,c.level as lev_per,i_lev_exc,i_lev_per,a.metr_lev as metr_lev
+            select 
+            b.level as lev_exc,
+            c.level as lev_per,
+            i_lev_exc,
+            i_lev_per,
+            a.metr_lev as metr_lev
             from 
                 %(tblAggrName)s a,
                 %(taxaLevelsTbl)s b,
@@ -257,7 +296,7 @@ class ImmClassifierBenchMetricsSql(object):
                 a.i_lev_exc = b.id
                 and
                 a.i_lev_per = c.id
-            order by lev_exc,lev_per
+            order by i_lev_exc,i_lev_per
             """ % dict(tblAggrName=tblAggrName,
                     taxaLevelsTbl=self.taxaLevelsTbl)
             if iTbl == 0:
@@ -270,5 +309,8 @@ class ImmClassifierBenchMetricsSql(object):
                     rowField="lev_exc",
                     colField="lev_per",
                     valField="metr_lev",
-                    comment=comment)
+                    comment=comment,
+                    colFieldOrderBy="i_lev_per",
+                    restval="X",
+                    valFormatStr="%.2f")
             
