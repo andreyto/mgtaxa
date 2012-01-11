@@ -2,6 +2,7 @@
 
 from MGT.DirStore import *
 from MGT.FastaIO import *
+from Taxa import *
 
 class ImmClassifierBenchmark(DirStore):
 
@@ -115,3 +116,159 @@ class ImmClassifierBenchmark(DirStore):
         inpSeq.close()
         outSeq.close()
 
+
+class ImmClassifierBenchMetricsSql(object):
+    """Class that computes metrics for the taxonomic claasifier from pairwise test-predict SQL records"""
+
+    ##confusion table name
+    confTbl = "conf"
+    ##sensitivity table name with a group (i_lev_exc,i_lev_per,taxid_clade)
+    sensTbl = "sens"
+    ##specificity table name with a group (i_lev_exc,i_lev_per,taxid_clade)
+    specTbl = "spec"
+    ##sensitivity aggregate table name with a group (i_lev_exc,i_lev_per)
+    sensAggrTbl = sensTbl+"_aggr"
+    ##specificity aggregate table name with a group (i_lev_exc,i_lev_per)
+    specAggrTbl = specTbl+"_aggr"
+    ##suffix for euk tables
+    eukSfx = "_euk"
+    ##suffix for mic tables
+    micSfx = "_mic"
+
+    def __init__(self,db,taxaLevelsTbl,taxaNamesTbl):
+        self.db = db
+        self.taxaLevelsTbl = taxaLevelsTbl
+        self.taxaNamesTbl = taxaNamesTbl
+
+    def makeMetrics(self,nLevTestModelsMin=2,csvAggrOut="bench.csv"):
+        self.makeConfusion()
+        self.makeSensitivity(nLevTestModelsMin=nLevTestModelsMin)
+        self.makeSpecificity(nLevTestModelsMin=nLevTestModelsMin)
+        self.makeAggrMetrics()
+        self.repAggrMetrics(csvOut=csvAggrOut)
+
+    def makeConfusion(self):
+        """Create a table with a confusion matrix in a sparse row_ind,col_ind,count format"""
+        db = self.db
+        db.createTableAs(self.sensTbl,
+                """select i_lev_exc,
+                i_lev_per,
+                taxid_lev_test,
+                taxid_lev_pred,
+                taxid_superking,
+                n_lev_test_models,
+                count(*) as cnt
+                from bench_samp 
+                group by  
+                    i_lev_exc,
+                    i_lev_per, 
+                    taxid_lev_test,
+                    taxid_lev_pred,
+                    taxid_superking,
+                    n_lev_test_models
+                """,
+                indices={names:
+                    ["i_lev_exc",
+                    "i_lev_per",
+                    "taxid_lev_test",
+                    "taxid_lev_pred",
+                    "taxid_superking",
+                    "n_lev_test_models"]})
+    
+    def makeSensitivity(self,nLevTestModelsMin):
+        """Create a table with sensitivity metrics"""
+        db = self.db
+        db.createTableAs(self.sensTbl,
+                """select i_lev_exc,
+                i_lev_per,
+                taxid_lev_test as taxid, 
+                sum(taxid_lev_test==taxid_lev_pred)/cast(sum(cnt) as REAL) as metr_clade
+                from %(confTbl)s 
+                group by  
+                    i_lev_exc,
+                    i_lev_per, 
+                    taxid_lev_test,
+                    taxid_superking
+                where n_lev_test_models >= %(nLevTestModelsMin)s
+                """ % dict(confTbl=self.confTbl,nLevTestModelsMin=nLevTestModelsMin),
+                indices={names:
+                    ["i_lev_exc",
+                    "i_lev_per",
+                    "taxid",
+                    "taxid_superking"]})
+
+    def makeSpecificity(self,nLevTestModelsMin):
+        """Create a table with specificity metrics"""
+        db = self.db
+        #"where taxid_lev_pred > 0" excludes the reject group
+        db.createTableAs(self.specTbl,
+                """select i_lev_exc,
+                i_lev_per,
+                taxid_lev_pred as taxid, 
+                sum(taxid_lev_test==taxid_lev_pred)/cast(sum(cnt) as REAL) as metr_clade
+                from %(confTbl)s 
+                group by  
+                    i_lev_exc,
+                    i_lev_per, 
+                    taxid_lev_pred,
+                    taxid_superking
+                where n_lev_test_models >= %(nLevTestModelsMin)s
+                and taxid_lev_pred > 0
+                """ % dict(confTbl=self.confTbl),
+                indices={names:
+                    ["i_lev_exc",
+                    "i_lev_per",
+                    "taxid",
+                    "taxid_superking"]})
+
+    def makeAggrMetrics(self):
+        """Make tables with the aggregate metrics"""
+        db = self.db
+        for (tblPerCladeName,tblAggrName) in ((self.sensTbl,self.sensAggrTbl),
+                (self.specTbl,self.specAggrTbl)):
+            db.createTableAs(tblAggrName,
+                    """select i_lev_exc,
+                    i_lev_per,
+                    avg(metr_clade) as metr_lev
+                    from %(tblPerCladeName)s 
+                    group by  
+                        i_lev_exc,
+                        i_lev_per 
+                    """ % dict(tblPerCladeName=tblPerCladeName),
+                    indices={names:
+                        ["i_lev_exc",
+                        "i_lev_per"]})
+
+    def repAggrMetrics(self,csvOut):
+        db = self.db
+        for (iTbl,(tblAggrName,comment)) in enumerate(
+                (
+                (self.sensAggrTbl,"Average per-clade sensitivity"),
+                (self.specAggrTbl,"Average per-clade specificity")
+                )
+                ):
+            sql = """
+            select b.level as lev_exc,c.level as lev_per,i_lev_exc,i_lev_per,a.metr_lev as metr_lev
+            from 
+                %(tblAggrName)s a,
+                %(taxaLevelsTbl)s b,
+                %(taxaLevelsTbl)s c
+            where
+                a.i_lev_exc = b.id
+                and
+                a.i_lev_per = c.id
+            order by lev_exc,lev_per
+            """ % dict(tblAggrName=tblAggrName,
+                    taxaLevelsTbl=self.taxaLevelsTbl)
+            if iTbl == 0:
+                mode = "w"
+            else:
+                mode = "a"
+            db.exportAsPivotCsv(sql=sql,
+                    out=csvOut,
+                    mode=mode,
+                    rowField="lev_exc",
+                    colField="lev_per",
+                    valField="metr_lev",
+                    comment=comment)
+            

@@ -514,7 +514,12 @@ class DbSql(MGTOptions):
         reader.close()
         return ret
 
-    def exportAsCsv(self,sql,out,withHeader=True,bufLen=100000,
+    def exportAsCsv(self,
+            sql,
+            out,
+            mode="w",
+            withHeader=True,
+            bufLen=100000,
             dialect="excel-tab",
             dialect_options={"lineterminator":"\n"},
             comment=None,
@@ -524,6 +529,7 @@ class DbSql(MGTOptions):
         """Excecute SQL and export the result as CSV file.
         @param sql SQL select statement to export results of
         @param out Either file name, or file stream object, or CSV writer object
+        @param mode mode parameter to open file if 'out' is a string, otherwise ignored
         @param withHeader If True, write the field names as the header
         @param bufLen Size (in number of records) of the internal memory buffer
         used when moving SQL result set into the output file
@@ -537,7 +543,7 @@ class DbSql(MGTOptions):
         @note We set the default lineterminator to Linux style '\n', as opposed to 
         Python's default of Windows style '\r\n'"""
         if isinstance(out,str):
-            out = openCompressed(out,'w')
+            out = openCompressed(out,mode)
             doClose=True
             w = csv.writer(out,dialect=dialect,**dialect_options)
         else:
@@ -575,6 +581,7 @@ class DbSql(MGTOptions):
     def exportAsPivotCsv(self,sql,
             rowField,colField,valField,
             out,
+            mode="w",
             withHeader=True,
             rowFieldOut=None,
             restval=0,
@@ -588,6 +595,7 @@ class DbSql(MGTOptions):
         """Excecute SQL and export the result as CSV file.
         @param sql SQL select statement to export results of
         @param out Either file name, or file stream object, or CSV writer object
+        @param mode mode parameter to open file if 'out' is a string, otherwise ignored
         @param restval What to write for missing values in each cell (default is 0)
         @param withHeader If True, write the field names as the header
         @param bufLen Size (in number of records) of the internal memory buffer
@@ -610,7 +618,7 @@ class DbSql(MGTOptions):
                 "%s name for row ID header name conflicts with one of the pivot column names" % (rowFieldOut,)
         names = [ rowFieldOut ] + cols
         if isinstance(out,str):
-            out = openCompressed(out,'w')
+            out = openCompressed(out,mode)
             doClose=True
             w = csv.DictWriter(out, fieldnames=names, restval=restval,dialect=dialect,**dialect_options)
         else:

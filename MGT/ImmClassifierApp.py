@@ -381,13 +381,27 @@ class ImmClassifierApp(App):
             dest="dbBenchFragCountMax",
             help="Maximum count of fragments to select for benchmark per genome"),
             
+            make_option(None, "--bench-n-lev-test-model-min",
+            action="store",
+            type="int",
+            default=2,
+            dest="benchNLevTestModelsMin",
+            help="Minimum number of models below a node at a given taxonomic level required to evaluate "+\
+                    "a benchmark performance for this node. The lowest possible number is two, because with "+\
+                    "just one model we have no chance to produce the true prediction after we exclude one "+\
+                    "model that contains the testing samples."),
+            
             optParseMakeOption_Path(None, "--bench-out-dir",
             dest="benchOutDir",
             help="Output directory for benchmarking results [-cwd/benchResults]"),
             
             optParseMakeOption_Path(None, "--bench-out-csv",
             dest="benchOutCsv",
-            help="Output CSV file with benchmarking results [--bench-out-dir/bench.csv]"),
+            help="Output CSV file with per-clade benchmarking results [--bench-out-dir/bench.csv]"),
+            
+            optParseMakeOption_Path(None, "--bench-out-aggr-csv",
+            dest="benchOutAggrCsv",
+            help="Output CSV file with aggregated benchmarking results [--bench-out-dir/bench.csv]"),
             
             optParseMakeOption_Path(None, "--bench-out-db-sqlite",
             dest="benchOutDbSqlite",
@@ -431,6 +445,7 @@ class ImmClassifierApp(App):
         opt.setIfUndef("benchWorkDir",pjoin(opt.cwd,"benchWorkDir"))
         opt.setIfUndef("benchOutDir",pjoin(opt.cwd,"benchResults"))
         opt.setIfUndef("benchOutCsv",pjoin(opt.benchOutDir,"bench.csv"))
+        opt.setIfUndef("benchOutAggrCsv",pjoin(opt.benchOutDir,"bench.aggr.csv"))
         opt.setIfUndef("benchOutDbSqlite",pjoin(opt.benchOutDir,"bench.sqlite"))
         if opt.predMode == "host": 
             opt.setIfUndef("rejectRanksHigher","order")
@@ -449,6 +464,8 @@ class ImmClassifierApp(App):
         if opt.mode == "make-ref-seqdb":
             globOpt = globals()["options"]
             opt.setIfUndef("inpNcbiSeq",pjoin(globOpt.refSeqDataDir,"microbial.genomic.fna.gz"))
+        if opt.benchNLevTestModelsMin < 2:
+            parser.error("--bench-n-lev-test-model-min must be higher than 1")
 
     
     def instanceOptionsPost(self,opt):
@@ -1482,13 +1499,47 @@ class ImmClassifierApp(App):
         """Process benchmark IMM scores and generate performance metrics.
         Parameters are taken from self.opt.
         @param outScoreComb File with ImmScores object
+        @param benchOutCsv Output file with per clade metrics in CSV format
+        @param benchOutAggrCsv Output file with aggregated metrics in CSV format
+        @param benchOutDbSqlite Output file with metrics in SQLite format
+        """
+        opt = self.opt
+        makeFilePath(opt.benchOutCsv)
+        makeFilePath(opt.benchOutDbSqlite)
+        db = DbSqlLite(dbpath=opt.benchOutDbSqlite,strategy="exclusive_unsafe")
+        storesDb = self.prepBenchSql(db=db)
+        self.procBenchScoreMatr(db=db)
+        sqlBenchMetr = ImmClassifierBenchMetricsSql(db=db,
+                taxaLevelsTbl=storesDb.storeDbLev.tblLevels,
+                taxaNamesTbl=storesDb.storeDbNode.tblNames)
+        sqlBenchMetr.makeMetrics(nLevTestModelsMin=opt.benchNLevTestModelsMin,
+                csvAggrOut=opt.benchOutAggrCsv)
+
+    def prepBenchSql(self,db):
+        """Prepare lookup tables in benchmark SQL database.
+        @param db Sql object"""
+        opt = self.opt
+        taxaTree = self.getTaxaTree()
+        taxaLevels = self.getTaxaLevels()
+        print "DEBUG: Loaded taxa tree and level"
+        tblSfx = ""
+        storeDbNode = NodeStorageDb(db=db,tableSfx=tableSfx)
+        storeDbNode.saveName(taxaTree)
+        storeDbLev = LevelsStorageDb(db=db,tableSfx=tableSfx)
+        storeDbLev.save(taxaLevels)
+        return Struct(storeDbLev=storeDbLev,storeDbNode=storeDbNode)
+
+    def procBenchScoreMatr(self,db,**kw):
+        """Process benchmark IMM scores and generate (test,pred) pairs in SQL.
+        @param db Sql object
+
+        Other parameters are taken from self.opt.
+        @param outScoreComb File with ImmScores object
         @param benchOutCsv Output file with metrics in CSV format
         @param benchOutDbSqlite Output file with metrics in SQLite format
         """
         opt = self.opt
         immScores = openImmScores(opt,fileName=opt.outScoreComb,mode="r")
-        makeFilePath(opt.benchOutCsv)
-        makeFilePath(opt.benchOutDbSqlite)
         sc = immScores.getData()
         #assume idImm are str(taxids):
         idImm = n.asarray(sc.idImm[:],dtype=int)
@@ -1525,12 +1576,6 @@ class ImmClassifierApp(App):
         _mapModelIds(taxaTree=taxaTree,idImm=idImm)
         print "DEBUG: mapped models to tree"
 
-        db = DbSqlLite(dbpath=opt.benchOutDbSqlite,strategy="exclusive_unsafe")
-        tblSfx = ""
-        storeDb = NodeStorageDb(db=db,tableSfx=tableSfx)
-        storeDbLev = LevelsStorageDb(db=db,tableSfx=tableSfx)
-        storeDbLev.save(taxaLevels)
-        storeDb.saveName(taxaTree)
 
         create table  
         ( 
@@ -1539,7 +1584,7 @@ class ImmClassifierApp(App):
         ( 
         i_samp integer NOT NULL, 
         i_lev_exc integer NOT NULL,
-        i_lev_pred integer NOT NULL,
+        i_lev_per integer NOT NULL,
         i_lev_test_real integer,
         i_lev_pred_real integer,
         taxid_lev_test integer,
@@ -1666,8 +1711,11 @@ class ImmClassifierApp(App):
         "i_lev_exc",
         "i_lev_per",
         "taxid_lev_test",
-        "taxid_lev_pred"
+        "taxid_lev_pred",
+        "taxid_superking",
+        "n_lev_test_models"
         ])
+
         db.close()
 
 if __name__ == "__main__":
