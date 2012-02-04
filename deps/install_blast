@@ -1,0 +1,12 @@
+#!/bin/sh
+set -ex
+
+VER=2.2.25+
+BUILD=ncbi-blast-${VER}
+NAME=ncbi-blast-${VER}-x64-linux
+SOURCE=$NAME.tar.gz
+rm -rf $BUILD
+tar -zxf $SOURCE
+install $BUILD/bin/* $INSTMACH/bin/
+
+
