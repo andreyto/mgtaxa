@@ -568,6 +568,10 @@ class TaxaTree(object):
 
         rootNode = self.getRootNode()
         assert rootNode is not None, "Root node was not detected in TaxaTree input"
+        assert rootNode.id = rootTaxid, "Loaded root node does not match our taxid constant"
+
+        self.patchNodes()
+
         ## Calculate additional node attributes if the root node does not
         ## have them already
         try:
@@ -583,6 +587,13 @@ class TaxaTree(object):
         # with the same shape as input array. Used by getNodes()
         self._vecGetNodes = n.vectorize(lambda taxid: self.nodes[taxid],otypes=["O"])
 
+    def patchNodes(self):
+        """Apply our patches/overrides to nodes.
+        This should be called in constructor after loading nodes from storage"""
+        for (rank,taxids) in rankPatchesByTaxid:
+            for taxid in taxids:
+                self.getNode(taxid).rank = rank
+    
     def write(self,out):
         for id in sorted(self.nodes.iterkeys()):
              out.write(str(self.nodes[id])+'\n')
@@ -767,6 +778,7 @@ class TaxaTree(object):
         except AttributeError:
             self.makeNameIndex()
             nameInd = self.nameInd
+        assert len(nameInd) > 0, "Request to search in official names, but they were not loaded for the taxonomy tree"
         try:
             return nameInd[name.lower()]
         except KeyError:
@@ -782,6 +794,7 @@ class TaxaTree(object):
         except AttributeError:
             self.makeNameIndex()
             namesInd = self.namesInd
+        assert len(namesInd) > 0, "Request to search in common names, but they were not loaded for the taxonomy tree"
         try:
             return namesInd[name.lower()]
         except KeyError:
@@ -1074,20 +1087,24 @@ class TaxaLevels:
 
     def __init__(self,taxaTree=None):
         """Constructor.
-        @param taxaTree instance of TaxaTree - if not None, will be modified, so that TaxaLevels.lineage() etc work after words; 
+        @param taxaTree instance of TaxaTree - if not None, will be modified, 
+        so that TaxaLevels.lineage() etc work afterwards; 
         otherwise TaxaLevels.setLevels(taxaTree) should be called separately.
         """
-        self.levels = list(linnMainRanks)
+        self.levels = list(linnMainRanksWithRoot)
         self.levelIds = {noRank:0, unclassRank:self.unclassId, "species":20, "genus":30, "family":40,
-                         "order":50, "class":60, "phylum":70, "kingdom":80, "superkingdom":90}
+                         "order":50, "class":60, "phylum":70, "kingdom":80, "superkingdom":90, 
+                         "root":100}
         self.idToLevel = dict(((x[1],x[0]) for x in self.levelIds.items()))
         self.levelByTaxid = { "superkingdom" : (viralRootTaxid,) }
         self.viralLevels = ("superkingdom","family","genus","species",unclassRank)
         self.levelSet = set(self.levels) | set((unclassRank,))
         _linn_ids = sorted([self.levelIds[lev] for lev in self.levels])
         self._linn_id_range = (_linn_ids[0],_linn_ids[1])
-        #index of a given level name in the list 'levels'
-        self.levelPos = self.getLevelPos(order='ascend')
+        #index of a given level name in the list 'levels', in ascending and descending orders
+        self.levelsPos = {}
+        for order in ("ascend","descend"):
+            self.levelsPos[order] = self.makeLevelsPos(order=order)
         if taxaTree is not None:
             self.setLevels(taxaTree)
 
@@ -1130,8 +1147,18 @@ class TaxaLevels:
         nameToId = self.getLevelIds()
         return [ nameToId[name] for name in names ]
     
-    def getLevelPos(self,order="ascend"):
+    def makeLevelsPos(self,order="ascend"):
+        """Return a new dict {level->position} for the result of self.getLevelNames(order=order)"""
         return dict([ (x[1],x[0]) for x in enumerate(self.getLevelNames(order=order)) ])
+
+    def getLevelsPos(self,order="ascend"):
+        """Return a dict {level->position} for the result of self.getLevelNames(order=order).
+        This is a reference to internally cached value."""
+        return self.levelsPos[order]
+
+    def getLevelPos(self,level,order="ascend"):
+        """Return index of the level name in the internal list of known names sorted in a given order"""
+        return self.levelsPos[order][level]
     
     def isNodeLevelLessOrEqual(self,node,level):
         return self.getLevelId(node.level) <= self.getLevelId(level)
@@ -1172,6 +1199,7 @@ class TaxaLevels:
                 node.linn_level = node.level
             else:
                 node.linn_level = node.getParent().linn_level
+        #this assumes the ranks are ordered as they are in the parameter "ranks"
         taxaTree.setMaxSubtreeRank(ranks=self.levels,nameAttr=self.linnLevelMaxAttr)
 
     def lineage(self,node,withUnclass=True):
@@ -1208,7 +1236,7 @@ class TaxaLevels:
         by genus or whatever is the lowest defined rank above genus.
         """
         assert format in ("id","node")
-        levelPos = self.levelPos
+        levelPos = self.getLevelsPos(order="ascend")
         ret = [null]*len(self.levels)
         for n in self.lineage(node,withUnclass=False):
             ret[levelPos[n.level]] = (n.id if format == "id" else n)

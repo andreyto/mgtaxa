@@ -11,8 +11,9 @@
 ## Names for various important taxonomy IDs
 #
 
-## @todo Phages vs Viruses should be discriminated by divid: taxonomy/division.dmp
+## @todo Phages vs other Viruses should be discriminated by divid: taxonomy/division.dmp
 
+rootTaxid = 1
 unclassRootTaxid = 12908
 viralRootTaxid = 10239
 virTaxid = viralRootTaxid
@@ -51,14 +52,22 @@ phageTailedTaxid = 28883
 
 ## Main Linnaean ranks, modified with superkingdom in place of domain rank
 linnMainRanks = ("species","genus","family","order","class","phylum","kingdom","superkingdom")
-## @todo add a special linn rank for the root node, so that there is never a no_rank as a min
-## rank in a given lineage.
+## We add a special linn rank for the root node, so that there is never a no_rank as a min
+## rank in a given lineage. The root node rank must be modified when the tree is constructed.
+## This list is used by TaxaLevels class.
+linnMainRanksWithRoot = ("species","genus","family","order","class","phylum","kingdom","superkingdom","root")
 ## All Linnaenan ranks, modified as linnMainRanks
 ## @todo add sub- and super-ranks, such as subspecies and superfamily
 linnRanks = linnMainRanks
 viralRanksTemplate = linnMainRanks
 noRank = "no_rank"
 unclassRank = "unclassified"
+
+## Override ranks for specific taxids when the tree is constructed
+rankPatchesByTaxid = { 
+        "root" : (rootTaxid,),
+        "superkingdom" : (viralRootTaxid,) 
+        }
 
 ## Some division IDs from NCBI division.dmp
 dividEnv = 11
