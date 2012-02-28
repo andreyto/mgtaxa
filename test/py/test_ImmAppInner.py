@@ -29,6 +29,7 @@ def genRandomSeqDbIid(path,lengths):
         seq = randomSeq(length)
         writer.record(str(idIcm),seq)
         writer.close()
+        seqDb.finById(idIcm)
         seqLen[idIcm] = length
     seqDb.opt.seqLen = seqLen
     seqDb.save()
@@ -103,6 +104,9 @@ opt.immDb = pjoin(workDir,"icm")
 
 # scoring opts
 
+immIds = ImmStore.open(path=opt.immDb,mode="r").listImmIdsWithIdScoreIdent()
+immIdsFile = "test.immapp.immids.pkl"
+dumpObj(immIds,immIdsFile)
 opt.immIds = immIdsFile
 opt.nImmBatches = 10
 opt.inpSeq = queryPath

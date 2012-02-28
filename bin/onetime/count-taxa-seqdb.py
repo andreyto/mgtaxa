@@ -2,19 +2,13 @@
 from MGT.Common import *
 from MGT.SeqDbFasta import *
 from MGT.Taxa import *
+from MGT.Functional import *
 
 """Count taxonomic groups represented in SeqDbFasta object.
 Produces an SQLite DB file containing a table with a "Linnean" 
 (in a broad sense) lineage for each SeqDb record, as well as 
 the aggregate count tables for each taxonomic level."""
 
-def coroutine(func):
-    """A decorator function that eliminates a need to call .next() to start coroutine"""
-    def start(*args,**kwargs):
-        cr = func(*args,**kwargs)
-        cr.next()
-        return cr
-    return start
 
 class LinnWriter:
     """Writer of a Linnean lineage for a sequence of taxids"""

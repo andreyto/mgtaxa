@@ -5,14 +5,14 @@ from MGT.Taxa import *
 from MGT.FastaIO import *
 from MGT.FeatCommon import *
 
-class SeqDbFasta(DirStore):
+class SeqDbFasta(DirKeyStore):
     """An interface to a collection of FASTA files.
     Each file is named with some ID, such as taxonomy ID.
     Methods for creating the DB grouped by taxonomy and streaming
     based on lists of IDs are provided.
     """
 
-    fastaSfx = ".fasta.gz"
+    objSfx = ".fasta.gz"
 
     def getTaxaTree(self):
         if self.taxaTree is None:
@@ -27,7 +27,7 @@ class SeqDbFasta(DirStore):
         splitFastaFilesByTaxa(inSeqs=inpFiles,taxaTree=taxaTree,giToTaxa=None,outDir=self.getPath(),filt=filt)
 
     def loadTaxaList(self):
-        self.taxaList = n.asarray([ int(f) for f in self.fileNames("*"+self.fastaSfx,sfxStrip=self.fastaSfx) ])
+        self.taxaList = n.asarray([ int(f) for f in self.iterIds() ])
 
     def getTaxaList(self):
         if not hasattr(self,"taxaList"):
@@ -36,25 +36,16 @@ class SeqDbFasta(DirStore):
 
     getIdList = getTaxaList
 
-    def getFileBaseById(self,id):
-        return "%s%s" % (id,self.fastaSfx)
-
-    def getFilePathById(self,id):
-        return self.getFilePath(self.getFileBaseById(id))
-
     def updateMetaDataById(self,id):
         meta = Struct()
         meta["seqLengths"] = self.computeSeqLengths(id)
-        self.saveFileMetaData(meta,self.getFileBaseById(id))
+        self.saveMetaDataById(id,meta)
 
     def finById(self,id):
         """Finalize creation of a new ID in SeqDb after using methods such as importByTaxa.
         This creates meta-data and possibly does other things.
         @todo make it also compress the main data object if necessary"""
         self.updateMetaDataById(id)
-
-    def delById(self,id):
-        os.remove(self.getFilePathById(id))
 
     def fastaReader(self,id):
         """Return FastaReader to read from the DB for a given ID"""
@@ -69,7 +60,7 @@ class SeqDbFasta(DirStore):
     def seqLengths(self,id):
         """Return a numpy recarray with fields ("id","len") for a given DB ID.
         Loads from meta data that has to be pre-computed."""
-        meta = self.loadFileMetaData(self.getFileBaseById(id))
+        meta = self.loadMetaDataById(id)
         return meta["seqLengths"]
     
     def fastaWriter(self,id,lineLen=None,mode="w"):

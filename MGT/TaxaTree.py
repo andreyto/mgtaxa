@@ -242,9 +242,10 @@ class TaxaNode(object):
         """Apply function 'func' to each node twice traversing the subtree depth-first. This is also called modified pre-order traverse.
         'func' is applied first time when coming to the node, in which case it is called as func(node,visit=1),
         and second time before returning from the node, in which case  it is called as func(node,visit=2)."""
-        func(self,visit=1)
-        for child in self.children:
-            child.visitDepthTwice(func)
+        stop = func(self,visit=1)
+        if not stop:
+            for child in self.children:
+                child.visitDepthTwice(func)
         func(self,visit=2)
 
 
@@ -423,12 +424,12 @@ class TaxaNode(object):
         """Set an attribute nameAttr or "rank_max" in every node of this subtree that is a highest standard rank of any node in a subtree.
         unclassRank and noRank nodes are both considered as noRank in comparisons.
         Thus, if and only if all subtree nodes are unclassRank or noRank, "rank_max" is set to noRank.
-        @param ranks A subset of @see linnRanks to use (e.g. linnMainRanks). @see linnRanks if None
+        @param ranks A subset of @see linnRanks to use (e.g. linnMainRanksWithRoot). @see linnRanksWithRoot if None
         @param nameAttr Name of the attribute to set (@see TaxaNode.rank_max_attr if None)"""
         dstAttr = self.rankMaxAttr if nameAttr is None else nameAttr
         #{rank->order index}
         if ranks is None:
-            ranks = linnRanks
+            ranks = linnRanksWithRoot
         ranksToInd = dict([ (x[1],x[0]) for x in enumerate((noRank,)+tuple(ranks)) ])
         def extractor(node):
             """Return rank converted such that everything not found in ranksToInd becomes noRank.
@@ -444,10 +445,6 @@ class TaxaNode(object):
             if ranksToInd[rank_max] >= ranksToInd[rank]:
                 return rank_max
             else:
-                #because self.rank is supplied as starting value to reduce(),
-                #it is weird if any standard rank for max turns out to be
-                #lower than for a subnode
-                assert self.rank in (noRank,unclassRank)
                 return rank
         self.setReduction(extractor=extractor,dstAttr=dstAttr,reduction=reduction)
 
@@ -472,6 +469,14 @@ class TaxaNode(object):
             except AttributeError:
                 pass
 
+    def delAttributes(self,names):
+        for node in self.iterDepthTop():
+            for name in names:
+                try:
+                    delattr(node,name)
+                except AttributeError:
+                    pass
+    
     def isSubnode(self,other):
         """Return true if this node is a descendant of the other node.
         Uses pre-computed nested sets indexes, which must be up-to-date.
@@ -568,7 +573,7 @@ class TaxaTree(object):
 
         rootNode = self.getRootNode()
         assert rootNode is not None, "Root node was not detected in TaxaTree input"
-        assert rootNode.id = rootTaxid, "Loaded root node does not match our taxid constant"
+        assert rootNode.id == rootTaxid, "Loaded root node does not match our taxid constant"
 
         self.patchNodes()
 
@@ -590,7 +595,7 @@ class TaxaTree(object):
     def patchNodes(self):
         """Apply our patches/overrides to nodes.
         This should be called in constructor after loading nodes from storage"""
-        for (rank,taxids) in rankPatchesByTaxid:
+        for (rank,taxids) in rankPatchesByTaxid.items():
             for taxid in taxids:
                 self.getNode(taxid).rank = rank
     
@@ -769,8 +774,11 @@ class TaxaTree(object):
         self.namesInd = namesInd
         self.emptyList = []
 
-    def searchName(self,name):
-        """Lookup a node by its official name.
+    def searchName(self,name,fuzzy=False):
+        """Lookup a node by its official name, case-insensitive.
+        @param name Name to lookup
+        @param fuzzy If False, do exact string lookup, otherwise also try diminishing blan-split prefixes [False].
+        Fuzzy search can help to find species name a strain name, among other things.
         @return list of nodes with a given name (can be a reference to internal empty list if nothing was found)
         @post Can lazy-build the names index the first time its called"""
         try:
@@ -779,13 +787,24 @@ class TaxaTree(object):
             self.makeNameIndex()
             nameInd = self.nameInd
         assert len(nameInd) > 0, "Request to search in official names, but they were not loaded for the taxonomy tree"
+        name = name.lower()
         try:
-            return nameInd[name.lower()]
+            return nameInd[name]
         except KeyError:
+            if fuzzy:
+                while True:
+                    prefix = name.rsplit(None,1)[0]
+                    if len(prefix) == len(name):
+                        #nothing was split, stop
+                        break
+                    nodes = nameInd.get(prefix,None)
+                    if nodes:
+                        return nodes
+                    name = prefix
             return self.emptyList
 
     def searchNames(self,name):
-        """Lookup a node by its official or any of the alternative names.
+        """Lookup a node by its official or any of the alternative names, case-insensitive.
         @return list of nodes with a given name (can be a reference to internal empty list if nothing was found)
         @pre TaxaTree was loaded with all names.
         @post Can lazy-build the names index the first time its called"""
@@ -1186,7 +1205,6 @@ class TaxaLevels:
                 node.level = noRank
         levelIds = self.levelIds
         #assign node.linn_level to the lowest linnean level in the lineage,
-        #except for root node, which is no_rank
         #also assign node.idlevel
         linn_levels = set(self.levels)
         iter = taxaTree.iterDepthTop()

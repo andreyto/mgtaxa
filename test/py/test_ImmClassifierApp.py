@@ -1,16 +1,18 @@
 from MGT.ImmClassifierApp import *
 from MGT.SeqDbFasta import *
 
-jobs = []
 
 seqDbPath1 = pjoin(options.testDataDir,"seqdb-fasta")
 seqDbPath2 = pjoin(options.testDataDir,"fasta")
 
 optTpl = Struct()
-optTpl.runMode = "batchDep"
+optTpl.runMode = "inproc" #"batchDep"
 optTpl.lrmUserOptions = r"'-P 0413'"
+optTpl.cwd = pabs("opt_work")
 
-dryRun = True
+makedir(optTpl.cwd)
+
+dryRun = False
 
 debugger = False
 
@@ -40,7 +42,7 @@ def trainRefCmd():
             "--train-max-len-samp-model 1000000 --incremental-work 1"
     runAndLog(cmd,help)
 
-def predictAgainstRefCmd():
+def predictAgainstRefCmd(reduceScoresEarly,predMode):
     help="""Make a prediction for each sequence in the --inp-seq multi-FASTA file
     against the --db-imm database of models. The output results are stored in
     --pred-out-dir. Per-sequence predictions are stored in a CSV file. Aggregated
@@ -52,9 +54,12 @@ def predictAgainstRefCmd():
     run("zcat %s %s > tmp.pred.fasta" % tuple([ pjoin(seqDbPath1,f) \
             for f in ("100226.fasta.gz","101510.fasta.gz") ]),\
             shell=True)
-    cmd = "--mode proc-scores --inp-seq tmp.pred.fasta --db-imm tmp.imm --pred-min-len-samp 1000"
-    cmd += " --reduce-scores-early 1"
-    cmd += " --pred-out-dir tmp.results"
+    #cmd = " --mode proc-scores --out-score-comb combined.score --pred-out-stats-html tmp.krona.html --inp-seq tmp.pred.fasta --db-imm tmp.imm --pred-min-len-samp 1000"
+    cmd = " --mode predict --inp-seq tmp.pred.fasta --db-imm tmp.imm --pred-min-len-samp 1000"
+    cmd += (" --pred-mode %s" % (predMode,))
+    cmd += " --score-taxids-exclude-trees 100226"
+    cmd += (" --reduce-scores-early %s" % (reduceScoresEarly,))
+    cmd += (" --pred-out-dir tmp.results.reduce_pol_%s_pred_mode_%s"  % (reduceScoresEarly,predMode))
     runAndLog(cmd,help)
 
 def makeBenchCmd():
@@ -87,7 +92,7 @@ def trainRef(jobs):
 
     opt = optTpl.copy()
     opt.mode = "train"
-    opt.immDb = pjoin(os.getcwd(),"imm")
+    opt.immDb = [pjoin(opt.cwd,"imm")]
     opt.seqDb = seqDbPath1
 
     ImmClassifierApp.fillWithDefaultOptions(opt)
@@ -104,8 +109,8 @@ def trainCustom(jobs):
     opt.mode = "train"
     opt.inpTrainSeq = pjoin(seqDbPath2,"92830.fasta.gz")
     opt.seqDb = pjoin(os.getcwd(),"92830.seqdb")
-    opt.taxaTreePkl = pjoin(os.getcwd(),"92830.tree.pkl")
-    opt.immDbArchive = pjoin(os.getcwd(),"92830.immdb.tar")
+    opt.taxaTreePkl = pjoin(opt.cwd,"92830.tree.pkl")
+    opt.immDbArchive = [pjoin(opt.cwd,"92830.immdb.tar")]
     opt.trainMinLenSamp = 1
     
     opt.web = True
@@ -125,9 +130,9 @@ def scoreRefAgainstCustom(jobs):
 
     opt = optTpl.copy()
     opt.mode = "score"
-    opt.immDbArchive = pjoin(os.getcwd(),"92830.immdb.tar")
+    opt.immDbArchive = [pjoin(opt.cwd,"92830.immdb.tar")]
     opt.inpSeq = pjoin(seqDbPath1,"195.fasta.gz")
-    opt.outScoreComb = pjoin(os.getcwd(),"92830.combined.score.pkl.gz")
+    opt.outScoreComb = pjoin(opt.cwd,"92830.combined.score")
 
     ImmClassifierApp.fillWithDefaultOptions(opt)
 
@@ -141,10 +146,10 @@ def scoreCustomAgainstJoint(jobs):
 
     opt = optTpl.copy()
     opt.mode = "score"
-    opt.immDb = pjoin(os.getcwd(),"imm")
-    opt.immDbArchive = pjoin(os.getcwd(),"92830.immdb.tar")
+    opt.immDb = pjoin(opt.cwd,"imm")
+    opt.immDbArchive = [pjoin(opt.cwd,"92830.immdb.tar")]
     opt.inpSeq = pjoin(seqDbPath2,"92830.fasta.gz") #pjoin(seqDbPath1,"195.fasta.gz")
-    opt.outScoreComb = pjoin(os.getcwd(),"92830.1.join.combined.score.pkl.gz")
+    opt.outScoreComb = pjoin(opt.cwd,"92830.1.join.combined.score")
 
     ImmClassifierApp.fillWithDefaultOptions(opt)
 
@@ -158,9 +163,9 @@ def procScoresCustomAgainstJoint(jobs):
 
     opt = optTpl.copy()
     opt.mode = "proc-scores"
-    opt.taxaTreePkl = pjoin(os.getcwd(),"92830.tree.pkl")
-    opt.outScoreComb = pjoin(os.getcwd(),"92830.1.join.combined.score.pkl.gz")
-    opt.predOutDir = pjoin(os.getcwd(),"92830.1.join.results")
+    opt.taxaTreePkl = pjoin(opt.cwd,"92830.tree.pkl")
+    opt.outScoreComb = pjoin(opt.cwd,"92830.1.join.combined.score")
+    opt.predOutDir = pjoin(opt.cwd,"92830.1.join.results")
 
     ImmClassifierApp.fillWithDefaultOptions(opt)
 
@@ -174,9 +179,9 @@ def procScoresRefAgainstCustom(jobs):
 
     opt = optTpl.copy()
     opt.mode = "proc-scores"
-    opt.taxaTreePkl = pjoin(os.getcwd(),"92830.tree.pkl")
-    opt.outScoreComb = pjoin(os.getcwd(),"92830.combined.score.pkl.gz")
-    opt.predOutDir = pjoin(os.getcwd(),"92830.results")
+    opt.taxaTreePkl = pjoin(opt.cwd,"92830.tree.pkl")
+    opt.outScoreComb = pjoin(opt.cwd,"92830.combined.score")
+    opt.predOutDir = pjoin(opt.cwd,"92830.results")
 
     ImmClassifierApp.fillWithDefaultOptions(opt)
 
@@ -190,8 +195,9 @@ def scoreRefAgainstRef(jobs):
 
     opt = optTpl.copy()
     opt.mode = "score"
-    opt.immDb = pjoin(os.getcwd(),"imm")
+    opt.immDb = [pjoin(opt.cwd,"imm")]
     opt.inpSeq = pjoin(seqDbPath1,"195.fasta.gz")
+    opt.outScoreComb = pjoin(opt.cwd,"results","combined.score")
 
     imm = ImmClassifierApp(opt=opt)
     imm.run(depend=jobs)
@@ -201,30 +207,62 @@ def procScoresRefAgainstRef(jobs):
     
     opt = optTpl.copy()
     opt.mode = "proc-scores"
-    opt.outScoreComb = pjoin(os.getcwd(),"results","combined.score.pkl.gz")
+    opt.outScoreComb = pjoin(opt.cwd,"results","combined.score")
 
     imm = ImmClassifierApp(opt=opt)
     imm.run(depend=jobs)
     return jobs
 
-#buildRefSeqDbCmd()
-#trainRefCmd()
-#makeBenchCmd()
-#benchOneFragLenCmd()
-benchCmd()
-#predictAgainstRefCmd()
-#jobs = trainRef(jobs)
-#jobs = scoreRefAgainstRef(jobs)
-#jobs = procScoresRefAgainstRef(jobs)
+def runAllTests():
+    jobs = []
+    buildRefSeqDbCmd()
+    trainRefCmd()
+    makeBenchCmd()
+    benchOneFragLenCmd()
+    benchCmd()
+    predictAgainstRefCmd(reduceScoresEarly=0,predMode="taxa")
+    predictAgainstRefCmd(reduceScoresEarly=1,predMode="taxa")
+    jobs = trainRef(jobs)
+    jobs = scoreRefAgainstRef(jobs)
+    jobs = procScoresRefAgainstRef(jobs)
 
-#jobs = trainCustom(jobs)
-#print jobs
-#jobs = scoreRefAgainstCustom(jobs)
-#print jobs
-#jobs = procScoresRefAgainstCustom(jobs)
-#print jobs
-#jobs = scoreCustomAgainstJoint(jobs)
-#jobs = procScoresCustomAgainstJoint(jobs)
+    jobs = trainCustom(jobs)
+    print jobs
+    jobs = scoreRefAgainstCustom(jobs)
+    print jobs
+    jobs = procScoresRefAgainstCustom(jobs)
+    print jobs
+    jobs = scoreCustomAgainstJoint(jobs)
+    jobs = procScoresCustomAgainstJoint(jobs)
+
+
+def runSomeTests():
+    jobs = []
+    #buildRefSeqDbCmd()
+    #trainRefCmd()
+    #makeBenchCmd()
+    #benchOneFragLenCmd()
+    #benchCmd()
+    predictAgainstRefCmd(reduceScoresEarly=0,predMode="host")
+    predictAgainstRefCmd(reduceScoresEarly=1,predMode="host")
+    return
+    
+    #jobs = trainRef(jobs)
+    #jobs = scoreRefAgainstRef(jobs)
+    #jobs = procScoresRefAgainstRef(jobs)
+
+    #jobs = trainCustom(jobs)
+    #print jobs
+    jobs = scoreRefAgainstCustom(jobs)
+    print jobs
+    jobs = procScoresRefAgainstCustom(jobs)
+    print jobs
+    jobs = scoreCustomAgainstJoint(jobs)
+    jobs = procScoresCustomAgainstJoint(jobs)
+
+
+runSomeTests()
+
 for x in cmdLog:
     print x[0]
     print x[1]

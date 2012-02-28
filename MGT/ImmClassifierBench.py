@@ -18,18 +18,27 @@ class ImmClassifierBenchmark(DirStore):
     def listDbIds(self,iterPaths=None):
         """List DB IDs either from this store or from the externally provided iterable"""
         return list(self.fileNames(pattern="*"+self.fastaSfx,sfxStrip=self.fastaSfx,iterPaths=iterPaths))
+
+    def getSeqDbIds(self):
+        return set((str(x) for x in self.seqDb.getIdList()))
     
-    def selectIdsDb(self,immDbs):
+    def getImmIds(self,immDbs):
+        immIds = set()
+        for immDb in immDbs:
+            immIds |= set((str(x) for x in immDb.listTaxids()))
+        return immIds
+
+    def selectIdsDb(self,immDbs=None):
         """Pick those IDs from SeqDb that will be used to build the benchmark.
         @param immDbs sequence of ImmDb instances - this is used to pick only those entries
         in SeqDb that also have models built against them. The self-models will
         still be excluded during testing - using ImmDb is just an easy way to
-        filter out from SeqDb viruses as it was done for ImmDb"""
-        immIds = set()
-        for immDb in immDbs:
-            immIds |= set((str(x) for x in immDb.listImmIds()))
-        seqIds = set((str(x) for x in self.seqDb.getIdList()))
-        return list(immIds & seqIds)
+        filter out from SeqDb viruses as it was done for ImmDb. If None, no
+        filtering by model IDs will be done."""
+        ids = self.getSeqDbIds()
+        if immDbs: 
+            ids &= self.getImmIds(immDbs)
+        return ids
 
     def makeSample(self,idDb,fragLen,fragCountMax):
         """Make a sample FASTA file for a given SeqDb ID"""
@@ -120,8 +129,20 @@ class ImmClassifierBenchmark(DirStore):
 class ImmClassifierBenchMetricsSql(object):
     """Class that computes metrics for the taxonomic claasifier from pairwise test-predict SQL records"""
 
+    ##Data will be processed from this view name
+    preFilterView = "bench_samp_flt"
     ##confusion table name
     confTbl = "conf"
+    ##bottom-level taxa confusion table name
+    confBotTbl = "conf_bot"
+    ##test count table name
+    testCntTbl = "test_cnt"
+    ##max test count table name
+    testCntMaxTbl = "test_cnt_max"
+    ##weight for the test count table name
+    testCntWeightTbl = "test_cnt_wgt"
+    ##weighted confusion table name
+    confWeightedTbl = "conf_wgt"
     ##sensitivity table name with a group (i_lev_exc,i_lev_per,taxid_clade)
     sensTbl = "sens"
     ##specificity table name with a group (i_lev_exc,i_lev_per,taxid_clade)
@@ -142,43 +163,168 @@ class ImmClassifierBenchMetricsSql(object):
         self.taxaLevelsTbl = taxaLevelsTbl
         self.taxaNamesTbl = taxaNamesTbl
 
-    def makeMetrics(self,nLevTestModelsMin=2,csvAggrOut="bench.csv"):
+    def makeMetrics(self,nLevTestModelsMin=2,csvAggrOut="bench.csv",comment=None):
+        self.preFilter(nLevTestModelsMin=nLevTestModelsMin)
         self.makeConfusion()
-        self.makeSensitivity(nLevTestModelsMin=nLevTestModelsMin)
-        self.makeSpecificity(nLevTestModelsMin=nLevTestModelsMin)
-        self.makeAccuracy(nLevTestModelsMin=nLevTestModelsMin)
+        self.makeConfusionBottomTaxa()
+        self.makeSampleCounts()
+        self.makeSampleCountsWeight()
+        self.makeConfusionWeighted()
+        self.makeSensitivity()
+        print "DEBUG: making specificity"
+        self.makeSpecificity()
+        print "DEBUG: making accuracy"
+        self.makeAccuracy()
         self.makeAggrMetrics()
-        self.repAggrMetrics(csvOut=csvAggrOut)
+        self.repAggrMetrics(csvOut=csvAggrOut,comment=comment)
 
-    def makeConfusion(self):
+    def preFilter(self,nLevTestModelsMin):
+        """Pre-filter data by creating a temporary view"""
+        db = self.db
+        db.ddl("""create temporary view %(preFilterView)s as 
+                select * 
+                from bench_samp 
+                where 
+                    n_lev_test_models >= %(nLevTestModelsMin)s
+                """ % dict(preFilterView=self.preFilterView,nLevTestModelsMin=nLevTestModelsMin))
+
+    def makeConfusionGeneric(self,sampTbl,confTbl,taxidLevTestFld,taxidLevPredFld):
         """Create a table with a confusion matrix in a sparse row_ind,col_ind,count format"""
         db = self.db
-        db.createTableAs(self.confTbl,
+        db.createTableAs(confTbl,
                 """select i_lev_exc,
                 i_lev_per,
-                taxid_lev_test,
-                taxid_lev_pred,
+                %(taxidLevTestFld)s as taxid_lev_test,
+                %(taxidLevPredFld)s as taxid_lev_pred,
                 taxid_superking,
-                n_lev_test_models,
                 count(*) as cnt
-                from bench_samp 
+                from %(sampTbl)s 
                 group by  
                     i_lev_exc,
                     i_lev_per, 
-                    taxid_lev_test,
-                    taxid_lev_pred,
-                    taxid_superking,
-                    n_lev_test_models
-                """,
+                    %(taxidLevTestFld)s,
+                    %(taxidLevPredFld)s,
+                    taxid_superking
+                """ % dict(sampTbl=sampTbl,
+                    taxidLevTestFld=taxidLevTestFld,
+                    taxidLevPredFld=taxidLevPredFld),
                 indices={"names":
                     ["i_lev_exc",
                     "i_lev_per",
                     "taxid_lev_test",
                     "taxid_lev_pred",
-                    "taxid_superking",
-                    "n_lev_test_models"]})
+                    "taxid_superking"]})
     
-    def makeSensitivity(self,nLevTestModelsMin):
+    def makeConfusion(self):
+        """Create a table with a confusion matrix in a sparse row_ind,col_ind,count format"""
+        self.makeConfusionGeneric(sampTbl=self.preFilterView,
+                confTbl=self.confTbl,
+                taxidLevTestFld="taxid_lev_test",
+                taxidLevPredFld="taxid_lev_pred")
+
+    def makeConfusionBottomTaxa(self):
+        """Create a table with a confusion matrix for a bottom-most test and prediction taxa
+        in a sparse row_ind,col_ind,count format"""
+        self.makeConfusionGeneric(sampTbl="bench_samp",
+                confTbl=self.confBotTbl,
+                taxidLevTestFld="taxid_lev_test_bot",
+                taxidLevPredFld="taxid_lev_pred_bot")
+
+    def makeSampleCounts(self):
+        """Create a table with sample counts per class"""
+        db = self.db
+        db.createTableAs(self.testCntTbl,
+                """select i_lev_exc,
+                i_lev_per,
+                taxid_lev_test,
+                sum(cnt) as sum_cnt
+                from %(confTbl)s 
+                group by  
+                    i_lev_exc,
+                    i_lev_per, 
+                    taxid_lev_test
+                """ % dict(confTbl=self.confTbl),
+                indices={"names":
+                    ["i_lev_exc",
+                    "i_lev_per",
+                    "taxid_lev_test"]})
+    
+    def makeSampleCountsWeight(self):
+        """Create a table with weight that normalizes sample count by the max count in each group"""
+        db = self.db
+        
+        ##find the max count within each group
+        db.createTableAs(self.testCntMaxTbl,
+                """select i_lev_exc,
+                i_lev_per,
+                max(sum_cnt) as max_sum_cnt
+                from %(testCntTbl)s 
+                group by  
+                    i_lev_exc,
+                    i_lev_per 
+                """ % dict(testCntTbl=self.testCntTbl),
+                indices={"names":
+                    ["i_lev_exc",
+                    "i_lev_per"]})
+        
+        ##compute the weight for each group as max_count/self-count
+        db.createTableAs(self.testCntWeightTbl,
+                """select 
+                a.i_lev_exc as i_lev_exc,
+                a.i_lev_per as i_lev_per,
+                a.taxid_lev_test as taxid_lev_test,
+                cast(b.max_sum_cnt as REAL)/a.sum_cnt as weight_cnt
+                from 
+                    %(testCntTbl)s a,
+                    %(testCntMaxTbl)s b
+                where
+                    a.i_lev_exc = b.i_lev_exc
+                    and
+                    a.i_lev_per = b.i_lev_per
+                """ % dict(testCntTbl=self.testCntTbl,
+                    testCntMaxTbl=self.testCntMaxTbl),
+                indices={"names":
+                    ["i_lev_exc",
+                    "i_lev_per",
+                    "taxid_lev_test"]})
+    
+    def makeConfusionWeighted(self):
+        """Create a weighted confusion table.
+        Specificity is sensitive to unbalanced
+        testing set (small classes will be swamped
+        by false positives from large classes).
+        We balance the matrix by multiplying
+        rows with weights that equalize the number
+        of test cases across classes (as though we
+        repeated the tests for small classes in
+        order to match the larger ones)
+        """
+        db = self.db
+        db.createTableAs(self.confWeightedTbl,
+                """select a.i_lev_exc as i_lev_exc,
+                a.i_lev_per as i_lev_per,
+                a.taxid_lev_test as taxid_lev_test,
+                a.taxid_lev_pred as taxid_lev_pred,
+                a.taxid_superking as taxid_superking,
+                a.cnt*b.weight_cnt as cnt
+                from 
+                    %(confTbl)s a,
+                    %(testCntWeightTbl)s b
+                where
+                    a.i_lev_exc = b.i_lev_exc
+                    and
+                    a.i_lev_per = b.i_lev_per
+                    and
+                    a.taxid_lev_test = b.taxid_lev_test
+                """ % dict(confTbl=self.confTbl,
+                    testCntWeightTbl=self.testCntWeightTbl),
+                indices={"names":
+                    ["i_lev_exc",
+                    "i_lev_per",
+                    "taxid_lev_test",
+                    "taxid_lev_pred"]})
+    
+    def makeSensitivity(self):
         """Create a table with sensitivity metrics"""
         db = self.db
         db.createTableAs(self.sensTbl,
@@ -188,21 +334,19 @@ class ImmClassifierBenchMetricsSql(object):
                 taxid_superking,
                 sum((taxid_lev_test==taxid_lev_pred)*cnt)/cast(sum(cnt) as REAL) as metr_clade
                 from %(confTbl)s 
-                where 
-                    n_lev_test_models >= %(nLevTestModelsMin)s
                 group by  
                     i_lev_exc,
                     i_lev_per, 
                     taxid_lev_test,
                     taxid_superking
-                """ % dict(confTbl=self.confTbl,nLevTestModelsMin=nLevTestModelsMin),
+                """ % dict(confTbl=self.confWeightedTbl),
                 indices={"names":
                     ["i_lev_exc",
                     "i_lev_per",
                     "taxid",
                     "taxid_superking"]})
 
-    def makeSpecificity(self,nLevTestModelsMin):
+    def makeSpecificity(self):
         """Create a table with specificity metrics"""
         db = self.db
         #"where taxid_lev_pred > 0" excludes the reject group
@@ -214,41 +358,43 @@ class ImmClassifierBenchMetricsSql(object):
                 i_lev_per,
                 taxid_lev_pred as taxid, 
                 sum((taxid_lev_test=taxid_lev_pred)*cnt)/cast(sum(cnt) as REAL) as metr_clade
-                from %(confTbl)s 
-                where 
-                    taxid_lev_pred in 
-                        (select 
-                            taxid_lev_test 
-                            from %(confTbl)s
-                            where 
-                                n_lev_test_models >= %(nLevTestModelsMin)s
-                        )
-                    and 
-                    taxid_lev_pred > 0
+                from %(confTbl)s a 
                 group by  
                     i_lev_exc,
                     i_lev_per, 
                     taxid_lev_pred
-                """ % dict(confTbl=self.confTbl,nLevTestModelsMin=nLevTestModelsMin),
+                having 
+                    taxid_lev_pred in 
+                        (select 
+                            taxid_lev_test 
+                            from %(testCntTbl)s b
+                            where 
+                                a.i_lev_exc = b.i_lev_exc
+                                and
+                                a.i_lev_per = b.i_lev_per
+                        )
+                    and 
+                    taxid_lev_pred > 0
+                """ % dict(confTbl=self.confWeightedTbl,testCntTbl=self.testCntTbl),
                 indices={"names":
                     ["i_lev_exc",
                     "i_lev_per",
                     "taxid"]})
 
-    def makeAccuracy(self,nLevTestModelsMin):
-        """Create a table with accuracy metrics (over all samples)"""
+    def makeAccuracy(self):
+        """Create a table with accuracy metrics (over all samples).
+        This is computed from non-weighted confusion matrix
+        because on the weighted matrix it exactly equals sensitivity."""
         db = self.db
         db.createTableAs(self.accuAggrTbl,
                 """select i_lev_exc,
                 i_lev_per,
                 sum((taxid_lev_test==taxid_lev_pred)*cnt)/cast(sum(cnt) as REAL) as metr_lev
                 from %(confTbl)s 
-                where 
-                    n_lev_test_models >= %(nLevTestModelsMin)s
                 group by  
                     i_lev_exc,
                     i_lev_per 
-                """ % dict(confTbl=self.confTbl,nLevTestModelsMin=nLevTestModelsMin),
+                """ % dict(confTbl=self.confTbl),
                 indices={"names":
                     ["i_lev_exc",
                     "i_lev_per"]})
@@ -272,13 +418,13 @@ class ImmClassifierBenchMetricsSql(object):
                         ["i_lev_exc",
                         "i_lev_per"]})
 
-    def repAggrMetrics(self,csvOut):
+    def repAggrMetrics(self,csvOut,comment=None):
         db = self.db
-        for (iTbl,(tblAggrName,comment)) in enumerate(
+        for (iTbl,(tblAggrName,hdr)) in enumerate(
                 (
                 (self.sensAggrTbl,"Average per-clade sensitivity"),
                 (self.specAggrTbl,"Average per-clade specificity"),
-                (self.accuAggrTbl,"Accuracy")
+                (self.accuAggrTbl,"Per-sample accuracy")
                 )
                 ):
             sql = """
@@ -303,14 +449,19 @@ class ImmClassifierBenchMetricsSql(object):
                 mode = "w"
             else:
                 mode = "a"
+            if comment:
+                fullComment = "%s (%s)" % (hdr,comment)
+            else:
+                fullComment = hdr
             db.exportAsPivotCsv(sql=sql,
                     out=csvOut,
                     mode=mode,
                     rowField="lev_exc",
                     colField="lev_per",
                     valField="metr_lev",
-                    comment=comment,
+                    comment=fullComment,
                     colFieldOrderBy="i_lev_per",
                     restval="X",
-                    valFormatStr="%.2f")
+                    valFormatStr="%.2f",
+                    rowFieldOut="Exclude")
             

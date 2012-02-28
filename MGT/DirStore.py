@@ -74,6 +74,9 @@ class DirStore:
         dPath = self._dumpPath(self.path)
         dumpObj(self,dPath)
 
+    def close(self):
+        pass
+
     @classmethod
     def _metaPath(klass,path):
         return pjoin(path,klass.metaDirName)
@@ -89,6 +92,11 @@ class DirStore:
     def getFileMetaPath(self,name):
         return pjoin(self._metaPath(self.path),name+self.metaExt)
 
+    def delFileMetaData(self,name):
+        p = self.getFileMetaPath(name)
+        if os.exists(p):
+            os.remove(p)
+    
     def loadFileMetaData(self,name):
         p = self.getFileMetaPath(name)
         return loadObj(p)
@@ -116,7 +124,11 @@ class DirStore:
 
     def hasFile(self,name):
         return os.exists(self.getFilePath(name))
-    
+
+    def delName(self,name):
+        os.remove(self.getFilePath(name))
+        self.delFileMetaData(name)
+
     def hasObj(self,name):
         return os.exists(self.getObjPath(name))
 
@@ -164,7 +176,8 @@ class DirStore:
         part (math is done before stripping)
         @param iterPaths If defined, must be an iterable over file paths - it 
         will be used instead of the content of this store. This option can be
-        used to build multi-level filters."""
+        used to build multi-level filters.
+        @return iterator of basenames with suffix stripped"""
         if iterPaths is not None:
             import fnmatch
             def _iter_glob():
@@ -213,9 +226,52 @@ class DirStore:
     def openStream(self,name,*l,**kw):
         """Return an open file object stream for name"""
         return openCompressed(self.getFilePath(name),*l,**kw)
-    
 
-class SampStore(DirStore):
+class DirKeyStore(DirStore):
+    """DirStore that holds one kind of objects and can address them by ID key"""
+
+    ## Suffix for the keyed objects stored in this store. Derived 
+    ## classes can override this attribute
+    objSfx = ".obj"
+    
+    def getFileBaseById(self,id):
+        return "%s%s" % (id,self.objSfx)
+    
+    def getFilePathById(self,id):
+        return self.getFilePath(self.getFileBaseById(id))
+    
+    def loadMetaDataById(self,id):
+        return self.loadFileMetaData(self.getFileBaseById(id))
+    
+    def saveMetaDataById(self,id,meta):
+        self.saveFileMetaData(meta,self.getFileBaseById(id))
+    
+    def delById(self,id):
+        self.delName(self.getFileBaseById(id))
+
+    def iterIds(self,iterPaths=None):
+        """Iterate over object IDs either in this store or from the externally provided iterable"""
+        return self.fileNames(pattern="*"+self.objSfx,sfxStrip=self.objSfx,iterPaths=iterPaths)
+    
+    def iterMetaData(self,iterPaths=None):
+        """Iterate over metadata either in this store or from the externally provided iterable.
+        @return iterator over tuples (object id,metadata object)"""
+        for id in self.iterIds(iterPaths=iterPaths):
+            yield (id,self.loadMetaDataById(id))
+    
+    def dictMetaData(self,iterPaths=None):
+        """Load a dict{id->metadata} either from this store or from the externally provided iterable."""
+        return dict(self.iterMetaData(iterPaths=iterPaths))
+
+    def dictMetaDataByIds(self,ids):
+        """Return dict{id->metadata} for a sequence of ids"""
+        return dict(( (id,self.loadMetaDataById(id)) for id in ids ))
+    
+    def listIds(self,iterPaths=None):
+        """List object IDs from either this store or from the externally provided iterable"""
+        return list(self.iterIds(iterPaths=iterPaths))
+
+class SampStore(DirKeyStore):
 
     idMapName = "idmap"
     ## name of default idLabs object

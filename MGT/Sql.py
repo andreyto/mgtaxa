@@ -743,8 +743,11 @@ class DbSqlLite(DbSql):
             kw.setdefault("isolation_level","EXCLUSIVE")
         self.con = self.dbmod.connect(self.dbpath,**kw)
         self.con.text_factory = self.strType
+        self.execute("PRAGMA cache_size = 1000000")  #1GB        
         if strategy=="exclusive_unsafe":
             self.execute("PRAGMA journal_mode = OFF")
+            self.execute("PRAGMA synchronous = OFF")
+            self.execute("PRAGMA temp_store = MEMORY")
 
 
     def close(self):

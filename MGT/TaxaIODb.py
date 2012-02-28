@@ -242,7 +242,7 @@ class LevelsStorageDb:
         """ % (self.tblLevels,),
         dropList=["table %s" % (self.tblLevels,)])
         levelIds = taxaLevels.getIdToLevel() # has no_rank
-        levelPos = taxaLevels.getLevelPos(order="ascend") # does not have no_rank
+        levelPos = taxaLevels.getLevelsPos(order="ascend") # does not have no_rank
         inserter = db.makeBulkInserter(table=self.tblLevels,bufLen=500000)
         for (idlevel,level) in sorted(levelIds.items()):
             is_linn = level in levelPos

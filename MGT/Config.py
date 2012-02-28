@@ -30,7 +30,7 @@ class MGTOptions(Options):
         self.tmpDir = os.environ["MGT_TMP"]
         self.dataDir = os.environ["MGT_DATA"]
         self.ncbiDbDir = os.environ["MGT_NCBI_DB"]
-        self.srcDir = "/home/atovtchi/work/mgtaxa"
+        self.srcDir = "/home/"+os.environ["USER"]+"/work/mgtaxa"
         def _pdata(dir):
             return pjoin(self.dataDir,dir)
         def _pdata_ncbi(dir):
@@ -129,7 +129,7 @@ class MGTOptions(Options):
                 extraPyArgs = None 
                 )
         self.genomeTools = Options(
-                exe=pjoin(os.environ["INSTMACH"],"app/gt/gt"),
+                exe=pjoin(os.environ["INSTMACH"],"bin/gt"),
                 sketchConf=pjoin(self.confDir,"gt.sketch.default.style")
                 )
         self.glimmer3 = Options(
@@ -140,6 +140,12 @@ class MGTOptions(Options):
         self.icm = Options(
                 icmDb = pjoin(self.dataDir,"icm-refseq")
                 )
+
+        self.krona = Options(
+                topDir=pjoin(os.environ["INSTMACH"],"krona")
+                )
+        self.krona.cmdBase=["perl","-I",pjoin(self.krona.topDir,"lib")]
+        self.krona.xmlToChart=self.krona.cmdBase+[pjoin(self.krona.topDir,"scripts/ImportXML.pl")]
 
     def _setTaxaFileNames(self,topDir,sfx=""):
         setattr(self,'taxaDataDir'+sfx,topDir)

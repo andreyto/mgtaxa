@@ -1,0 +1,27 @@
+#!/bin/sh
+set -ex
+
+[ -n "$GALAXY_LOCATION" ] || exit 1
+
+NAME=KronaTools
+VER=2.0
+BUILD=$NAME-$VER
+SOURCE=$NAME-$VER.tar.gz
+rm -rf $BUILD
+tar -zxf $SOURCE
+
+pushd $BUILD
+
+## deploy chart generation scripts
+## scripts must be run by pointing perl
+## to required library dir, such as
+## setting PERL5LIB or running
+## perl -I $INSTMACH/krona/lib
+rsync -a ./ $INSTMACH/krona/
+
+## deploy JS resources to the Galaxy Web server
+## Charts should be generated pointing to that
+## location such as:
+## scripts/ImportXML.pl -u /static/krona xml.txt 
+rsync -a img src $GALAXY_LOCATION/static/krona/
+

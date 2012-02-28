@@ -20,7 +20,7 @@ def unique(seq, stable=False):
     #if uniqueDebug and len(str(seq))<50: print "Input:", seq # For debugging.
 
     # Special case of an empty s:
-    if not seq: return []
+    if len(seq)==0: return list()
 
     # if it's a set:
     if isinstance(seq, set): return list(seq)

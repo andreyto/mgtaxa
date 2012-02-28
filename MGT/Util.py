@@ -10,6 +10,7 @@ from types import *
 import re
 import string, os, sys
 pjoin = os.path.join
+pabs = os.path.abspath
 from time import sleep
 import time
 from copy import copy, deepcopy
@@ -139,6 +140,8 @@ def makeTmpFile(*l,**kw):
     It does the same as tempfile.NamedTemporaryFile but the file is not automatically
     deleted after being closed. Because it works through calls to mkstemp and os.fdopen,
     the returned file object does not have a file name in its 'name' attribute.
+    @param prefix If provided, the file will start with that prefix (inside the dir directory)
+    @param suffix If provided, the file will have that suffix
     @param createParents - if True (default) - create parent directories (require 'dir' option)
     @param dir - create file in this directory
     @param mode (default 'w') - open file in this mode
@@ -165,8 +168,17 @@ def makeTmpFile(*l,**kw):
     (fd,name) = mkstemp(*l,**opts1)
     return (os.fdopen(fd,*l2),name)
 
+def makeWorkFile(pathBase,returnPathOnly=True):
+    dirName,baseName = os.path.split(pathBase)
+    fobj,path = makeTmpFile(suffix='.tmp', prefix=baseName, dir=dirName)
+    if returnPathOnly:
+        fobj.close()
+        return path
+    else:
+        return (fobj,path)
 
 def strToFile(s,fileName,mode="w",dryRun=False):
+    s = str(s)
     if not dryRun:
         out = openCompressed(fileName,mode)
         out.write(s)
@@ -1090,4 +1102,30 @@ def printAliSeqs(seqs,lineLen,out,seqNames=None,emptySymb=' '):
             out.write(s[x:x+lineLen])
             out.write("\n")
         out.write("\n")
+
+def openCsv(csvFile,mode,factory=None,*l,**kw):
+    import csv
+    if factory is None:
+        if mode.startswith("r"):
+            factory = csv.reader
+        else:
+            factory = csv.writer
+    csvFileStream = None
+    if isinstance(csvFile,str):
+        csvClose = True
+        csvFileStream = openCompressed(csvFile,mode)
+        csvFile = factory(csvFileStream,*l,**kw)
+    else:
+        csvClose = False
+        #Here we need to figure out if csvFile is just a file stream, or
+        #a CSV reader/writer already. Unfortunately, csv module does not specify
+        #any common base class for CSV objects, so we have to rely on
+        #tests for attribute presence
+        if not (hasattr(csvFile,"dialect") \
+                and (hasattr(csvFile,"line_num") or hasattr(csvFile,"writerow"))):
+            #this is NOT a result of calling csv.reader() or compatible interface,
+            #so we assume it to be a file stream object, and call factory()
+            #on it to create a CSV object
+            csvFile = factory(csvFile,*l,**kw)
+    return Struct(csvClose=csvClose,csvFile=csvFile,csvFileStream=csvFileStream)
 

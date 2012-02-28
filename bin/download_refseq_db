@@ -8,7 +8,7 @@
 
 set -ex
 
-[ -n "$MGT_NCBI_DB" ] | exit 1
+[ -n "$MGT_NCBI_DB" ] || exit 1
 
 dbdir=$MGT_NCBI_DB/refseq
 dldir=$dbdir/dl
