@@ -13,6 +13,8 @@ if [ -z "$DEPLOY_ROLES" ]; then
     exit 1
 fi
 
+[ -n "$PRIV_DATA" ] || exit 1
+
 MGT_SRC=~/work/mgtaxa
 
 GPM_SRC=~/work/gridway-proxy-mad/src
@@ -58,6 +60,8 @@ code_location_frontend = /opt/software/mgtaxa/work/packages/x86_64-rhel5/mgtaxa-
 End-of-message
 
 ######## END HERE DOC FOR GPM CONFIG #########
+
+cat $PRIV_DATA/gpm_mysql >> $GPM_EXTRA_CONF_FILE
 
 GPM_EXTRA_CONF_FILE=$GPM_EXTRA_CONF_FILE python setup.py build install --prefix=$INSTMACH
 
