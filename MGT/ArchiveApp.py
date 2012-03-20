@@ -76,6 +76,8 @@ class ArchiveApp(App):
             return self.extract(**kw)
         else:
             raise ValueError("Unknown opt.mode value: %s" % (opt.mode,))
+#gpg-zip --encrypt --gpg-args  "-r mgtaxa@jcvi.org"  ../92830.seqdb/ > 92830.tar.gpg
+#gpg-zip -d --gpg-args  "-r mgtaxa@jcvi.org"  --tar-args "--strip-components 1" 92830.tar.gpg
 
     def archive(self,**kw):
         opt = self.opt

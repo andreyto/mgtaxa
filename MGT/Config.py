@@ -27,6 +27,7 @@ class MGTOptions(Options):
         self.debugFakeSequence = False
         self.toolName = "MGT"
         self.toolEmail = "atovtchi@jcvi.org"
+        self.toolGpgKeyName = "mgtaxa@jcvi.org"
         self.tmpDir = os.environ["MGT_TMP"]
         self.dataDir = os.environ["MGT_DATA"]
         self.ncbiDbDir = os.environ["MGT_NCBI_DB"]
@@ -116,7 +117,7 @@ class MGTOptions(Options):
         self.hdfTestFile = 'test.hdf'
         self.predictorTable = "pred"
         self.batchRun = Options(
-                lrmSiteOptions=r'-l memory=2000M -l medium -l arch="lx*64"',
+                lrmSiteOptions=r'-l memory=2000M -l arch="lx*64"',
                 lrmUserOptions='-P 0413',
                 maxQueued = 1500,
                 envRc = self.envRc)
@@ -138,7 +139,18 @@ class MGTOptions(Options):
         self.glimmer3.immBuildExe=pjoin(self.glimmer3.topDir,"bin","mgt-glm-build-icm")
         self.glimmer3.immScoreExe=pjoin(self.glimmer3.topDir,"bin","mgt-glm-simple-score")
         self.icm = Options(
-                icmDb = pjoin(self.dataDir,"icm-refseq")
+                icmDb = pjoin(self.dataDir,"icm-refseq"),
+                predScoreRescaleModel = {
+                    "lreg" : {
+                        "coef" : {
+                            "(Intercept)":20.9733729119449,
+                            "score_b":15.3156079336066,
+                            "len_samp.pre":-77.8559030330633,
+                            "i_lev_per.pre":0.0382037195511002,
+                            "score_b:len_samp.pre":-43.8872972190474
+                            }
+                        }
+                    }
                 )
 
         self.krona = Options(
@@ -146,6 +158,7 @@ class MGTOptions(Options):
                 )
         self.krona.cmdBase=["perl","-I",pjoin(self.krona.topDir,"lib")]
         self.krona.xmlToChart=self.krona.cmdBase+[pjoin(self.krona.topDir,"scripts/ImportXML.pl")]
+
 
     def _setTaxaFileNames(self,topDir,sfx=""):
         setattr(self,'taxaDataDir'+sfx,topDir)

@@ -61,7 +61,9 @@ End-of-message
 
 ######## END HERE DOC FOR GPM CONFIG #########
 
-cat $PRIV_DATA/gpm_mysql >> $GPM_EXTRA_CONF_FILE
+if [[ "$DEPLOY_ROLES" == "backend" ]]; then
+    [ -e $PRIV_DATA/gpm_mysql ] && (cat $PRIV_DATA/gpm_mysql >> $GPM_EXTRA_CONF_FILE)
+fi
 
 GPM_EXTRA_CONF_FILE=$GPM_EXTRA_CONF_FILE python setup.py build install --prefix=$INSTMACH
 

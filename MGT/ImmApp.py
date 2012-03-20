@@ -349,6 +349,9 @@ class ImmApp(App):
     maxSeqIdLen = UUID.maxIdLen
     maxSeqPartIdLen = UUID.maxIdLen
 
+    ## Degenerate alphabet symbols (IMMs work only for nucleotide sequences)
+    degenSymb = "nN"
+
     scoreSfx = ".score"
 
     @classmethod
@@ -555,7 +558,7 @@ class ImmApp(App):
         #@todo This will need an overhaul - we have to convert the input FASTA
         #to a semi-random access format first (e.g. SeqDbFasta chunked), and filter by length 
         #at that time, before we score - otherwise we are wasting time scoring short sequences.
-        lenSamp = fastaLengths(opt.inpSeq)
+        lenSamp = fastaLengths(opt.inpSeq,exclSymb=self.degenSymb)
         immScores.setLenSamp(lenSamp)
         immScores.close()
         os.rename(outScoreCombWork,opt.outScoreComb)

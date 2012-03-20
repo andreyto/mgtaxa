@@ -42,7 +42,15 @@ def run(*popenargs, **kwargs):
             _gdebug = 0
         if kw.pop('debug',_gdebug) > 0:
             print popenargs
+        if kw.pop("supressAllOutput",False):
+            stdnull = open(os.devnull,"w") #incompat with close_fds on Windows
+            kw.setdefault("stdout",stdnull)
+            kw.setdefault("stderr",stdnull)
+        else:
+            stdnull = None
         returncode = call(*popenargs,**kw)
+        if stdnull:
+            stdnull.close()
         if returncode != 0:
             raise CalledProcessError(returncode=returncode,cmd=str(popenargs))
 

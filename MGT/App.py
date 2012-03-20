@@ -10,7 +10,7 @@ from MGT.Common import *
 from optparse import OptionParser, make_option
 import tempfile
 
-__all__ = ["App","runAppAsScript","optParseMakeOption_Path"]
+__all__ = ["App","runAppAsScript","optParseMakeOption_Path","optPathMultiOptToAbs"]
 
 def optParseCallback_StoreAbsPath(option, opt_str, value, parser):
     setattr(parser.values, option.dest, os.path.abspath(value))
@@ -24,6 +24,12 @@ def optParseMakeOption_Path(shortName,longName,dest,help=None,default=None):
     dest=dest,
     default=os.path.abspath(default) if default is not None else default,
     help=help)
+
+def optPathMultiOptToAbs(opt,name):
+    val = opt[name]
+    if val is not None:
+        assert not isinstance(val,str),"Expected a list option here"
+        opt[name] = [ os.path.abspath(x) for x in val ]
 
 class App:
     """Interface to application object. 

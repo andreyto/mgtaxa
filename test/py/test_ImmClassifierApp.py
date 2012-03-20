@@ -14,7 +14,7 @@ makedir(optTpl.cwd)
 
 dryRun = False
 
-debugger = False
+debugger = True
 
 cmdPref = "python %s $MGT_HOME/MGT/ImmClassifierApp.py" % ("-m pdb" if debugger else "",)
 cmdSfx = "--run-mode %s --lrm-user-options %s" %\
@@ -54,7 +54,9 @@ def predictAgainstRefCmd(reduceScoresEarly,predMode):
     run("zcat %s %s > tmp.pred.fasta" % tuple([ pjoin(seqDbPath1,f) \
             for f in ("100226.fasta.gz","101510.fasta.gz") ]),\
             shell=True)
-    #cmd = " --mode proc-scores --out-score-comb combined.score --pred-out-stats-html tmp.krona.html --inp-seq tmp.pred.fasta --db-imm tmp.imm --pred-min-len-samp 1000"
+    cmd = " --mode proc-scores --out-score-comb combined.score --pred-out-stats-html tmp.krona.html --inp-seq tmp.pred.fasta --db-imm tmp.imm --pred-min-len-samp 1000"
+    runAndLog(cmd,help)
+    return
     cmd = " --mode predict --inp-seq tmp.pred.fasta --db-imm tmp.imm --pred-min-len-samp 1000"
     cmd += (" --pred-mode %s" % (predMode,))
     cmd += " --score-taxids-exclude-trees 100226"
@@ -131,6 +133,7 @@ def scoreRefAgainstCustom(jobs):
     opt = optTpl.copy()
     opt.mode = "score"
     opt.immDbArchive = [pjoin(opt.cwd,"92830.immdb.tar")]
+    opt.taxaTreePkl = pjoin(opt.cwd,"92830.tree.pkl")
     opt.inpSeq = pjoin(seqDbPath1,"195.fasta.gz")
     opt.outScoreComb = pjoin(opt.cwd,"92830.combined.score")
 
@@ -243,8 +246,8 @@ def runSomeTests():
     #makeBenchCmd()
     #benchOneFragLenCmd()
     #benchCmd()
-    predictAgainstRefCmd(reduceScoresEarly=0,predMode="host")
-    predictAgainstRefCmd(reduceScoresEarly=1,predMode="host")
+    #predictAgainstRefCmd(reduceScoresEarly=0,predMode="host")
+    predictAgainstRefCmd(reduceScoresEarly=1,predMode="taxa")
     return
     
     #jobs = trainRef(jobs)
@@ -255,6 +258,7 @@ def runSomeTests():
     #print jobs
     jobs = scoreRefAgainstCustom(jobs)
     print jobs
+    return
     jobs = procScoresRefAgainstCustom(jobs)
     print jobs
     jobs = scoreCustomAgainstJoint(jobs)

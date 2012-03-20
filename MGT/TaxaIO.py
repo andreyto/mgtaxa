@@ -8,6 +8,7 @@
 
 from MGT.Common import *
 from MGT.TaxaTree import TaxaNode
+import json
 
 class NodeStorageNcbiDump:
     """Loads tree nodes from NCBI flat dump file(s).
@@ -194,6 +195,7 @@ class NodeStoragePickle:
         out = openCompressed(self.fileName,"w")
         for node in nodes.itervalues():
             dump(node,out,-1)
+        out.close()
 
     def load(self):
         #nodes = loadObj(self.fileName)
@@ -206,6 +208,104 @@ class NodeStoragePickle:
                 nodes[node.id] = node
         except:
             pass
+        inp.close()
+        return nodes
+
+##@todo there are tons of Python wrappers around streaming (SAX-like) JSON C libs,
+##e.g. http://pypi.python.org/pypi/ijson/. They are supposed to be much faster,
+##and the underlying C lib is better supported than jsonlib
+
+class NodeStorageJsonPy:
+    """
+    Implements NodeStorage interface through json module serialization.
+    This pickles nodes as list"""
+
+    def __init__(self,fileName):
+        self.fileName = fileName
+
+    def save(self,tree):
+        import json
+        nodes = tree.getNodesDict()
+        # TaxaTreeNode.__getstate__() now takes care of skipping node cross-references
+        #for node in nodes.itervalues():
+        #    del (node.par, node.children)
+        out = openCompressed(self.fileName,"w")
+        #json saves keys as strings, so there would be little point in
+        #dumping the nodes dict
+        json.dump(nodes.values(),out,check_circular=False,separators=(',', ':'),default=TaxaNode.__getstate__)
+        out.close()
+
+    def load(self):
+        import json
+        inp = openCompressed(self.fileName,"rb")
+        nodes = json.load(inp,object_hook=lambda o: TaxaNode(**o) if "idpar" in o else o)
+        print "JsonDict Loaded the nodes"
+        inp.close()
+        nodes = dict( ((node.id,node) for node in nodes) )
+        print "Made dict"
+        return nodes
+
+class NodeStorageJson:
+    """
+    Implements NodeStorage interface through json module serialization.
+    This pickles nodes as list"""
+
+    def __init__(self,fileName):
+        self.fileName = fileName
+
+    def save(self,tree):
+        import json
+        nodes = tree.getNodesDict()
+        # TaxaTreeNode.__getstate__() now takes care of skipping node cross-references
+        #for node in nodes.itervalues():
+        #    del (node.par, node.children)
+        out = openCompressed(self.fileName,"w")
+        #json saves keys as strings, so there would be little point in
+        #dumping the nodes dict
+        json.dump(nodes.values(),out,check_circular=False,separators=(',', ':'),default=TaxaNode.__getstate__)
+        out.close()
+
+    def load(self):
+        import jsonlib
+        inp = openCompressed(self.fileName,"rb")
+        buf = inp.read()
+        inp.close()
+        #nodes = json.loads(buf,object_hook=lambda o: TaxaNode(**o) if "idpar" in o else o)
+        #return dict( ((node.id,node) for node in nodes) )
+        nodes = jsonlib.read(buf,use_float=True)
+        nodes = dict( ((node["id"],TaxaNode(**node)) for node in nodes) )
+        return nodes
+
+class NodeStorageJsonLines:
+    """
+    Implements NodeStorage interface through json module serialization.
+    This pickles nodes one-by-one"""
+
+    def __init__(self,fileName):
+        self.fileName = fileName
+
+    def save(self,tree):
+        nodes = tree.getNodesDict()
+        # TaxaTreeNode.__getstate__() now takes care of skipping node cross-references
+        #for node in nodes.itervalues():
+        #    del (node.par, node.children)
+        out = openCompressed(self.fileName,"w")
+        #json saves keys as strings, so there would be little point in
+        #dumping the nodes dict
+        for node in nodes.itervalues():
+            json.dump(node.__getstate__(),out,check_circular=False,separators=(',', ':'))
+            out.write("\n")
+        out.close()
+
+    def load(self):
+        import jsonlib
+        inp = openCompressed(self.fileName,"rb")
+        #nodes = json.loads(buf,object_hook=lambda o: TaxaNode(**o) if "idpar" in o else o)
+        #return dict( ((node.id,node) for node in nodes) )
+        nodes = {}
+        for line in inp:
+            node = jsonlib.read(line.strip(),use_float=True)
+            nodes[node["id"]] = TaxaNode(**node)
         inp.close()
         return nodes
 

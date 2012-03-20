@@ -573,7 +573,8 @@ class TaxaTree(object):
 
         rootNode = self.getRootNode()
         assert rootNode is not None, "Root node was not detected in TaxaTree input"
-        assert rootNode.id == rootTaxid, "Loaded root node does not match our taxid constant"
+        assert rootNode.id == rootTaxid, \
+                "Loaded root node does not match our taxid constant: %s" % ([rootNode.id,rootTaxid],)
 
         self.patchNodes()
 

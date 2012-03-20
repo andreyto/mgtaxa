@@ -773,6 +773,12 @@ class DbSqlLite(DbSql):
         k["table"] = kw["table"]
         return self.makeBulkInserter(**k)
    
+    def dropIndex(self,name,table,rawName=False):
+        """Specialization for SQLite because SQLite does not understand 'on <table_name>' clause."""
+        if rawName:
+            self.ddl("drop index if exists %s" % (name,))
+        else:
+            self.ddl("drop index if exists ix_%s_%s" % (table,name))
 
     def createIndices(self,table,names=None,primary=None,compounds=None,attrib={}):
         """This is a specialization for SQLite, which does not support ALTER TABLE ... ADD INDEX ... ADD INDEX.

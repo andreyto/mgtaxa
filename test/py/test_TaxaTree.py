@@ -20,24 +20,28 @@ print "Creating the tree from NCBI dump file"
 
 start = time()
 
+if False:
+    def debugOnNodeUpdate(node,name,value):
+        if getattr(node,'id',0) == 144409:
+            print node.id, name, value
 
-def debugOnNodeUpdate(node,name,value):
-    if getattr(node,'id',0) == 144409:
-        print node.id, name, value
+    TaxaTree.setDebugOnUpdate(debugOnNodeUpdate)
+    taxaTree = TaxaTree(storage=store)
+    taxaTree.unsetDebugOnUpdate()
 
-TaxaTree.setDebugOnUpdate(debugOnNodeUpdate)
-taxaTree = TaxaTree(storage=store)
-taxaTree.unsetDebugOnUpdate()
-
-print "DEBUG: Done in %s sec" % (time() - start)
+    print "DEBUG: Done in %s sec" % (time() - start)
 
 #for node in taxaTree.iterDepthTop():
 #    print node
 
-taxaTree.deleteNodesIf(lambda n: n.rank == "species")
-taxaTree.reindex()
-taxaTree.setIndex()
+    taxaTree.deleteNodesIf(lambda n: n.rank == "species")
+    taxaTree.reindex()
+    taxaTree.setIndex()
 
+else:
+    taxaTree = TaxaTree(storage=store)
+    
+    print "DEBUG: Done in %s sec" % (time() - start)
 
 #storeOut = NodeStorageNewick(fileName="test_TaxaTree.newick",
 #    labeler=lambda n: "%s_%s_%s" % (n.name,n.rank,n.id))
@@ -50,6 +54,32 @@ taxaTree.setIndex()
         
 #storeOut.save(taxaTree)
 
+
+######### JSON #########
+
+storeJson = NodeStorageJson(fileName="test_TaxaTree.json")
+
+
+print "DEBUG: JSON dumping the tree"
+
+start = time()
+
+storeJson.save(taxaTree)
+
+print "DEBUG: Done in %s sec" % (time() - start)
+
+
+print "DEBUG: Creating the tree from JSON storage"
+
+start = time()
+
+taxaTreeJson = TaxaTree(storage=storeJson)
+
+print "DEBUG: Done in %s sec" % (time() - start)
+
+taxaTreeJson.reindex()
+
+####### Pickle #########
 
 storePickle = NodeStoragePickle(fileName="test_TaxaTree.pkl")
 

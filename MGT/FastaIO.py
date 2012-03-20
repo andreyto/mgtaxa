@@ -130,10 +130,10 @@ class FastaReader(object):
             raise ValueError("Unknown format value: %s" % (format,))
         return s
 
-    def seqLen(self):
+    def seqLen(self,exclSymb=''):
         n = 0
         for line in self.seqLines():
-            n += len(line) - 1
+            n += len(line.replace(exclSymb,'')) - 1
             if not line.endswith("\n"):
                 n += 1
         return n
@@ -149,12 +149,12 @@ class FastaReader(object):
 def fastaReaderGzip(fileName):
     return FastaReader(openGzip(fileName,'r'))
 
-def fastaLengths(inp):
+def fastaLengths(inp,exclSymb=''):
     reader = FastaReader(inp)
     res = []
     for rec in reader.records():
         id = rec.getId()
-        ln = rec.seqLen()
+        ln = rec.seqLen(exclSymb=exclSymb)
         res.append((id,ln))
     reader.close()
     return n.asarray(res,dtype=[("id",idDtype),("len","i8")])

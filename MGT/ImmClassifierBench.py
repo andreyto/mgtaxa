@@ -129,6 +129,8 @@ class ImmClassifierBenchmark(DirStore):
 class ImmClassifierBenchMetricsSql(object):
     """Class that computes metrics for the taxonomic claasifier from pairwise test-predict SQL records"""
 
+    ##input sample table
+    sampTbl = "bench_samp"
     ##Data will be processed from this view name
     preFilterView = "bench_samp_flt"
     ##confusion table name
@@ -183,10 +185,12 @@ class ImmClassifierBenchMetricsSql(object):
         db = self.db
         db.ddl("""create temporary view %(preFilterView)s as 
                 select * 
-                from bench_samp 
+                from %(sampTbl)s
                 where 
                     n_lev_test_models >= %(nLevTestModelsMin)s
-                """ % dict(preFilterView=self.preFilterView,nLevTestModelsMin=nLevTestModelsMin))
+                """ % dict(preFilterView=self.preFilterView,
+                    nLevTestModelsMin=nLevTestModelsMin,
+                    sampTbl=self.sampTbl))
 
     def makeConfusionGeneric(self,sampTbl,confTbl,taxidLevTestFld,taxidLevPredFld):
         """Create a table with a confusion matrix in a sparse row_ind,col_ind,count format"""
@@ -225,7 +229,7 @@ class ImmClassifierBenchMetricsSql(object):
     def makeConfusionBottomTaxa(self):
         """Create a table with a confusion matrix for a bottom-most test and prediction taxa
         in a sparse row_ind,col_ind,count format"""
-        self.makeConfusionGeneric(sampTbl="bench_samp",
+        self.makeConfusionGeneric(sampTbl=self.sampTbl,
                 confTbl=self.confBotTbl,
                 taxidLevTestFld="taxid_lev_test_bot",
                 taxidLevPredFld="taxid_lev_pred_bot")
@@ -464,4 +468,57 @@ class ImmClassifierBenchMetricsSql(object):
                     restval="X",
                     valFormatStr="%.2f",
                     rowFieldOut="Exclude")
-            
+
+class ImmClassifierBenchToScore(object):
+    
+    sampTbl = ImmClassifierBenchMetricsSql.sampTbl
+
+    def __init__(self):
+        pass
+
+    def catBenchSql(self,dbsInp,dbOut):
+        if False:
+            for (iInp,(lenSamp,dbInp)) in enumerate(sorted(dbsInp)):
+                db = DbSqlLite(dbpath=dbInp,strategy="exclusive_unsafe")
+                db.createIndices(self.sampTbl,names=["i_samp"])
+                db.close()
+
+        db = DbSqlLite(dbpath=dbOut,strategy="exclusive_unsafe")
+        tableOutBase = "samp_acc"
+        taxaLevels = TaxaLevels()
+        for (iInp,(lenSamp,dbInp)) in enumerate(sorted(dbsInp)):
+            db.ddl("attach database '%s' as dbin" % (dbInp,))
+            #Using main. below is critical otherwise
+            #db.creatTableAs wacks the dbin. table because
+            #w/o the database scope SQLite resolves table name
+            #into the last attached DB.
+            tableOut = "main." + tableOutBase
+            tableInp = "dbin." + self.sampTbl
+            sqlArgs = dict(tableInp=tableInp,
+                    lenSamp=lenSamp,
+                    iLevExc=taxaLevels.getLevelId("species"),
+                    iLevPerLowest=taxaLevels.getLevelId("genus"))
+            sql = """select i_samp,
+            %(lenSamp)s as len_samp,
+            i_lev_per,
+            score,
+            taxid_lev_test=taxid_lev_pred as is_correct 
+            from %(tableInp)s 
+            where i_lev_exc=%(iLevExc)s 
+            and i_samp in (
+                select i_samp 
+                from %(tableInp)s
+                where i_lev_exc=%(iLevExc)s 
+                    and i_lev_per=%(iLevPerLowest)s
+                ) 
+            order by i_samp,i_lev_per
+            """ % sqlArgs
+            if iInp == 0:
+                db.createTableAs(tableOut,sql)
+            else:
+                db.ddl("""insert into %s
+                %s""" % (tableOut,sql))
+
+            db.ddl("detach database dbin")
+        db.createIndices(tableOutBase,names=["i_samp","len_samp","i_lev_per","is_correct"])
+        db.close()
