@@ -33,4 +33,7 @@ easy_install --prefix=$INST --upgrade sqlalchemy
 easy_install --prefix=$INST --upgrade drmaa
 cd qpid && ${topdir}/install_qpid_client_py && cd ${topdir}
 cd glimmer && ${topdir}/install_glimmer && cd ${topdir}
+#this installer gives unimportant error in its atexit() handler, ignore
+#any errors
+easy_install --prefix=$INST --upgrade joblib || true
 

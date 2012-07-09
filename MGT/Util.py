@@ -283,6 +283,14 @@ def openCompressed(filename,mode,compressFormat=None,**kw):
     else:
         raise ValueError(compressFormat)
 
+def compressFile(inputFile,compressFormat="gz"):
+    """Compress input file in place, like gzip does by default"""
+    if compressFormat == "gz":
+        run(["gzip","--force",inputFile])
+    else:
+        raise ValueError("Unknown compressFormat: %s" % (compressFormat,))
+
+
 class PopenStdinProxy(object):
     """Proxy class to use in place of Popen.stdin - it makes sure than after stdin.close(), .wait() is called on the subprocess.
     When Python exits, it apparently terminates still running subprocesses (maybe SGE does it - I only observed the issue in
@@ -322,11 +330,20 @@ def openGzip(filename,mode,compresslevel=6):
             redir = ">"
         elif mode in ("a","ab"):
             redir = ">>"
-        p = Popen("gzip -%s %s %s" % (compresslevel,redir,filename), shell=True, env=os.environ, bufsize=2**16, stdin=PIPE, close_fds=True)
+        #p = Popen("gzip -%s %s %s" % (compresslevel,redir,filename), shell=True, env=os.environ, bufsize=2**16, stdin=PIPE, close_fds=True)
+        stdout = open(filename,mode)
+        p = Popen(["gzip","-%s" % compresslevel,"-c"], shell=False, env=os.environ, bufsize=2**16, stdin=PIPE, stdout=stdout, close_fds=True)
+        stdout.close()
         return PopenStdinProxy(p)
 
     elif mode in ("r","rb"):
-        return Popen(("gzip -cd %s" % (filename,)).split(),env=os.environ, bufsize=2**16, stdout=PIPE, close_fds=True).stdout
+        cmd = ["gzip","-cd",filename]
+        if not os.path.isfile(filename):
+            raise OSError("Input file does not exist: %s", filename)
+        p = Popen(cmd,env=os.environ, bufsize=2**16, stdout=PIPE, close_fds=True)
+        if p.returncode:
+            raise CalledProcessError(str(cmd),p.returncode)
+        return p.stdout
     
     else:
         raise ValueError("'openGzip()' - Unsupported 'mode': " + mode)
@@ -1128,4 +1145,39 @@ def openCsv(csvFile,mode,factory=None,*l,**kw):
             #on it to create a CSV object
             csvFile = factory(csvFile,*l,**kw)
     return Struct(csvClose=csvClose,csvFile=csvFile,csvFileStream=csvFileStream)
+
+class ObjCache(object):
+    """Class that caches immutable objects based on identity.
+    Use case: we are reeding N:1 relation from a two-column csv file
+    where both columns are represented by fairly long string IDs.
+    E.g. read id -> contig id.
+    If we use these string as read, each one will allocate a separate 
+    object. This is wastefull if there is a lot of repeated values
+    (e.g. for contig id if there are many reads in the same contig).
+    This object keeps a hash of objects and always returns a reference to
+    an existing one."""
+
+    def __init__(self):
+        self.store = dict()
+
+    def __call__(self,o):
+        return self.store.setdefault(o,o)
+
+    def free(self,o):
+        del self.store[o]
+
+    def clear(self):
+        self.store.clear()
+
+## Global instance of object cache
+objCache = ObjCache()
+
+def basedir(path):
+    """Return right-most component of the directory path.
+    This gives identical results both for /some/base and /some/base/"""
+    dirn,basen = os.path.split(path)
+    if not basen:
+        basen = os.path.basename(dirn)
+    return basen
+
 

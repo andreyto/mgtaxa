@@ -19,5 +19,8 @@ class GFF3Graphics:
 
     def __call__(self,gffFile,picFile):
         """Conver GFF3 to graphics"""
-        run("%s %s %s" % (self.cmd,picFile,gffFile))
+        run(self.genCmd(picFile,gffFile))
+
+    def genCmd(self,gffFile,picFile):
+        return "%s %s %s" % (self.cmd,picFile,gffFile)
 

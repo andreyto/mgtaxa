@@ -1,0 +1,96 @@
+from MGT.Common import *
+from MGT.Taxa import *
+from MGT.Functional import *
+
+
+class LinnWriter:
+    """Count taxonomic groups represented by a sequence of taxids.
+    Produces an SQLite DB file containing a table with a "Linnean" 
+    (in a broad sense) lineage for each SeqDb record, as well as 
+    the aggregate count tables for each taxonomic level.
+    Example of use:
+        taxaTree = loadTaxaTree()
+
+        topNodes = [ taxaTree.getNode(topTaxid) for topTaxid in topTaxids ]
+
+        linwr = LinnWriter(taxaTree=taxaTree)
+        wr = linwr.newWriter()
+
+        for taxid in taxids:
+            node = taxaTree.getNode(taxid)
+            if sum(( node.isUnder(topNode) for topNode in topNodes )):
+                wr.send(dict(taxid=taxid,weight=dbSeq.seqLengths(taxid)["len"].sum()))
+        wr.close()
+    """
+    
+    def __init__(self,taxaTree=None,taxaLevels=None):
+        self.taxaTree = taxaTree
+        self.taxaLevels = taxaLevels
+
+    def getTaxaTree(self):
+        if self.taxaTree is None:
+            self.taxaTree = loadTaxaTree()
+        return self.taxaTree
+
+    def getTaxaLevels(self):
+        if self.taxaLevels is None:
+            #that assigns "level" and "idlevel" attributes to TaxaTree nodes
+            self.taxaLevels = TaxaLevels(self.getTaxaTree())
+        return self.taxaLevels
+
+    @coroutine
+    def newWriter(self,csvPath="taxa_linn.csv",
+            dbPath="taxa_linn.sqlt",
+            dbTable="taxa_linn",
+            otherFields=list()):
+        taxaTree = self.getTaxaTree()
+        taxaLevels = self.getTaxaLevels()
+        levNames = taxaLevels.getLevelNames("ascend")
+        flds = list(otherFields)
+        for reqfld in ("weight","rank","name","taxid"):
+            if reqfld not in flds:
+                flds.insert(0,reqfld)
+        for lev in levNames:
+            flds += ["taxid_"+lev,"name_"+lev]
+        out = open(csvPath,"w")
+        w = csv.DictWriter(out, fieldnames=flds, restval='null',dialect='excel-tab')
+        w.writerow(dict([(fld,fld) for fld in flds]))
+        #w/o handling GeneratorExit exception, the exception
+        #is silently handled by the interpreter in the surrounding
+        #scope after it is emitted by the 'yield' clause - in
+        #other words, the code after the 'while' loop is never
+        #called
+        try:
+            while True:
+                rowDict = dict((yield))
+                node = taxaTree.getNode(rowDict["taxid"])
+                rowDict["name"] = node.name
+                rowDict["rank"] = node.linn_level
+                rowDict.setdefault("weight",1.0)
+                lin = taxaLevels.lineage(node,withUnclass=False)
+                for ln in lin:
+                    rowDict["name_"+ln.level] = ln.name
+                    rowDict["taxid_"+ln.level] = ln.id
+                w.writerow(rowDict)
+        except GeneratorExit:
+            out.close()
+            db = DbSqlLite(dbpath=dbPath)
+            db.createTableFromCsv(name=dbTable,
+                    csvFile=csvPath,
+                    hasHeader=True,
+                    fieldsMap={"weight":SqlField(type="real")})
+            self._sqlReport(db=db,dbTable=dbTable,levNames=levNames)
+            db.close()
+
+    def _sqlReport(self,db,dbTable,levNames):
+        for levName in levNames:
+            fldGrp = "name_"+levName
+            db.createTableAs(dbTable+"_grp_"+levName,
+                    """\
+                    select %(fldGrp)s,
+                    sum(weight) as weight
+                    from %(dbTable)s
+                    group by %(fldGrp)s
+                    """ % dict(fldGrp=fldGrp,dbTable=dbTable)
+                    )
+

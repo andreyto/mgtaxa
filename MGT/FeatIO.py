@@ -65,7 +65,7 @@ class IdMap:
 
 class LoadSeqPreprocShred:
 
-    def __init__(self,sampLen,sampNum=0,sampOffset=0,makeUniqueId=False,sortByStarts=False):
+    def __init__(self,sampLen,sampNum=-1,sampOffset=0,makeUniqueId=False,sortByStarts=False):
         """Constructor.
         @param sampLen length of each output fragment
         @param sampNum if < 0 - return all sampLen long fragments, if other number - that many,

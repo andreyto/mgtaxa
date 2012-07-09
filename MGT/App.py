@@ -48,8 +48,10 @@ class App:
     def __init__(self,args=[],opt=Struct()):
         """Constructor.
         @param args optional command line arguments to parse -
-        if executing as a module, should pass None or sys.argv[1:], else - [], which should result in 
-        default values generated for all options not defined by opt.
+        if executing as a module, should pass None, else - [], which should result in 
+        default values generated for all options not defined by opt. Note that we
+        rely on args=None as an indicator that we are being executed from command line,
+        e.g. to set --need-terminator by default.
         @param opt Struct instance - values defined here will override those parsed from args.
         Two basic use patterns: 
         if running as a shell script and parsing actual command line arguments:
@@ -118,17 +120,27 @@ class App:
         A final top job in batchDep mode should call it e.g. when opt.web is True.
         """
         opt = self.opt
-        if opt.runMode != "inproc" and depend is not None and len(depend) > 1:
-            assert opt.runMode == "batchDep","We only can see multiple dependencies in runMode=batchDep"
-            optT = opt.copy()
-            optT.runMode = "batch"
-            optT.lrmSiteOptions = copy(options.batchRunTerminator.lrmSiteOptions)
-            appT = App(opt=optT)
-            ret = appT.run(depend=depend)
-            assert len(ret) == 1,"Terminator should always be a singleton job"
-            return ret
-        else:
-            return depend
+        ret = depend
+        if opt.runMode != "inproc":
+            if opt.runMode == "batchDep":
+                if opt.batchBackend == "qsub":
+                    if depend is not None and len(depend) > 1:
+                        assert opt.runMode == "batchDep","We only can see multiple dependencies in runMode=batchDep"
+                        optT = opt.copy()
+                        optT.runMode = "batch"
+                        optT.lrmSiteOptions = copy(options.batchRunTerminator.lrmSiteOptions)
+                        appT = App(opt=optT)
+                        ret = appT.run(depend=depend)
+                        assert len(ret) == 1,"Terminator should always be a singleton job"
+                elif opt.batchBackend == "makeflow":
+                    mkw = MakeflowWriter(opt.workflowFile)
+                    mkw.appendMgtJobs(jobs=depend)
+                    mkw.close()
+                    #currently we just leave ret as it is, so that opt.web can print some jobId
+                    #if submitting makeflow itself here, do not forget to set batchBackend to 'qsub'
+                else:
+                    raise ValueError("Unknown value of opt.batchBackend: %s" % (opt.batchBackend,))
+        return ret
     
     def _ajustRunMode(self,**kw):
         opt = self.opt
@@ -219,7 +231,8 @@ class App:
         When called directly from the user code, the args is typically set to [] in order to obtain
         the default values for all options. Thus, it is important the the implementation provides
         reasonable defaults in a context independent way (e.g. without including the current directory info).
-        @param args command line arguments (pass [] to get default values, pass None to use sys.argv[1:])"""
+        @param args command line arguments (pass [] to get default values, pass None to use sys.argv[1:]),
+        value of None is used to decide if we are being executed as a script."""
         option_list = [
             
             optParseMakeOption_Path(None, "--cwd",
@@ -241,6 +254,15 @@ class App:
             default="inproc",
             help="Set to 'batchDep' to batch-run as a DAG or to 'inproc' to run in-process "+\
                     "'batchDep' will self-submit and print the ID to track completion with the LRM"),
+            
+            make_option(None, "--batch-backend",
+            action="store", 
+            type="choice",
+            choices=("qsub","makeflow"),
+            dest="batchBackend",
+            default=None,
+            help="Execution backend to use if --run-mode batchDep  is selected: 'qsub' will immediately "+\
+                    "submit jobs to LRM, and 'makeflow' will generate a Makeflow script."),
             
             make_option(None, "--need-terminator",
             action="store_true", 
@@ -277,6 +299,11 @@ class App:
             dest="web",
             help="Is this executed from the Web API"),
             
+            optParseMakeOption_Path(None, "--workflow-file",
+            dest="workflowFile",
+            default="workflow",
+            help="Workflow file if a workflow backend such as Makeflow is used"),
+            
             make_option(None, "--extra-py-args",
             action="store",
             type="string",
@@ -290,19 +317,30 @@ class App:
         parseArgs = klass.makeOptionParserArgs()
         parseArgs.option_list.extend(option_list)
         parser = OptionParser(**parseArgs.asDict())
-        (options, args) = parser.parse_args(args=args) #values=opt does not work
-        options = Struct(options.__dict__)
+        runningFromCommandLine = args is None
+        (opt, args) = parser.parse_args(args=args) #values=opt does not work
+        opt = Struct(opt.__dict__)
         if _explicitOpt is not None:
-            options.update(_explicitOpt)
-        if options.optFile is not None:
-            options = loadObj(options.optFile)
+            opt.update(_explicitOpt)
+        if opt.optFile is not None:
+            opt = loadObj(opt.optFile)
         else:
+            #cwd
             d = tempfile.mkdtemp(suffix=".work",
                 prefix=klass.getAppName()+".",
                 dir=os.getcwd())
-            options.setIfUndef("cwd",d)
-            klass.parseCmdLinePost(options=options,args=args,parser=parser)
-        return options,args
+            opt.setIfUndef("cwd",d)
+            #batch-backend
+            #take it from global options if not provided through command-line,
+            #and then overwrite the global options because only one default value makes
+            #sense for a given run
+            opt.setIfUndef("batchBackend",options.batchRun.batchBackend)
+            if opt.batchBackend != "qsub":
+                options.batchRun.batchBackend = opt.batchBackend
+            klass.parseCmdLinePost(options=opt,args=args,parser=parser)
+            if runningFromCommandLine:
+                opt.needTerminator = True
+        return opt,args
 
     @classmethod
     def makeOptionParserArgs(klass):

@@ -633,6 +633,9 @@ class TaxaTree(object):
     def getNode(self,id):
         return self.nodes[id]
 
+    def hasNode(self,id):
+        return self.nodes.has_key(id)
+    
     def getNodes(self,ids):
         """Return an array of nodes corresponding to an N-d array or sequence of ids"""
         return self._vecGetNodes(ids)
@@ -778,8 +781,8 @@ class TaxaTree(object):
     def searchName(self,name,fuzzy=False):
         """Lookup a node by its official name, case-insensitive.
         @param name Name to lookup
-        @param fuzzy If False, do exact string lookup, otherwise also try diminishing blan-split prefixes [False].
-        Fuzzy search can help to find species name a strain name, among other things.
+        @param fuzzy If False, do exact string lookup, otherwise also try diminishing blank-split prefixes [False].
+        Fuzzy search can help to find species name from a strain name, among other things.
         @return list of nodes with a given name (can be a reference to internal empty list if nothing was found)
         @post Can lazy-build the names index the first time its called"""
         try:

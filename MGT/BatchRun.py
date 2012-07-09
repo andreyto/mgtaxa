@@ -9,6 +9,7 @@
 """Support for running jobs in a batch environment."""
 from MGT.Util import *
 from MGT.Config import *
+from MGT.BatchMakeflow import *
 
 class BatchJob(Struct):
     """Description of submitted job"""
@@ -69,6 +70,7 @@ class BatchSubmitter(object):
         opts.setdefault("stdout",None)
         opts.setdefault("stderr",None)
         opts.setdefault("batchHostDebug","") #should be empty for all web jobs
+        opts.setdefault("batchBackend","qsub")
         return opts
     
     def __init__(self,**kw):
@@ -99,11 +101,14 @@ class BatchSubmitter(object):
         @param depend list of either job IDs or BatchJob instances on which completion the current job depends upon
         @param dryRun if True, just print what would have been done, without submitting anything
         @ret BatchJob instance for submitted job"""
+        opts = self.opts
         ret = None
         curdir = os.getcwd()
         try:
             if cwd:
                 os.chdir(cwd)
+                #convert cwd to abspath
+                cwd = os.getcwd()
             else:
                 cwd = curdir
             if scriptName is None:
@@ -112,43 +117,55 @@ class BatchSubmitter(object):
                     scriptName = "bs"
             outScr,scriptName = makeTmpFile(suffix=".qsub",prefix=scriptName+'.',dir=cwd,withTime=True)
             outScr.close()
-            script = self.header + cmd + '\n'
+            flagOk = scriptName+".flag_ok"
+            script = """\
+            %s
+            cd %s
+            rm -f %s
+            %s
+            echo "OK" > %s
+            """ % (self.header,cwd,flagOk,cmd,flagOk)
             strToFile(script,scriptName,dryRun=dryRun)
-            qsubCmd = ["qsub", "-b","n","-S","/bin/bash"]
-            #construct dependency argument if needed
-            if len(depend) > 0:
-                depids = []
-                for dep in depend:
-                    if isinstance(dep,BatchJob):
-                        depid = dep.jobId
-                    elif isinstance(dep,str):
-                        depid = dep
-                    else:
-                        raise ValueError("'depend' should be a flat list of scalar types. Perhaps you used jobs.append(app.run()) instead of jobs.extend(app.run()) when build the jobs list")
-                    depids.append(depid)
-                qsubCmd.extend(["-hold_jid",','.join(depids)])
-            qsubCmd.append(scriptName)
-            
-            nToTry = 3
+            if opts.batchBackend == "qsub":
+                qsubCmd = ["qsub", "-b","n","-S","/bin/bash"]
+                #construct dependency argument if needed
+                if len(depend) > 0:
+                    depids = []
+                    for dep in depend:
+                        if isinstance(dep,BatchJob):
+                            depid = dep.jobId
+                        elif isinstance(dep,str):
+                            depid = dep
+                        else:
+                            raise ValueError("'depend' should be a flat list of scalar types. Perhaps you used jobs.append(app.run()) instead of jobs.extend(app.run()) when build the jobs list")
+                        depids.append(depid)
+                    qsubCmd.extend(["-hold_jid",','.join(depids)])
+                qsubCmd.append(scriptName)
+                
+                nToTry = 3
 
-            while True:
-                try:
-                    outp = backsticks(qsubCmd,dryRun=dryRun,dryRet="your job 0 ")
-                except CalledProcessError,msg:
-                    nToTry -= 1
-                    if nToTry > 0:
-                        print "Warning: qsub returned error code, trying %s more times: %s" % (nToTry,msg)
+                while True:
+                    try:
+                        outp = backsticks(qsubCmd,dryRun=dryRun,dryRet="your job 0 ")
+                    except CalledProcessError,msg:
+                        nToTry -= 1
+                        if nToTry > 0:
+                            print "Warning: qsub returned error code, trying %s more times: %s" % (nToTry,msg)
+                        else:
+                            raise
                     else:
-                        raise
-                else:
-                    break
+                        break
 
-            jobId = outp.lower().split("your job")[1].strip().split()[0]
-            strToFile(jobId,scriptName+".jobid",dryRun=dryRun)
-            if not dryRun:
-                # go easy on qsub subsystem
-                sleep(sleepTime)
-            ret = BatchJob(jobId=jobId,scriptName=scriptName,depend=depend)
+                jobId = outp.lower().split("your job")[1].strip().split()[0]
+                strToFile(jobId,scriptName+".jobid",dryRun=dryRun)
+                if not dryRun:
+                    # go easy on qsub subsystem
+                    sleep(sleepTime)
+            elif opts.batchBackend == "makeflow":
+                jobId = scriptName
+            else:
+                raise ValueError("Unknown value of batchBackend: %s" % (opts.batchBackend,))
+            ret = BatchJob(jobId=jobId,scriptName=scriptName,cwd=cwd,outputs=(flagOk,),depend=depend)
         finally:
             os.chdir(curdir)
         return ret

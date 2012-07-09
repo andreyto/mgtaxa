@@ -9,7 +9,7 @@
 """Class to process CRISPR arrays found by tools like PILERCR"""
 
 from MGT.Taxa import *
-from MGT.FastaIO import FastaReader
+from MGT.FastaIO import *
 from MGT.BlastDb import BlastDb,runBlast
 from MGT.App import *
 
@@ -112,18 +112,49 @@ class CrisprApp(App):
 
     pilerInpSfx = ".cr_inp.fna"
     pilerOutSfx = ".piler.csv"
+    
+    appOptHelp = \
+    """This is a driver program for CRISPR processing pipeline."""
+    
+    @classmethod
+    def makeOptionParserArgs(klass):
+        from optparse import make_option
+        
+        optChoicesMode = ("findcr","blastcr","pilercr","import-inp-seq")
+        option_list = [
+            make_option("-m", "--mode",
+            action="store", 
+            type="choice",
+            choices=optChoicesMode,
+            dest="mode",
+            help=(("What to do, choice of %s. The typical user entry points are: "+\
+                "findcr.") % (optChoicesMode,))),
+            
+            make_option(None, "--inp-seq",
+            action="append", 
+            type="string",
+            dest="inpFastaFiles",
+            help="Files with assembled contigs or reads to search for CRISPRs"),
+        ]
+        return Struct(usage = klass.appOptHelp+"\n"+\
+                "Run with the --help options for a detailed description of individual arguments.",
+                option_list=option_list)
 
     @classmethod
     def parseCmdLinePost(klass,options,args,parser):
         globOpt = globals()["options"]
         opt = options
+        if opt.isUndef("mode"):
+            parser.error("--mode option is required")
+        opt.setIfUndef("cwd",os.getcwd())
+        optPathMultiOptToAbs(opt,"inpFastaFiles")           
         opt.setIfUndef("sqlHost","mgtaxa-dev.jcvi.org")
         opt.setIfUndef("sqlDb","crispr")
         opt.setIfUndef("sqlEngine","sqlite")
         opt.minSpacerLen = 20
         opt.maxSpacerLen = 60
         opt.minSpacerNum = 3
-        workDir = opt.setIfUndef("topWorkDir",globOpt.dataDir) #os.environ["GOS_WORK"]
+        workDir = opt.setIfUndef("cwd",os.getcwd())
         opt.crArrSeqDir = pjoin(workDir,"scaf-crispr")
         opt.crArrDir = pjoin(workDir,"scaf-piler")
         opt.gosBlastDbDir = pjoin(workDir,"reads-blast")
@@ -143,7 +174,7 @@ class CrisprApp(App):
         opt = self.opt
         if not hasattr(self,"dbSql"):
             if opt.sqlEngine == "sqlite":
-                self.dbSql = DbSqlLite(dbpath=pjoin(opt.topWorkDir,opt.sqlDb))
+                self.dbSql = DbSqlLite(dbpath=pjoin(opt.cwd,opt.sqlDb))
             elif opt.sqlEngine == "mysql":
                 self.dbSql = DbSqlMy(db=opt.sqlDb,host=opt.sqlHost)
         return self.dbSql
@@ -157,10 +188,11 @@ class CrisprApp(App):
     def initWork(self,**kw):
         self.BaseApp.initWork(self,**kw)
         opt = self.opt
+        self.pilerCrExe="/home/atovtchi/work/distros/CRISPR/PILERCR/src/pilercr"
         self.taxaTree = None #will be lazy-loaded
-        makedirs((opt.topWorkDir,opt.crArrSeqDir,opt.crArrDir,opt.crBlastDir,
+        makedirs((opt.cwd,opt.crArrSeqDir,opt.crArrDir,opt.crBlastDir,
             opt.crAnnotDir,opt.crGraphDir,opt.crReportDir))
-        self.tmpDir = pjoin(opt.topWorkDir,"tmp")
+        self.tmpDir = pjoin(opt.cwd,"tmp")
         makedir(self.tmpDir)
         storeBlast = SampStore.open(path=opt.crBlastDir)
         self.crArrSeqFile = storeBlast.getFilePath("arr.fasta")
@@ -223,13 +255,15 @@ class CrisprApp(App):
 
     def findCr(self,**kw):
         """Run full pipeline for CRISPR loci detection - from finder to SQL load and FASTA export"""
-        opt = self.opt.copy()
-        #opt.mode = "import-inp-seq"
-        #app = self.factory(opt=opt)
-        #jobs = app.run(**kw)
-        opt.mode = "pilercr"
-        app = self.factory(opt=opt)
-        jobs = app.run(**kw)
+        jobs = kw.get("depend",[])
+        if False:
+            opt = self.opt.copy()
+            opt.mode = "import-inp-seq"
+            app = self.factory(opt=opt)
+            jobs = app.run(**kw)
+            opt.mode = "pilercr"
+            app = self.factory(opt=opt)
+            jobs = app.run(depend=jobs)
         opt = self.opt.copy()
         opt.mode = "loadcr"
         app = self.factory(opt=opt)
@@ -299,7 +333,7 @@ class CrisprApp(App):
         opt = self.opt
         for (iFile,inpFastaFile) in enumerate(opt.inpFastaFiles):
             inpId = "%04d-%s" % (iFile+1,stripSfx(os.path.basename(inpFastaFile),".fasta"))
-            splitFastaFile(inpFile=inpFastaFile,
+            splitFasta(inpFasta=inpFastaFile,
                     outBase=pjoin(opt.crArrSeqDir,"%s%s" % (inpId,self.pilerInpSfx)),
                     maxChunkSize=200*10**6,sfxSep='-')
         
@@ -324,8 +358,8 @@ class CrisprApp(App):
         """One job launched by pilerCrOne()"""
         opt = self.opt
         plOutPath = pjoin(opt.crArrDir,os.path.basename(opt.plInpPath)+".piler")
-        run(("/home/atovtchi/work/distros/CRISPR/PILERCR/src/pilercr -minrepeat 22 -in %s -out %s -outtab %s.csv" % \
-                (opt.plInpPath,plOutPath,plOutPath)).split())
+        run(("%s -minrepeat 22 -in %s -out %s -outtab %s.csv" % \
+                (self.pilerCrExe,opt.plInpPath,plOutPath,plOutPath)).split())
     
     def blastToCoverage(self):
         """Calculate how much spacers vs repeats each BLAST match hits.
@@ -780,14 +814,14 @@ class CrisprApp(App):
             seq_part = recs[0]["seq_part"]
             inserterArr((id_arr,id_seq,seq_part))
             for (iRec,rec) in izipCount(recs):
-                begin = rec['pos']
-                seq_ali = rec['repeat']
+                begin = int(rec['pos'])
+                seq_ali = str(rec['repeat'])
                 end = begin + len(crisprSeqAliToRaw(seq_ali))
                 id_elem = idGenArrElem()
                 inserterArrElem((id_elem,id_arr,begin,end,1,seq_ali))
                 if iRec < len(recs) - 1:
                     begin = end
-                    seq_ali = rec['spacer']
+                    seq_ali = str(rec['spacer'])
                     end = begin + len(crisprSeqAliToRaw(seq_ali))
                     id_elem = idGenArrElem()
                     inserterArrElem((id_elem,id_arr,begin,end,0,seq_ali))

@@ -128,7 +128,7 @@ def mapFastaRecordsToTaxaTree(inSeqs,taxaTree,giToTaxa,
         inpSeq.close()
     return taxMis
 
-def splitFastaFilesByTaxa(inSeqs,taxaTree,giToTaxa,outDir,filt=None):
+def splitFastaFilesByTaxa(inSeqs,taxaTree,giToTaxa,outDir,filt=None,outSfx=".fasta.gz"):
     from MGT.FastaIO import FastaReader
     if taxaTree is None:
         taxaTree = loadTaxaTree()
@@ -151,7 +151,7 @@ def splitFastaFilesByTaxa(inSeqs,taxaTree,giToTaxa,outDir,filt=None):
                 if lastTaxid is None or lastTaxid != taxid:
                     if out is not None:
                         out.close()
-                    out = openCompressed(pjoin(outDir,"%s.fasta.gz" % taxid),"a")
+                    out = openCompressed(pjoin(outDir,"%s%s" % (taxid,outSfx)),"a")
                 out.write(seq.header())
                 for line in seq.seqLines():
                     out.write(line)

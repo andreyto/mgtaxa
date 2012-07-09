@@ -11,7 +11,8 @@ class GenomicElementType(object):
             "rhodoplast" : 0x08,
             "mitochondrion" : 0x10,
             "virus" : 0x20,
-            "phage" : 0x40
+            "phage" : 0x40,
+            "transposon" : 0x80
             }
 
 
@@ -23,6 +24,7 @@ class GenomicElementType(object):
             {"name":"mitochondrion"},
             {"name":"virus","re":r"\S*virus"},
             {"name":"phage","re":r"\S*phage"},
+            {"name":"transposon"},
             )
 
     for el in typeRe:

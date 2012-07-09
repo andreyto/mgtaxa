@@ -81,7 +81,11 @@ def backsticks(*popenargs,**kwargs):
 def makedir(path,dryRun=False):
     """Create one dir with pathname path or do nothing if it already exists.
     Same as Linux 'mkdir -p'."""
-    run(["mkdir","-p",path],dryRun=dryRun)
+    if not dryRun:
+        if not os.path.exists(path):
+            os.makedirs(path)
+    else:
+        print "makedir %s" % (path,)
 
 def makedirs(paths,dryRun=False):
     """Create muiltiple dirs with the same semantics as makedir"""

@@ -234,11 +234,13 @@ class DirKeyStore(DirStore):
     ## classes can override this attribute
     objSfx = ".obj"
     
-    def getFileBaseById(self,id):
-        return "%s%s" % (id,self.objSfx)
+    def getFileBaseById(self,id,objSfx=None):
+        if objSfx is None:
+            objSfx = self.objSfx
+        return "%s%s" % (id,objSfx)
     
-    def getFilePathById(self,id):
-        return self.getFilePath(self.getFileBaseById(id))
+    def getFilePathById(self,id,objSfx=None):
+        return self.getFilePath(self.getFileBaseById(id,objSfx=objSfx))
     
     def loadMetaDataById(self,id):
         return self.loadFileMetaData(self.getFileBaseById(id))

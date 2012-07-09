@@ -9,7 +9,8 @@
 """I/O of FASTA formatted sequence files"""
 
 __all__ = [ "FastaReader", "fastaReaderGzip", "FastaWriter", 
-        "splitFasta", "fastaLengths", "seqToLines", "shredFasta" ]
+        "splitFasta", "fastaLengths", "seqToLines", "shredFasta",
+        "filterFastaByLength" ]
 
 from MGT.Common import *
 from MGT.Util import openGzip, openCompressed
@@ -279,4 +280,23 @@ def fastaWriteOnce(records,out,lineLen=None,mode="w"):
         w.record(header=hdr,sequence=seq)
     w.close()
     return (iRec+1)
+
+def filterFastaByLength(inp,out,minLen=None,maxLen=None,lineLen=None,mode="w"):
+    if minLen is None:
+        minLen = 0
+    if maxLen is None:
+        maxLen = sys.maxint
+    rd = FastaReader(inp)
+    wr = FastaWriter(out=out,lineLen=lineLen,mode=mode)
+    nSeqOut = 0
+    for rec in rd.records():
+        hdr = rec.header()
+        seq = rec.sequence()
+        lenSeq = len(seq)
+        if lenSeq >= minLen and lenSeq < maxLen:
+            wr.record(hdr,seq)
+            nSeqOut += 1
+    wr.close()
+    rd.close()
+    return dict(nSeqOut=nSeqOut)
 

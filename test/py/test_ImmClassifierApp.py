@@ -6,7 +6,8 @@ seqDbPath1 = pjoin(options.testDataDir,"seqdb-fasta")
 seqDbPath2 = pjoin(options.testDataDir,"fasta")
 
 optTpl = Struct()
-optTpl.runMode = "inproc" #"batchDep"
+optTpl.runMode = "batchDep" #"batchDep"
+optTpl.batchBackend = "makeflow"
 optTpl.lrmUserOptions = r"'-P 0413'"
 optTpl.cwd = pabs("opt_work")
 
@@ -17,8 +18,8 @@ dryRun = False
 debugger = True
 
 cmdPref = "python %s $MGT_HOME/MGT/ImmClassifierApp.py" % ("-m pdb" if debugger else "",)
-cmdSfx = "--run-mode %s --lrm-user-options %s" %\
-        (optTpl.runMode,optTpl.lrmUserOptions)
+cmdSfx = "--run-mode %s --lrm-user-options %s --batch-backend %s" %\
+        (optTpl.runMode,optTpl.lrmUserOptions,optTpl.batchBackend)
 
 cmdLog = []
 
@@ -54,9 +55,10 @@ def predictAgainstRefCmd(reduceScoresEarly,predMode):
     run("zcat %s %s > tmp.pred.fasta" % tuple([ pjoin(seqDbPath1,f) \
             for f in ("100226.fasta.gz","101510.fasta.gz") ]),\
             shell=True)
-    cmd = " --mode proc-scores --out-score-comb combined.score --pred-out-stats-html tmp.krona.html --inp-seq tmp.pred.fasta --db-imm tmp.imm --pred-min-len-samp 1000"
-    runAndLog(cmd,help)
-    return
+    #cmd = " --mode proc-scores --out-score-comb combined.score --pred-out-stats-html tmp.krona.html --inp-seq tmp.pred.fasta --db-imm tmp.imm --pred-min-len-samp 1000"
+    #runAndLog(cmd,help)
+    #return
+    #cmd = " --mode predict --inp-seq tmp.pred.fasta --db-imm $MGT_DATA/icm-refseq --pred-min-len-samp 1000"
     cmd = " --mode predict --inp-seq tmp.pred.fasta --db-imm tmp.imm --pred-min-len-samp 1000"
     cmd += (" --pred-mode %s" % (predMode,))
     cmd += " --score-taxids-exclude-trees 100226"

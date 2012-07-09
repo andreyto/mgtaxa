@@ -1,0 +1,7 @@
+#
+## Unix cat and stag-in/stage-out files outside of cwd
+EXECUTABLE=test-cat.sh
+ARGUMENTS=test-cat.input test-cat.output
+INPUT_FILES=file:///etc/resolv.conf test-cat.input, file:///etc/services
+OUTPUT_FILES=test-cat.output file:///tmp/test-cat.output
+

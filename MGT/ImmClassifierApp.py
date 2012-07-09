@@ -394,6 +394,11 @@ class ImmClassifierApp(App):
             help="Path of a single FASTA file that contains samples extracted from "+\
                 "the BenchDb [--cwd/dbBenchFrag]"),
             
+            optParseMakeOption_Path(None, "--db-bench-taxids-include",
+            dest="dbBenchTaxidsInclude",
+            help="File with taxonomy IDs, one per line, to "+\
+                    "exclusively include during benchmark testing set construction."),
+            
             make_option(None, "--db-bench-taxids-exclude-trees",
             action="store", 
             type="string",
@@ -431,6 +436,12 @@ class ImmClassifierApp(App):
                     "a benchmark performance for this node after all models related to the testing "+\
                     "sample were excluded at a given taxonomic exclusion level. The lowest possible "+\
                     "number is one, because otherwise we have no chance to produce the true prediction."),
+            
+            optParseMakeOption_Path(None, "--bench-taxids-map",
+            dest="benchTaxidsMap",
+            help="Tab-delimited file with pairs input taxid, output taxid "+\
+                    "that will be used to re-map taxonomy of the testing samples "+\
+                    "before computing performance metrics. Used for phage-host benchmarking."),
             
             optParseMakeOption_Path(None, "--bench-out-dir",
             dest="benchOutDir",
@@ -645,13 +656,18 @@ class ImmClassifierApp(App):
         opt = self.opt
         optI = copy(opt)
         optI.mode = "extract-ref-seqdb"
+        #We need to finish the extraction now, because
+        #the fin-ref-seqdb stage needs to know all IDs 
+        #collected. Extraction is not parralelized anyway.
+        optI.runMode = "inproc"
         app = self.factory(opt=optI)
         jobs = app.run(**kw)
         optI = copy(opt)
         optI.mode = "fin-ref-seqdb"
         app = self.factory(opt=optI)
         kwI = kw.copy()
-        kwI["depend"] = jobs
+        if jobs:
+            kwI["depend"] = jobs
         return app.run(**kwI)
     
     def extractRefSeqDb(self,**kw):
@@ -720,6 +736,11 @@ class ImmClassifierApp(App):
                     in set(opt.dbBenchTaxidsExcludeTrees) ]
             ids = [ taxid for taxid in ids \
                     if not taxaTree.getNode(int(taxid)).isUnderAny(subTreesExcl) ] 
+        if opt.dbBenchTaxidsInclude is not None:
+            inp = openCompressed(opt.dbBenchTaxidsInclude,'r')
+            taxidsIncl = set([ int(line.strip()) for line in inp if len(line.strip())>0 ])
+            inp.close()
+            ids = [ taxid for taxid in ids if int(taxid) in taxidsIncl ]
         ids = n.asarray(list(ids),dtype="O")
         nrnd.shuffle(ids)
         jobs = []
@@ -783,8 +804,10 @@ class ImmClassifierApp(App):
             optI.dbBenchFragCountMax = opt.dbBenchFragCountMax
             optI.dbBenchFilterByModels = opt.dbBenchFilterByModels
             optI.dbBenchTaxidsExcludeTrees = opt.dbBenchTaxidsExcludeTrees
+            optI.dbBenchTaxidsInclude = opt.dbBenchTaxidsInclude
             optI.scoreTaxidsExcludeTrees = opt.scoreTaxidsExcludeTrees
             optI.benchNLevTestModelsMin = opt.benchNLevTestModelsMin
+            optI.benchTaxidsMap = opt.benchTaxidsMap
             optI.benchProcSubtrees = opt.benchProcSubtrees
             optI.cwd = pjoin(opt.benchWorkDir,str(fragLen))
             #this sets default and derived options
@@ -1671,8 +1694,8 @@ class ImmClassifierApp(App):
         makeFilePath(opt.benchOutCsv)
         makeFilePath(opt.benchOutDbSqlite)
         db = DbSqlLite(dbpath=opt.benchOutDbSqlite,strategy="exclusive_unsafe")
-        storesDb = self.prepBenchSql(db=db)
         #TMP:
+        #storesDb = self.prepBenchSql(db=db)
         #tblLevels = storesDb.storeDbLev.tblLevels
         #tblNames = storesDb.storeDbNode.tblNames
         tblLevels = "txlv"
@@ -1738,14 +1761,27 @@ class ImmClassifierApp(App):
         levNames = taxaLevels.getLevelNames("ascend")
         levIdNames = taxaLevels.getLevelIdForNames(levNames)
         levPosSuperking = levNames.index("superkingdom")
+        levPosSpecies = levNames.index("species")
+        levPosGenus = levNames.index("genus")
+        max_linn_levid = taxaLevels.getLevelId("order")
+        min_linn_levid = taxaLevels.getLinnLevelIdRange()[0]
         #this value as prediction result should be treated as
         #always incorrect when computing performance metrics
         wrongTaxid = self.rejTaxid - 1
-        sampTaxids = set()
-        for iS,idS in enumerate(sc.idSamp[:]):
-            taxid,itS = idS.strip().split('_')
-            taxid,itS = int(taxid),int(itS)
-            sampTaxids.add(taxid)
+        #set i_lev_excl to this value when no exclusion was done
+        iLevNoExc = 0
+        sampTaxidsMap = None
+        if opt.benchTaxidsMap is not None:
+            inp = openCompressed(opt.benchTaxidsMap,'r')
+            sampTaxidsMap = dict(( (int(taxidin.strip()),int(taxidout.strip())) \
+                    for (taxidin,taxidout) in \
+                    (line.strip().split("\t") for line in inp if len(line.strip())>0 )))
+            inp.close()
+        #sampTaxids = set()
+        #for iS,idS in enumerate(sc.idSamp[:]):
+        #    taxid,itS = idS.strip().split('_')
+        #    taxid,itS = int(taxid),int(itS)
+        #    sampTaxids.add(taxid)
 
         def _mapModelIds(taxaTree,idImm,idLeafImm):
             """Map model ids to the taxonomy tree and store for each node the
@@ -1809,17 +1845,20 @@ class ImmClassifierApp(App):
                 nodLinFS,nodLinFP,
                 nodSuperkingS,
                 scoP,
+                withExcl,
+                n_lev_test_models,
                 inserter=inserter,levIdNames=levIdNames,
-                wrongTaxid=wrongTaxid):
+                wrongTaxid=wrongTaxid,
+                iLevNoExc=iLevNoExc):
             rec = (iS,
-                    levIdNames[iLevFS],
+                    levIdNames[iLevFS] if withExcl else iLevNoExc,
                     levIdNames[iLevFP],
                     nodS.id,
                     nodP.id,
                     nodLinFS_FP.id,
                     nodLinFP.id if nodLinFP is not None else wrongTaxid,
                     nodSuperkingS.id,
-                    nodLinFS_FP.tmpCntLeafMod - nodLinFS.tmpCntLeafMod,
+                    n_lev_test_models,
                     scoP)
             inserter(rec)
         #If we select columns directly from hdf file with row-optimized
@@ -1844,25 +1883,46 @@ class ImmClassifierApp(App):
         linP = None #lineage predicted
         fill = None #None #"up-down" "up"
         assert fill is None,"The consequences of using fill for fixed lineage are not fully understood yet"
+        cntRej = defdict(int)
+        cntPass = defdict(int)
         iSel = sorted(sampleRatioWOR(n.arange(len(sc.idSamp)).tolist(),0.1))
         #for iS,idS in it.izip(iSel,sc.idSamp[iSel]):
         for iS,idS in enumerate(sc.idSamp):
             taxid,itS = idS.strip().split('_')
             taxid,itS = int(taxid),int(itS)
+            if sampTaxidsMap is not None:
+                taxidOrig = taxid
+                taxid = sampTaxidsMap[taxid]
             if tidS is None or tidS != taxid:
                 tidS = taxid
                 nodS = taxaTree.getNode(tidS)
                 linS = nodS.lineage()
                 linSetS = set(linS)
                 linFS = taxaLevels.lineageFixedList(nodS,null=None,format="node",fill=fill)
-            if not opt.benchProcSubtrees or hasattr(nodS,"tmpProcSamp"):
+            if nodS.tmpHasLeafMod and linFS[levPosSpecies] and (not opt.benchProcSubtrees or hasattr(nodS,"tmpProcSamp")):
+            #if linFS[levPosSpecies] and (not opt.benchProcSubtrees or hasattr(nodS,"tmpProcSamp")):
+            #if nodS.tmpHasLeafMod and taxidOrig not in [83129,484896,693582,490912,490913] and linFS[levPosSpecies] and (not opt.benchProcSubtrees or hasattr(nodS,"tmpProcSamp")):
+            #lytic
+            #if taxidOrig in [83129,484896,693582,490912,490913] and linFS[levPosSpecies] and (not opt.benchProcSubtrees or hasattr(nodS,"tmpProcSamp")):
+            #lysogenic
+            #if taxidOrig in [151599,397353,373126,186152,198539] and linFS[levPosSpecies] and (not opt.benchProcSubtrees or hasattr(nodS,"tmpProcSamp")):
+            #if taxidOrig in [151536,10730,373126,186152,198539] and linFS[levPosSpecies] and (not opt.benchProcSubtrees or hasattr(nodS,"tmpProcSamp")):
+            #if not nodS.tmpHasLeafMod and linFS[levPosSpecies] and (not opt.benchProcSubtrees or hasattr(nodS,"tmpProcSamp")):
+            #if linFS[levPosGenus] and (not opt.benchProcSubtrees or hasattr(nodS,"tmpProcSamp")):
                 scoreP = score[:,iS]
                 ordP = (-(scoreP)).argsort()
                 startOrdP = 0
                 nodSuperkingS = linFS[levPosSuperking]
                 #nodLinFS_Prev = None
                 #iLevFS is exclusion level
+                #we additionally prepend the first defined node in lineage to process w/o exclusion
+                levTasks = [ (True,iLevFS,nodLinFS) for iLevFS,nodLinFS in enumerate(linFS[:-1]) ]
                 for iLevFS,nodLinFS in enumerate(linFS[:-1]):
+                    if nodLinFS is not None:
+                        levTasks = [ (False,iLevFS,nodLinFS) ] + levTasks
+                        break
+                for withExcl,iLevFS,nodLinFS in levTasks:
+                    outputMetrForLineage = False
                     if nodLinFS is not None: 
                         #The condition above checks that the exclusion level is present in lineage 
                         #of a true node. Clearly, we cannot speak of excluding related models 
@@ -1873,46 +1933,79 @@ class ImmClassifierApp(App):
                             scoP = float(scoreP[vOrdP])
                             tidP = idImm[vOrdP]
                             nodP = taxaTree.getNode(tidP)
-                            #first condition excludes mixed models
-                            #TMP:tidP in sampTaxids and
-                            #not nodP.isUnder(eukRoot) and \
-                            if \
-                                ((nodP not in linSetS \
-                                and not nodP.isUnder(nodLinFS))):
-                                    linFP = taxaLevels.lineageFixedList(nodP,null=None,format="node",fill=fill)
-                                    #climb the levels and output (test,pred) pairs
-                                    #iLevFP is prediction level > iLevFS
-                                    for iLevFP,nodLinFP in enumerate(linFP[iLevFS+1:],iLevFS+1):
-                                        nodLinFS_FP = linFS[iLevFP] #true node at prediction level
-                                        if nodLinFS_FP is not None: 
-                                            #The above checks that the prediction level is 
-                                            #present in lineage of a true (test) node
-                                            #Assuming the "fill" parameter for the fixed
-                                            #lineage generation is None (so no fill), if the predicted
-                                            #node does not have that level in its lineage (nodLinFP is None),
-                                            #then it is a different lineage at that level and, therefore,
-                                            #an incorrect prediction. We save a special value of "always
-                                            #wrong taxid" as prediction value into a (test,predict) 
-                                            #database record.
-                                            #This reasoning is not that obvious when the fill is used
-                                            #(although should probably work when fill=="up"), so we
-                                            #restrict fill to None for now.
-
-                                            #Check that sample is not the only child with model at this 
-                                            #prediction level.
-                                            #Phymm Methods for unexplained reason says they required 
-                                            #"two others", which must mean 3 total, so we also save the 
-                                            #number as part of the record to filter on it later when 
-                                            #computing the metrics.
-                                            #if nodLinFS_FP.id == 1081:
-                                            #    pdb.set_trace()
-                                            if nodLinFS_FP.tmpCntLeafMod - nodLinFS.tmpCntLeafMod >= 1: 
-                                                _outTestRec(iS,iLevFS,iLevFP,nodS,nodP,
-                                                        nodLinFS_FP,
-                                                        nodLinFS,nodLinFP,
-                                                        nodSuperkingS,
-                                                        scoP)
+                            if not taxaLevels.isNodeInLinnLevelRange(nodP,\
+                                    min_linn_levid,max_linn_levid):
+                                break
+                            if True or nodP.tmpHasLeafMod: #excludes mixed models
+                                if withExcl:
+                                    if \
+                                        ((nodP not in linSetS \
+                                        and not nodP.isUnder(nodLinFS))):
+                                            outputMetrForLineage = True
+                                            break
+                                else:
+                                    outputMetrForLineage = True
                                     break
+
+                        if outputMetrForLineage:
+                            cntPass[(withExcl,levIdNames[iLevFS])] += 1
+                        else:
+                            cntRej[(withExcl,levIdNames[iLevFS])] += 1
+
+                        if outputMetrForLineage:
+                            linFP = taxaLevels.lineageFixedList(nodP,null=None,format="node",fill=fill)
+                            #climb the levels and output (test,pred) pairs
+                            #iLevFP is prediction level > iLevFS or == iLevFS if not withExcl.
+                            if withExcl:
+                                iLevFP_start = iLevFS + 1
+                            else:
+                                iLevFP_start = iLevFS
+                            #Check that sample is not the only child with model at the lowest
+                            #define prediction level (or that there is a least one model if we are not excluding clades)
+                            #Phymm Methods for unexplained reason says they required 
+                            #"two others", which must mean 3 total, so we also save the 
+                            #number as part of the record to filter on it later when 
+                            #computing the metrics.
+                            #Note that checking instead for sisters at each prediction level in the lineage
+                            #would be wrong because it would be equal to raising the exclusion level for some
+                            #nodes leading to cases when a family prediction level has lower average metrics
+                            #than a genus level.
+                            n_lev_test_models = 0
+                            if withExcl:
+                                for iLevFP,nodLinFP in enumerate(linFP[iLevFP_start:],iLevFP_start):
+                                    nodLinFS_FP = linFS[iLevFP] #true node at prediction level
+                                    if nodLinFS_FP is not None: 
+                                        n_lev_test_models = nodLinFS_FP.tmpCntLeafMod - nodLinFS.tmpCntLeafMod
+                                        break
+                            else:
+                                n_lev_test_models = nodLinFS.tmpCntLeafMod
+                            if n_lev_test_models >= 1:
+                                for iLevFP,nodLinFP in enumerate(linFP[iLevFP_start:],iLevFP_start):
+                                    nodLinFS_FP = linFS[iLevFP] #true node at prediction level
+                                    if nodLinFS_FP is not None: 
+                                        #The above checks that the prediction level is 
+                                        #present in lineage of a true (test) node
+                                        #Assuming the "fill" parameter for the fixed
+                                        #lineage generation is None (so no fill), if the predicted
+                                        #node does not have that level in its lineage (nodLinFP is None),
+                                        #then it is a different lineage at that level and, therefore,
+                                        #an incorrect prediction. We save a special value of "always
+                                        #wrong taxid" as prediction value into a (test,predict) 
+                                        #database record.
+                                        #This reasoning is not that obvious when the fill is used
+                                        #(although should probably work when fill=="up"), so we
+                                        #restrict fill to None for now.
+
+                                        #if nodLinFS_FP.id == 1081:
+                                        #    pdb.set_trace()
+                                        _outTestRec(iS,iLevFS,iLevFP,nodS,nodP,
+                                                nodLinFS_FP,
+                                                nodLinFS,nodLinFP,
+                                                nodSuperkingS,
+                                                scoP,
+                                                withExcl,
+                                                n_lev_test_models)
+                                    
                         #next exclusion level is above current, its exclusion zone contains 
                         #the current zone,
                         #so it can ignore already scanned and rejected model indices
@@ -1937,6 +2030,9 @@ class ImmClassifierApp(App):
         "taxid_superking",
         "n_lev_test_models"
         ])
+        cntPass = dict(cntPass)
+        cntRej = dict(cntRej)
+        print "cntRej=%s\tcntPass=%s" % (sorted(cntRej.items()),sorted(cntPass.items()))
 
 if __name__ == "__main__":
     #Allow to call this as script

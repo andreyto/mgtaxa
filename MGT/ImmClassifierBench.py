@@ -76,14 +76,11 @@ class ImmClassifierBenchmark(DirStore):
         seqLenRatio = (fragCountMax*fragLen)/float(seqLenTot)
 
         if seqLenRatio < 1.:
-            #PreprocShredder treats sampNum()=0 as "all samples", so we need to set it
-            #to at least 1, otherwise for catLen in a huge genome we will be getting
-            #all samples. Maybe shredder's behaviour should be changed to sampNum<0 => all.
             #@todo Pick coords on a virtual concatenation of all sequences, otherwise
             #it will never be quite right.
             sampNum = lambda lab,seq,id: int(rndRound(len(seq)*seqLenRatio/fragLen))
         else:
-            sampNum = 0
+            sampNum = -1 #all samples
         inpSeq = seqDb.fastaReader(idDb)
         outSeq = FastaWriter(out=outFasta,lineLen=lineLen,mode=outMode)
         shredder = LoadSeqPreprocShred(sampLen=fragLen,
@@ -160,6 +157,8 @@ class ImmClassifierBenchMetricsSql(object):
     ##suffix for mic tables
     micSfx = "_mic"
 
+    iLevNoExc = 0
+
     def __init__(self,db,taxaLevelsTbl,taxaNamesTbl):
         self.db = db
         self.taxaLevelsTbl = taxaLevelsTbl
@@ -188,6 +187,8 @@ class ImmClassifierBenchMetricsSql(object):
                 from %(sampTbl)s
                 where 
                     n_lev_test_models >= %(nLevTestModelsMin)s
+                    or
+                    i_lev_exc = 0
                 """ % dict(preFilterView=self.preFilterView,
                     nLevTestModelsMin=nLevTestModelsMin,
                     sampTbl=self.sampTbl))
@@ -424,6 +425,17 @@ class ImmClassifierBenchMetricsSql(object):
 
     def repAggrMetrics(self,csvOut,comment=None):
         db = self.db
+        taxaLevelsExtraTbl = "tmp_taxa_lev"
+        db.createTableAs(taxaLevelsExtraTbl,
+                """select id,level from %(taxaLevelsTbl)s
+                """ % dict(taxaLevelsTbl=self.taxaLevelsTbl),
+                indices={"names":["id"]})
+        #db.ddl("""insert into %(taxaLevelsExtraTbl)s 
+        #    (id,level) 
+        #    values 
+        #    (%(iLevNoExc)s,"none")
+        #    """ % dict(taxaLevelsExtraTbl=taxaLevelsExtraTbl,
+        #        iLevNoExc=self.iLevNoExc))
         for (iTbl,(tblAggrName,hdr)) in enumerate(
                 (
                 (self.sensAggrTbl,"Average per-clade sensitivity"),
@@ -448,7 +460,7 @@ class ImmClassifierBenchMetricsSql(object):
                 a.i_lev_per = c.id
             order by i_lev_exc,i_lev_per
             """ % dict(tblAggrName=tblAggrName,
-                    taxaLevelsTbl=self.taxaLevelsTbl)
+                    taxaLevelsTbl=taxaLevelsExtraTbl)
             if iTbl == 0:
                 mode = "w"
             else:
