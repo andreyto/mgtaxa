@@ -1,0 +1,8 @@
+test_seq=../test_data/fasta/749546.fasta
+#test.imm:$test_seq
+#    time mgt-glm-build-icm -d 10 -w 12 -p 1 test.imm < $test_seq 
+#test.score.fasta:$test_seq
+#    (for i in $(seq 100); do cat $test_seq; done) > test.score.fasta
+test.score:test.imm test.score.fasta
+    time mgt-glm-simple-score -N test.imm < test.score.fasta > test.score
+
