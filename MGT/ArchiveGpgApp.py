@@ -65,7 +65,9 @@ class ArchiveGpgApp(App):
             opt.setIfUndef("gpgArgs","-r %s" % (globOpt.toolGpgKeyName,))
     
     def initWork(self,**kw):
+        opt = self.opt
         self.gpgZipExe = "gpg-zip"
+        print "DEBUG: ArchiveGpgApp --mode %s" % (opt.mode,)
     
     def doWork(self,**kw):
         opt = self.opt

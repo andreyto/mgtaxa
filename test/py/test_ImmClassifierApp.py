@@ -6,10 +6,12 @@ seqDbPath1 = pjoin(options.testDataDir,"seqdb-fasta")
 seqDbPath2 = pjoin(options.testDataDir,"fasta")
 
 optTpl = Struct()
-optTpl.runMode = "batchDep" #"batchDep"
+optTpl.runMode = "inproc" #"batchDep"
 optTpl.batchBackend = "makeflow"
 optTpl.lrmUserOptions = r"'-P 0413'"
 optTpl.cwd = pabs("opt_work")
+optTpl.web = True
+optTpl.needTerminator = True
 
 makedir(optTpl.cwd)
 
@@ -117,8 +119,6 @@ def trainCustom(jobs):
     opt.immDbArchive = [pjoin(opt.cwd,"92830.immdb.tar")]
     opt.trainMinLenSamp = 1
     
-    opt.web = True
-    opt.needTerminator = True
     opt.stdout = "stdout.log"
     opt.stderr = "stderr.log"
 
@@ -151,7 +151,7 @@ def scoreCustomAgainstJoint(jobs):
 
     opt = optTpl.copy()
     opt.mode = "score"
-    opt.immDb = pjoin(opt.cwd,"imm")
+    opt.immDb = [pjoin(opt.cwd,"imm")]
     opt.immDbArchive = [pjoin(opt.cwd,"92830.immdb.tar")]
     opt.inpSeq = pjoin(seqDbPath2,"92830.fasta.gz") #pjoin(seqDbPath1,"195.fasta.gz")
     opt.outScoreComb = pjoin(opt.cwd,"92830.1.join.combined.score")
@@ -249,22 +249,20 @@ def runSomeTests():
     #benchOneFragLenCmd()
     #benchCmd()
     #predictAgainstRefCmd(reduceScoresEarly=0,predMode="host")
-    predictAgainstRefCmd(reduceScoresEarly=1,predMode="taxa")
-    return
+    #predictAgainstRefCmd(reduceScoresEarly=1,predMode="taxa")
     
     #jobs = trainRef(jobs)
     #jobs = scoreRefAgainstRef(jobs)
     #jobs = procScoresRefAgainstRef(jobs)
-
-    #jobs = trainCustom(jobs)
-    #print jobs
+    
+    jobs = trainCustom(jobs)
+    print jobs
     jobs = scoreRefAgainstCustom(jobs)
     print jobs
-    return
     jobs = procScoresRefAgainstCustom(jobs)
     print jobs
-    jobs = scoreCustomAgainstJoint(jobs)
-    jobs = procScoresCustomAgainstJoint(jobs)
+    #jobs = scoreCustomAgainstJoint(jobs)
+    #jobs = procScoresCustomAgainstJoint(jobs)
 
 
 runSomeTests()

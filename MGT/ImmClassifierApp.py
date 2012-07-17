@@ -14,6 +14,7 @@ from MGT.App import *
 from MGT.DirStore import *
 from MGT.SeqDbFasta import *
 from MGT.ArchiveGpgApp import *
+from MGT.ArchiveApp import *
 from MGT.ImmClassifierBench import *
 from MGT.ImmClassifierAppUtils import *
 from MGT.GraphicsKrona import *
@@ -1114,7 +1115,11 @@ class ImmClassifierApp(App):
             optI.mode = "archive"
             optI.path = dbArch[0]
             optI.archive = dbArch[1]
-            app = ArchiveGpgApp(opt=optI)
+            if opt.web:
+                app = ArchiveGpgApp(opt=optI)
+            else:
+                optI.stripComponents = 1
+                app = ArchiveApp(opt=optI)
             kw = kw.copy()
             kw["depend"] = jobs
             jobs = app.run(**kw)
@@ -1146,8 +1151,11 @@ class ImmClassifierApp(App):
                 optI.runMode = "inproc"
                 optI.path = immD[0]
                 optI.archive = immD[1]
-                optI.tarArgs = "--strip-components 1"
-                app = ArchiveGpgApp(opt=optI)
+                if opt.web:
+                    optI.tarArgs = "--strip-components 1"
+                    app = ArchiveGpgApp(opt=optI)
+                else:
+                    app = ArchiveApp(opt=optI)
                 kwI = kw.copy()
                 #jobsI = app.run(**kwI)
                 #immIds = ImmStoreWithTaxids(immD[0]).listImmIdsWithTaxids(

@@ -40,9 +40,7 @@ class ArchiveApp(App):
                     "In extraction mode, a single entry is allowed and must be a directory. "+\
                     "The archive content will be extracted into that directory."),
             
-            make_option(None, "--archive",
-            action="store", 
-            type="string",
+            optParseMakeOption_Path(None, "--archive",
             dest="archive",
             help="Path of the archive"),
 
@@ -57,16 +55,31 @@ class ArchiveApp(App):
             action="store_true", 
             dest="safe",
             help="Consider archive content untrusted and make safety checks before extracting"),
+            
+            make_option(None, "--strip-components",
+            action="store", 
+            type="int",
+            default=0,
+            dest="stripComponents",
+            help="Same meaning as a corresponding 'tar' option, but is applied when creating the archive "+\
+                    "because Python tarfile module does not easily support doing it on extraction"),
         ]
         return Struct(usage = "Archive content of a given path or extract content of an archive.\n"+\
                 "%prog [options]",option_list=option_list)
-
-    def instanceOptionsPost(self,opt):
-        """Set (in place) instance-specific options.
-        This is called from __init__() and has access to the execution context (such as current dir)."""
-        ## parseCmdLinePost will not modify options that are already defined, so we need to do it here
+        
+    @classmethod
+    def parseCmdLinePost(klass,options,args,parser):
+        opt = options
         if isinstance(opt.path,str):
             opt.path = [ opt.path ]
+        optPathMultiOptToAbs(opt,"path") 
+        assert opt.stripComponents in (0,1),"Only --strip-components 1 is supported"
+
+    def instanceOptionsPost(self,opt):
+        App.instanceOptionsPost(self,opt)
+        if isinstance(opt.path,str):
+            opt.path = [ opt.path ]
+        print "DEBUG: ArchiveApp --mode %s" % (opt.mode,)
     
     def doWork(self,**kw):
         opt = self.opt
@@ -92,7 +105,9 @@ class ArchiveApp(App):
             # here we both perform rsync-like treatment of trailing '/' and
             # only store the path components after the dirname(name)
             dirname,basename = os.path.split(name)
-            if basename and basename != ".": # /dir/ -> ["dir",""], but /dir/. -> ["dir","."]
+             # /dir/ -> ["dir",""], but /dir/. -> ["dir","."]
+            if basename and basename not in (".","..") \
+                    and not (os.path.isdir(name) and opt.stripComponents):                
                 tar.add(name,arcname=basename)
             else:
                 for entry in os.listdir(name):
