@@ -356,8 +356,10 @@ class ApisAnnotRecord(object):
         return parsed
 
 class ApisAnnotReader(object):
+    
+    _pepOrientationMapper = {-1 : "minus", 1 : "plus", 0 : "null"}
 
-    def __init__(self,inp):
+    def __init__(self,inp,pepMap=None):
         x = openCsv(inp,
                 mode="r",
                 factory=csv.reader,
@@ -365,6 +367,7 @@ class ApisAnnotReader(object):
         self.reader = x.csvFile
         self.csvClose = x.csvClose
         self.csvFileInp = x.csvFileStream
+        self.pepMap = pepMap
 
     def next(self):
         row = self.reader.next()
@@ -373,7 +376,10 @@ class ApisAnnotReader(object):
             row = self.reader.next()
         rec = ApisAnnotRecord(row)
         rec.parse()
-        rec.parsed.update(parseOrfOnContigIdApis(rec.parsed["id_q"]))
+        if self.pepMap:
+            self._updateFromPep(rec)
+        else:
+            rec.parsed.update(parseOrfOnContigIdApis(rec.parsed["id_q"]))
         return rec
     
     def __iter__(self):
@@ -383,3 +389,16 @@ class ApisAnnotReader(object):
         if self.csvClose:
             self.csvFileInp.close()
            
+    def _updateFromPep(self,rec):
+        id_q = rec.parsed["id_q"]
+        pepRec = self.pepMap.findIdPep(id_q)
+        assert pepRec,"Peptide record not found in peptide map for peptide id: %s" % (id_q,)
+        parsed = rec.parsed
+        parsed["id_cont"] = pepRec["read_id"]
+        parsed["start_orf"] = pepRec["begin"]
+        parsed["end_orf"] = pepRec["end"]
+        parsed["strand_orf"] = pepRec["orientation"]
+        parsed["pep_id"] = pepRec["pep_id"]
+
+ApisAnnotReaderPepIds = ApisAnnotReader
+

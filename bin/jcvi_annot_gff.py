@@ -633,6 +633,7 @@ if __name__ == '__main__':
         taskOffset = None
     else:
         taskOffset = int(taskOffset)
+    #taskStride is # of jobs
     taskStride = int(taskStride)
     gffMinLenSamp = 5000
     assert not os.path.exists(outDir),("I cannot append to pre-existing output directory: %s. " + \
