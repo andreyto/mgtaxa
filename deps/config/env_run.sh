@@ -4,21 +4,27 @@
 
 if [ -z "$MGT_PREFIX_ENV_RUN_DONE" ]; then
 
-# I would want to get rid of /usr/local/bin. Lots of broken stuff.
-# But 'use localbins' somehow breaks sudo access. Sudo starts claiming that
-# my account has no sudo rights (test with 'sudo -l')
-#use localbins
-
-
 ## Some JCVI profile files apparently wack LD_LIBRARY_PATH
 ## Source MPI selector settings if it is installed on the local system
 #[ -f /etc/profile.d/mpi-selector.sh ] && source /etc/profile.d/mpi-selector.sh
 
 export INST=$WORK/packages
 
-export CPUARCH=x86_64
-export DISTRO=rhel5
-export MACH=x86_64-rhel5
+case $(uname -r) in
+    *el6* )
+    _distr_ver=el6 ;;
+    *el5* )
+    _distr_ver=el5 ;;
+esac
+
+export CPUARCH=$(uname -i)
+if [ -e /etc/redhat-release ]; then
+    _distr=rh
+else
+    _distr=un
+fi
+export DISTRO="$_distr$_distr_ver"
+export MACH="$CPUARCH-$DISTRO"
 
 export INSTMACH=$INST/$MACH
 
@@ -57,6 +63,7 @@ fi
 
 export PATH="$INST/x86_32/texlive/2007/bin/i386-linux:$INSTMACH/bin:$INST/bin:$PATH"
 
+export PATH="$JAVA_HOME/bin:$PATH"
 
 # For some packages, setting LD_RUN_TIME during build and linker options do not help.
 # We still have to define LD_LIBRARY_PATH

@@ -25,6 +25,13 @@ fi
 
 #export MGT_JCVI_DMZ=1
 
+#Are we on system upgraded to CentOS 6?
+if [[ $(uname -r) == *el6* ]]; then
+    _cent6=1
+else
+    _cent6=
+fi
+
 ## JCVI used to have the only has functional gcc (with gfortran) in /usr/local, so we need to make sure
 ## its shared libs are found at run-time instead of the one in /usr/
 ## Now it seems that gfortran has been installed from RPM in /usr, but all stuff in /usr/local probably
@@ -42,14 +49,25 @@ fi
 
 export LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib:$LD_LIBRARY_PATH
 
+if [ -n "$_cent6" ]; then
+
+export JAVA_HOME=/usr/local/packages/jdk-6u41
+## QPID needs java 6+
+export JAVA_6_HOME=/usr/local/packages/jdk-6u41
+
+else
+
 #This Java path is identical on Intranet and DMZ, although it seems that the main
 #java home is under /usr/local/java on the Intranet
 export JAVA_HOME=/usr/local/packages/java/current
+## QPID needs java 6+
+export JAVA_6_HOME=/usr/local/packages/java/1.6.0
+
+fi
+
 ## ANT (the Java make) is installed at JCVI, but ANT_HOME has to be defined,
 ## otherwise Globus Toolkit build fails when ant cannot find xmlvalidate module ("task")
 export ANT_HOME=/usr/local/packages/apache-ant
-## QPID needs java 6+
-export JAVA_6_HOME=/usr/local/packages/java/1.6.0
 
 ## We support these types of Python install:
 ## already built under a separate prefix and we do not have write support
@@ -61,7 +79,11 @@ export PY_BUILD_INTERP=
 ## If set, the interpreter lives under that separate --prefix, otherwise
 ## it will be under one of common prefixes (either our package prefix or
 ## system prefix):
-export PY_PREF_INTERP=/usr/local/packages/python-2.6.6
+if [ -n "$_cent6" ]; then
+    export PY_PREF_INTERP=/usr/local/packages/python-2.7.3
+else
+    export PY_PREF_INTERP=/usr/local/packages/python-2.6.6
+fi
 ## Additionally, there is an option to set an absolute path to
 ## the Python executable (to support e.g. python2.5 and python2.6
 ## located inside the same bin/ directory). If not set, this variable
