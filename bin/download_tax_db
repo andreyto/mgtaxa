@@ -34,7 +34,7 @@ wget -v "$ftpdir/taxcat.tar.gz"
 tar -zxf taxcat.tar.gz
 rm taxcat.tar.gz
 touch * #prevent accidental scratch space cleaning due to preserved ftp/gzip dates
-python $MGT_HOME/bin/makegitax.py -i gi_taxid_* -o gi_taxid.pkl.gz
+python $MGT_HOME/bin/makegitax.py -o gi_taxid.pkl.gz gi_taxid_*
 cd $curdir
 rm -rf $bakdir
 if [ -e "$dbdir" ]; then
