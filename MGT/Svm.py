@@ -128,7 +128,7 @@ def applyToFeatData(data,func):
         rec['feature'] = func(rec['feature'])
 
 def isUniqueId(data):
-    return len(n.unique1d(data["id"])) == len(data["id"])
+    return len(n.unique(data["id"])) == len(data["id"])
 
 
 class IdLabels:
@@ -146,7 +146,7 @@ class IdLabels:
         if records is not None:
             if not isinstance(records,n.ndarray):
                 records = n.asarray(records,self.defRecDtype())
-            self.data.records = n.unique1d(records)
+            self.data.records = n.unique(records)
             if initMaps:
                 self.initMaps()
                 self.check()
