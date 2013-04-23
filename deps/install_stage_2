@@ -5,6 +5,7 @@ topdir=$(pwd)
 bash setuptools/setuptools-*-py${PY_VER}.egg --prefix=$INST
 easy_install --prefix=$INST --upgrade mercurial
 easy_install --prefix=$INST --upgrade nose
+easy_install --prefix=$INST argcomplete argh
 cd git/git && ${topdir}/install_git && cd ${topdir}
 cd cmake && ${topdir}/install_cmake && cd ${topdir}
 cd mysql/mysql && ${topdir}/install_mysql && cd ${topdir}
