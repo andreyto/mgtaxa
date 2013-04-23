@@ -251,27 +251,29 @@ class DirKeyStore(DirStore):
     def delById(self,id):
         self.delName(self.getFileBaseById(id))
 
-    def iterIds(self,iterPaths=None):
+    def iterIds(self,iterPaths=None,objSfx=None):
         """Iterate over object IDs either in this store or from the externally provided iterable"""
-        return self.fileNames(pattern="*"+self.objSfx,sfxStrip=self.objSfx,iterPaths=iterPaths)
+        if objSfx is None:
+            objSfx = self.objSfx
+        return self.fileNames(pattern="*"+objSfx,sfxStrip=objSfx,iterPaths=iterPaths)
     
-    def iterMetaData(self,iterPaths=None):
+    def iterMetaData(self,iterPaths=None,objSfx=None):
         """Iterate over metadata either in this store or from the externally provided iterable.
         @return iterator over tuples (object id,metadata object)"""
-        for id in self.iterIds(iterPaths=iterPaths):
+        for id in self.iterIds(iterPaths=iterPaths,objSfx=objSfx):
             yield (id,self.loadMetaDataById(id))
     
-    def dictMetaData(self,iterPaths=None):
+    def dictMetaData(self,iterPaths=None,objSfx=None):
         """Load a dict{id->metadata} either from this store or from the externally provided iterable."""
-        return dict(self.iterMetaData(iterPaths=iterPaths))
+        return dict(self.iterMetaData(iterPaths=iterPaths,objSfx=objSfx))
 
     def dictMetaDataByIds(self,ids):
         """Return dict{id->metadata} for a sequence of ids"""
         return dict(( (id,self.loadMetaDataById(id)) for id in ids ))
     
-    def listIds(self,iterPaths=None):
+    def listIds(self,iterPaths=None,objSfx=None):
         """List object IDs from either this store or from the externally provided iterable"""
-        return list(self.iterIds(iterPaths=iterPaths))
+        return list(self.iterIds(iterPaths=iterPaths,objSfx=objSfx))
 
 class SampStore(DirKeyStore):
 
