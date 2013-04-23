@@ -42,6 +42,9 @@ class KronaWriter(object):
     </node>
     """
 
+    ## Default URL of Krona code to reference in HTML files
+    defKronaUrl = "/static/krona"
+    
     def __init__(self,taxaTree):
         self.taxaTree = taxaTree
 
@@ -135,15 +138,17 @@ class KronaWriter(object):
     def cleanTree(self):
         self.taxaTree.getRootNode().delAttributes(("mgt_cnt","mgt_cnt_t"))
 
-    def genKrona(self,htmlOut):
+    def genKrona(self,htmlOut,kronaUrl=None):
         """Generate final Krona file"""
-        cmd = options.krona.xmlToChart+["-u","/static/krona","-o",htmlOut,self.xmlOut]
+        if kronaUrl is None:
+            kronaUrl = "/static/krona"
+        cmd = options.krona.xmlToChart+["-u",kronaUrl,"-o",htmlOut,self.xmlOut]
         run(cmd,debug=False)
 
-    def write(self,htmlOut):
+    def write(self,htmlOut,kronaUrl=None):
         self.initOut(xmlOut=htmlOut+".krona.xml")
         self.writeNodes()
         self.finishOut()
         #self.cleanTree()
-        self.genKrona(htmlOut=htmlOut)
+        self.genKrona(htmlOut=htmlOut,kronaUrl=kronaUrl)
 
