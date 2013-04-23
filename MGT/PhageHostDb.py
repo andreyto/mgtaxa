@@ -203,9 +203,14 @@ class VirHostParser:
             if len(candNames) > 0:
                 iHostRec += 1
                 #gi = int(rec.annotations['gi'])
-                node = taxaTree.getNode(taxid)
-                candNamesSplit = splitNamesToHosts(candNames)
-                hostNodes = self.assignHost(node,candNamesSplit)
+                hostNodes = []
+                try:
+                    node = taxaTree.getNode(taxid)
+                except KeyError:
+                    print "taxid=%s not found in the tree" % (taxid,)
+                else:
+                    candNamesSplit = splitNamesToHosts(candNames)
+                    hostNodes = self.assignHost(node,candNamesSplit)
                 if len(hostNodes) <= 0:
                     print "No matching host node for: taxid:%s hosts:%s" % (taxid,candNamesSplit)
                 else:
