@@ -15,7 +15,7 @@ from MGT.App import *
 from MGT.DirStore import *
 import UUID
 from MGT.SeqImportApp import *
-from MGT.ImmClassifierApp import *
+from MGT.ImmClassifierApp import ImmClassifierApp
 from MGT.ImmApp import *
 from MGT.Sql import *
 import csv
@@ -94,18 +94,20 @@ class PhageHostApp(App):
             action="store", type="string",dest="taxaTreePkl",help="Custom taxonomy tree saved in pickle format. If not set, standard NCBI tree is used."),
             make_option(None, "--db-gb-inp",
             action="store", type="string",dest="dbGbInp",help="Input viral GenBank file for phage-host DB construction"),
-            make_option(None, "--db-ph",
-            action="store", type="string",default="ph",dest="dbPh",help="DB of known phage-host pairs created and used here"),
+            optParseMakeOption_Path(None, "--db-ph",
+            dest="dbPh",
+            help="DB of known phage-  host pairs created and used here",
+            default="ph"),
             make_option(None, "--db-seq",
             action="append", type="string",dest="dbSeqInp",help="Input DB (e.g. RefSeq) FASTA sequence files for both microbes "+\
                     "and viruses referenced by phage-host pairs DB. It can be a subset of superset of p-h DB."),
-            make_option(None, "--db-ph-pairs",
-            action="store", type="string",default="ph-pairs",dest="dbPhPairs",help="Stratified phage-host pairs from DB phage-host"),
-            make_option(None, "--db-ph-pairs-seq-ids",
-            action="store", type="string",default="ph-pairs-seq-ids",dest="dbPhPairsSeqIds",help="Sequence IDs for db-ph-pairs - "+\
+            optParseMakeOption_Path(None, "--db-ph-pairs",
+            default="ph-pairs",dest="dbPhPairs",help="Stratified phage-host pairs from DB phage-host"),
+            optParseMakeOption_Path(None, "--db-ph-pairs-seq-ids",
+            default="ph-pairs-seq-ids",dest="dbPhPairsSeqIds",help="Sequence IDs for db-ph-pairs - "+\
                     "intermediate file used to pull all sequences from the original FASTA files into db-ph-pairs-seq"),
-            make_option(None, "--db-ph-pairs-seq",
-            action="store", type="string",default="ph-pairs-seq",dest="dbPhPairsSeq",help="Sequences for db-ph-pairs in our "+\
+            optParseMakeOption_Path(None, "--db-ph-pairs-seq",
+            default="ph-pairs-seq",dest="dbPhPairsSeq",help="Sequences for db-ph-pairs in our "+\
                     "internal format"),
             make_option(None, "--shred-size-vir-test",
             action="store", type="int",default=5000,dest="shredSizeVirTest",help="Shred DB viral samples into this size for testing"),
@@ -174,7 +176,7 @@ class PhageHostApp(App):
 
     def getTaxaTree(self):
         if self.taxaTree is None:
-            self.taxaTree = loadTaxaTree(pklFile=self.opt.taxaTreePkl)
+            self.taxaTree = loadTaxaTree(pklFile=self.opt.taxaTreePkl,allNames=True)
         return self.taxaTree
 
     def getTaxaLevels(self):
@@ -273,7 +275,7 @@ class PhageHostApp(App):
 
     @classmethod
     def _outScoreCombPath(klass,opt):
-        o = Struct(outDir=opt.predOutDir)
+        o = Struct(outDir=opt.predOutDir,mode="predict")
         ImmClassifierApp.fillWithDefaultOptions(o)
         return o.outScoreComb
 
