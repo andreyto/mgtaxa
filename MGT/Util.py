@@ -5,7 +5,7 @@
 #
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
-
+from __future__ import with_statement  # only for python 2.5
 from types import *
 import re
 import string, os, sys
@@ -27,6 +27,8 @@ import operator
 import itertools as it
 import datetime
 import shutil
+import contextlib
+import bz2
 import pdb
 
 from MGT.Options import Struct
@@ -35,6 +37,17 @@ from MGT.Config import options, Options
 from MGT.Run import *
 
 from MGT.Bits.Unique import unique, uniquePick
+
+@contextlib.contextmanager
+def chdir(dirname=None):
+    curdir = os.getcwd()
+    try:
+        if dirname is not None:
+            os.chdir(dirname)
+        yield
+    finally:
+        os.chdir(curdir)
+
 
 class Timer(object):
     """Very simple timer object"""
@@ -263,13 +276,15 @@ def editSymlink(source,link_name):
 def openCompressed(filename,mode,compressFormat=None,**kw):
     """Open a filename which can be either compressed or plain file.
     @param compressFormat if None, an attempt will be made to autodetect format 
-    (currently by extension, only '.gz' is recognized); if "none" - open as plain
+    (currently by extension, only '.gz' and '.bz2' are recognized); if "none" - open as plain
     file, if "gzip" - open as gzip file."""
     cform = compressFormat
     if cform is None:
         cform = "none"
         if filename.endswith('.gz'):
             cform = "gzip"
+        elif filename.endswith('.bz2'):
+            cform = "bz2"
     #print "DEBUG: openCompressed(%s,%s,%s)" % (filename,mode,cform)
     k = kw.copy()
     if cform == "gzip":
@@ -277,6 +292,9 @@ def openCompressed(filename,mode,compressFormat=None,**kw):
             k["bufsize"] = k["buffering"]
             del k["buffering"]
         return openGzip(filename,mode,**kw)
+    elif cform == "bz2":
+        k.setdefault("buffering",2**20)
+        return bz2.BZ2File(filename,mode,**kw)
     elif cform == "none":
         k.setdefault("buffering",2**20)
         return open(filename,mode,**kw)
