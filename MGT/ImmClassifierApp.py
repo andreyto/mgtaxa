@@ -276,12 +276,20 @@ class ImmClassifierApp(App):
                     "[data from global options]. This will be used to translate "+\
                     "raw prediction scores into normalized confidence scores."),
             
+            make_option(None, "--train-composite-models",
+            action="store", 
+            type="int",
+            default=0,
+            dest="trainCompositeModels",
+            help="If non-zero, train models for the inner nodes of the taxonomic "+\
+                    "tree by concatenating balanced-picked leaf sequences [0]."),
+            
             make_option(None, "--train-min-len-samp",
             action="store", 
             type="int",
             dest="trainMinLenSamp",
             help="Min length of leaf node sequence to consider the node for training models: "+\
-                    "default is 100000 if training custom models and 500000 if training "+\
+                    "default is 2000 if training custom models and 2000 if training "+\
                     "reference models. For training custom models, this means that sequences"+\
                     "shorter that this will be ignored"),
             
@@ -290,7 +298,7 @@ class ImmClassifierApp(App):
             type="int",
             dest="trainMinLenSampModel",
             help="Min length of sequence to use when training one model, otherwise the model "+\
-                    "is skipped [--train-min-len-samp]"),
+                    "is skipped [10000]"),
             
             make_option(None, "--train-max-len-samp-model",
             action="store", 
@@ -335,6 +343,20 @@ class ImmClassifierApp(App):
             optParseMakeOption_Path(None, "--pred-out-stats-html",
             dest="predOutStatsHtml",
             help="Output HTML (Krona) file with statistics on predicted taxa [--pred-out-taxa/stats/stats.html]"),
+            
+            make_option(None, "--pred-out-stats-krona-url",
+            action="store", 
+            type="string",
+            dest="predOutStatsKronaUrl",
+            help="URL to Krona sources as seen by generated HTML output. See also --pred-out-stats-krona-embed"),
+            
+            make_option(None, "--pred-out-stats-krona-embed",
+            action="store", 
+            type="string",
+            dest="predOutStatsKronaEmbed",
+            help="Embed Krona sources at a given location. A relative location is interpreted " + \
+                    "as being relative to --pred-out-stats-html. If --pred-out-stats-krona-url is not given, " + \
+                    "its value is also computed from this option."),
             
             make_option(None, "--rej-ranks-higher",
             action="store", 
@@ -381,7 +403,7 @@ class ImmClassifierApp(App):
             make_option(None, "--bench-frag-len-list",
             action="store",
             type="string",
-            default="100,400,1000,10000",
+            default="100,400,1000,5000,10000",
             dest="benchFragLenList",
             help="List of fragment lengths to generate and score in benchmark"),
             
@@ -516,6 +538,10 @@ class ImmClassifierApp(App):
         opt.setIfUndef("benchOutAggrCsv",pjoin(opt.benchOutDir,"bench.aggr.csv"))
         opt.setIfUndef("benchOutDbSqlite",pjoin(opt.benchOutDir,"bench.sqlite"))
         optPathMultiOptToAbs(opt,"benchProcSubtrees")
+
+        if not opt.isUndef("predOutStatsKronaEmbed"):
+            opt.setIfUndef("predOutStatsKronaUrl",opt.predOutStatsKronaEmbed)
+
 
         if isinstance(opt.dbBenchTaxidsExcludeTrees,str):
             opt.dbBenchTaxidsExcludeTrees = [ int(x) for x in opt.dbBenchTaxidsExcludeTrees.split(",") ]
@@ -697,7 +723,7 @@ class ImmClassifierApp(App):
         """Finalize creation of SeqDb for training ICM model from NCBI RefSeq"""
         opt = self.opt
         seqDb = self.getSeqDb()
-        taxids = seqDb.getIdList()
+        taxids = seqDb.getIdList(objSfx=seqDb.objUncomprSfx)
         taxids = n.asarray(taxids,dtype="O")
         nrnd.shuffle(taxids)
         jobs = []
@@ -945,11 +971,15 @@ class ImmClassifierApp(App):
         for node in taxaTree.iterDepthTop():
             if hasattr(node,"trainSelStatus") and node.trainSelStatus != self.TRAIN_SEL_STATUS_IGNORE:
                 doPick = False
-                if node.isUnderAny(micVirNodes):
-                    doPick = True
-                elif node.isUnder(cellNode):
+                if not opt.trainCompositeModels:
                     if node.trainSelStatus == self.TRAIN_SEL_STATUS_DIRECT:
                         doPick = True
+                else:
+                    if node.isUnderAny(micVirNodes):
+                        doPick = True
+                    elif node.isUnder(cellNode):
+                        if node.trainSelStatus == self.TRAIN_SEL_STATUS_DIRECT:
+                            doPick = True
                 if doPick:
                     nodeSampLength = sum(taxaSampLengths[taxid] for taxid in node.pickedSeqDbIds)
                     if nodeSampLength >= opt.trainMinLenSampModel:
@@ -1563,7 +1593,17 @@ class ImmClassifierApp(App):
                 krona.addSample( (idS,taxid,lenS,scoresResc) )
         out.close()
         krona.finishCount()
-        krona.write(htmlOut=opt.predOutStatsHtml)
+        if not opt.isUndef("predOutStatsKronaEmbed"):
+            #abspath(join(a,b)) works correctly even when b=='/c'
+            krona.embedSource(
+                    os.path.abspath(
+                        os.path.join(
+                            os.path.dirname(opt.predOutStatsHtml),
+                            opt.predOutStatsKronaEmbed
+                            )
+                        )
+                    )
+        krona.write(htmlOut=opt.predOutStatsHtml,kronaUrl=opt.predOutStatsKronaUrl)
         
     def _reExportPredictionsWithSql(self):
         opt = self.opt    
