@@ -27,12 +27,12 @@ class SeqDbFasta(DirKeyStore):
         taxaTree = self.getTaxaTree()
         splitFastaFilesByTaxa(inSeqs=inpFiles,taxaTree=taxaTree,giToTaxa=None,outDir=self.getPath(),filt=filt,outSfx=self.objUncomprSfx)
 
-    def loadTaxaList(self):
-        self.taxaList = n.asarray([ int(f) for f in self.iterIds() ])
+    def loadTaxaList(self,objSfx=None):
+        self.taxaList = n.asarray([ int(f) for f in self.iterIds(objSfx=objSfx) ])
 
-    def getTaxaList(self):
+    def getTaxaList(self,objSfx=None):
         if not hasattr(self,"taxaList"):
-            self.loadTaxaList()
+            self.loadTaxaList(objSfx=objSfx)
         return self.taxaList
 
     getIdList = getTaxaList
@@ -44,12 +44,12 @@ class SeqDbFasta(DirKeyStore):
 
     def finById(self,id):
         """Finalize creation of a new ID in SeqDb after using methods such as importByTaxa.
-        This creates meta-data and possibly does other things.
-        @todo make it also compress the main data object if necessary"""
-        self.updateMetaDataById(id)
+        This creates meta-data and possibly does other things."""
+        #first compress, so that updateMetaDataById could find the file
         dataFileUncompr = self.getFilePathById(id,objSfx=self.objUncomprSfx)
         if os.path.exists(dataFileUncompr):
             compressFile(dataFileUncompr)
+        self.updateMetaDataById(id)
 
     def fastaReader(self,id):
         """Return FastaReader to read from the DB for a given ID"""
