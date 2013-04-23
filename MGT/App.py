@@ -262,7 +262,12 @@ class App:
             dest="batchBackend",
             default=None,
             help="Execution backend to use if --run-mode batchDep  is selected: 'qsub' will immediately "+\
-                    "submit jobs to LRM, and 'makeflow' will generate a Makeflow script."),
+                    "submit jobs to LRM, and 'makeflow' will generate a Makeflow script ("+\
+                    "named 'workflow'. "+\
+                    "For the makeflow, you then should run makeflow with the options "+\
+                    "specific for your execution environment and script name as the "+\
+                    "argument. For example, on SGE cluster this may look like: "+\
+                    "makeflow -T sge -B '-P PROJECT_CODE -b n -S /bin/bash' workflow"),
             
             make_option(None, "--need-terminator",
             action="store_true", 
