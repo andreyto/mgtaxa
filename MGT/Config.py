@@ -12,6 +12,20 @@ import os
 pjoin = os.path.join
 pabs = os.path.abspath
 
+def getTaxaDumpFileNames(taxaDumpDir):
+    x = {}
+    x['taxaDataDir'] = taxaDumpDir
+    x['taxaPickled'] = os.path.join(taxaDumpDir,'gi_taxid.pkl.gz')
+    x['taxaCatFile'] = os.path.join(taxaDumpDir,'categories.dmp')
+    x['taxaGiFiles'] = [ os.path.join(taxaDumpDir,'gi_taxid_%s.dmp.gz' % moltype) 
+            for moltype in ("nucl","prot") ]
+    x['taxaDumpDir'] = taxaDumpDir
+    x['taxaNodesFile'] = os.path.join(taxaDumpDir,'nodes.dmp')
+    x['taxaDivisionFile'] = os.path.join(taxaDumpDir,'division.dmp')
+    x['taxaNamesFile'] = os.path.join(taxaDumpDir,'names.dmp')
+    x['taxaMergedFile'] = os.path.join(taxaDumpDir,'merged.dmp')
+    return x
+
 
 class MGTOptions(Options):
     def __init__(self,*l,**kw):
@@ -163,19 +177,10 @@ class MGTOptions(Options):
         self.krona.cmdBase=["perl","-I",pjoin(self.krona.topDir,"lib")]
         self.krona.xmlToChart=self.krona.cmdBase+[pjoin(self.krona.topDir,"scripts/ImportXML.pl")]
 
-
     def _setTaxaFileNames(self,topDir,sfx=""):
-        setattr(self,'taxaDataDir'+sfx,topDir)
-        taxaDataDir = getattr(self,'taxaDataDir'+sfx) 
-        setattr(self,'taxaPickled'+sfx,os.path.join(taxaDataDir,'gi_taxid.pkl.gz'))
-        setattr(self,'taxaCatFile'+sfx,os.path.join(taxaDataDir,'categories.dmp'))
-        setattr(self,'taxaGiFiles'+sfx,[ os.path.join(taxaDataDir,'gi_taxid_%s.dmp.gz' % moltype) 
-                for moltype in ("nucl","prot") ])
-        setattr(self,'taxaDumpDir'+sfx,taxaDataDir)
-        taxaDumpDir = getattr(self,'taxaDumpDir'+sfx) 
-        setattr(self,'taxaNodesFile'+sfx,os.path.join(taxaDumpDir,'nodes.dmp'))
-        setattr(self,'taxaDivisionFile'+sfx,os.path.join(taxaDumpDir,'division.dmp'))
-        setattr(self,'taxaNamesFile'+sfx,os.path.join(taxaDumpDir,'names.dmp'))
+        x = getTaxaDumpFileNames(topDir)
+        for key,val in x.items():
+            setattr(self,key+sfx,val)
 
     def getPyCmd(self,cmd):
         return "python %s.py" % pjoin(self.binDir,cmd)
