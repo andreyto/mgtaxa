@@ -11,6 +11,25 @@ import tables as pt
 
 import os.path
 
+def array_chunked_copy(src,dst,chunk):
+    """Assign elements of src to elements of dst in chunks.
+    PyTables cannot copy from Array or other Node directly like
+    dst[:] = src. It requires intermediate conversion into 
+    numpy array. If datasets are large, dst[:] = src[:]
+    will use a lot of RAM. The method implemented here will be both fast
+    and memory conserving of chunk parameter is selected properly.
+    Alternative approach of using node.copy() is not appropriate when
+    implicit element type conversion is expected to happen during 
+    assignment.
+    @param dst destination node
+    @param source node
+    @param chunk chunk size in records
+    """
+    l = len(src)
+    for i in xrange(0,l,chunk):
+        j = min(i+chunk,l)
+        dst[i:j] = src[i:j]
+
 def hdfSplitPath(path):
     return os.path.split(path)
 
