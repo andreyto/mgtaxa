@@ -152,3 +152,13 @@ class KronaWriter(object):
         #self.cleanTree()
         self.genKrona(htmlOut=htmlOut,kronaUrl=kronaUrl)
 
+    def embedSource(self,path):
+        #tar_extractall_safe_single_dir(archive=options.krona.sourceArch,path=path)
+        topDirSrc = options.krona.topDir
+        assert path.strip(), "Empty string is provided for Krona destination source directory"
+        for subDir in ("img","src"):
+            target = pjoin(path,subDir)
+            if os.path.exists(target):
+                shutil.rmtree(target,ignore_errors=True)
+            copytree_ext(pjoin(topDirSrc,subDir),target,copy_stats=False)
+
