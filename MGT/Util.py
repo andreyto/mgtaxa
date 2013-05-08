@@ -1166,7 +1166,7 @@ def openCsv(csvFile,mode,factory=None,*l,**kw):
 
 class ObjCache(object):
     """Class that caches immutable objects based on identity.
-    Use case: we are reeding N:1 relation from a two-column csv file
+    Use case: we are reading N:1 relation from a two-column csv file
     where both columns are represented by fairly long string IDs.
     E.g. read id -> contig id.
     If we use these string as read, each one will allocate a separate 
@@ -1190,6 +1190,31 @@ class ObjCache(object):
 ## Global instance of object cache
 objCache = ObjCache()
 
+def join_sorted_records_right_check(iter1,iter2,key1,key2):
+    """Join two sorted iterator ranges checking that that there is always a match on the right.
+    @pre input records are sorted, each left record has match on the right.
+    @param iter1 iterator of record tuples sorted by key1
+    @param iter2 iterator of record tuples sorted by key2
+    @param key1 Identifies key in iter1 records. Int means index, otherwise must be functor key(record)
+    @param key2 Identifies key in iter2 records. Int means index, otherwise must be functor key(record)
+    @return iterator of (record1,record2), where key(record1)==key(record2). Other records are skipped.
+    """
+    #note: more general kinds of merges can be implemented by using itertools.group(heapq.merge()), 
+    #but this specific case is simple enough.
+    if isinstance(key1,int):
+        key1 = lambda rec,_key=key1: rec[_key]
+    if isinstance(key2,int):
+        key2 = lambda rec,_key=key2: rec[_key]
+    for rec1 in iter1:
+        for rec2 in iter2:
+            if key1(rec1) == key2(rec2):
+                yield (rec1,rec2)
+                break
+        #this is a rarely used 'else' at the end of the loop keyword;
+        #it will be reached if 'break' is never executed
+        else:
+            raise KeyError(key1(rec1))
+
 def basedir(path):
     """Return right-most component of the directory path.
     This gives identical results both for /some/base and /some/base/"""
@@ -1198,4 +1223,178 @@ def basedir(path):
         basen = os.path.basename(dirn)
     return basen
 
+
+def urljoin_path(base,url):
+    import urlparse
+    #urlparse.urljoin is weird: 
+    #In [6]: urljoin(urljoin("/","static/vicvb"),"jbrowse")
+    #Out[6]: '/static/jbrowse'
+    if not base.endswith(":"):
+        if not base.endswith("/"):
+            base += "/"
+    return urlparse.urljoin(base,url)
+
+def to_url_params(params):
+    """You might have to pass OrderedDict if the order of parameters
+    is important. Alternatively, urllib.quote_plus can be applied
+    directly to a string."""
+    import urllib
+    return urllib.urlencode(params)
+
+def add_to_path(dir,var="PATH",prepend=False,env=None):
+    """Add a directory to the PATH environment variable"""
+    dir = str(dir)
+    if env is None:
+        env = os.environ
+    if var in env:
+        if prepend:
+            first = dir
+            second = env[var]
+        else:
+            first = env[var]
+            second = dir
+        env[var] = os.pathsep.join((first,second))
+    else:
+        env[var] = dir
+
+def tar_check_safety(tar):
+    
+    def _tar_info_str(tarinfo):
+        return " ; ".join([ "%s : %s" % item for \
+                item in sorted(tarinfo.__dict__.items()) \
+                if not item[0].startswith('_') \
+                and not item[0] == "buf" ])
+    
+    def _err_msg(tarinfo,msg):
+        return "Archive failed safety check - "+\
+                    msg+": %s" % (_tar_info_str(tarinfo),)
+
+    for tarinfo in tar:
+        if os.path.isabs(tarinfo.name) or \
+                os.path.isabs(os.path.normpath(tarinfo.name)):
+            raise ValueError(_err_msg(tarinfo,
+            "Absolute file name detected"))
+        elif ".." in tarinfo.name or ".." \
+                in os.path.normpath(tarinfo.name):
+            raise ValueError(_err_msg(tarinfo,
+                    "Upper directory reference is detected"))
+        elif not (tarinfo.isreg() or tarinfo.isdir()):
+            #e.g. if archive was artificially manipulated to contain 
+            #first A/B where B is a symlink to ../../something,
+            #and then A/B/C, then C might be created as ../../something/C 
+            #(my guess).
+            raise ValueError(_err_msg(tarinfo,
+                    "Non-regular files or dirs can lead to exploits"))
+
+def tar_extractall_safe(archive,path=None):
+    if path is None:
+        path = os.getcwd()
+    tar = tarfile.open(archive, "r") #will auto-detect compression
+    try:
+        tar_check_safety(tar)
+        tar.extractall(path=path)
+    finally:
+        tar.close()
+
+
+def tar_extractall_safe_single_dir(archive,path=None):
+    tar_extractall_safe(archive=archive,path=path)
+    subdirs = list(os.listdir(path))
+    assert len(subdirs) == 1,\
+            "Expected a single directory in archive %s" \
+            % (path,)
+    return os.path.join(path,subdirs[0])
+
+def load_config_json(config_file,default={}):
+    if os.path.exists(config_file):
+        with open(config_file,'r') as f:
+            return json.load(f)
+    else:
+        return default
+
+def save_config_json(config,config_file):
+    with open(config_file,'w') as f:
+        json.dump(config,f)
+
+def none_from_str(s):
+    if s is not None:
+        if s == "None":
+            return None
+    return s
+
+def copytree_ext(src, dst, symlinks=False, ignore=None, copy_stats=True):
+    """Recursively copy a directory tree.
+    This is a modified clone of shutil.copytree() from Python 2.6.
+    Extra arguments allow controlling whether time should be copied.
+    For example, when copying to a scratch file system where files
+    are automatically deleted based on age, you do not want to have
+    the modification time copied.
+
+    The destination directory must not already exist.
+    If exception(s) occur, an Error is raised with a list of reasons.
+
+    If the optional symlinks flag is true, symbolic links in the
+    source tree result in symbolic links in the destination tree; if
+    it is false, the contents of the files pointed to by symbolic
+    links are copied.
+
+    The optional ignore argument is a callable. If given, it
+    is called with the `src` parameter, which is the directory
+    being visited by copytree(), and `names` which is the list of
+    `src` contents, as returned by os.listdir():
+
+        callable(src, names) -> ignored_names
+
+    Since copytree() is called recursively, the callable will be
+    called once for each directory that is copied. It returns a
+    list of names relative to the `src` directory that should
+    not be copied.
+
+    The optional copy_stats selects whether to copy time.
+
+    XXX Consider this example code rather than the ultimate tool.
+
+    """
+    names = os.listdir(src)
+    if ignore is not None:
+        ignored_names = ignore(src, names)
+    else:
+        ignored_names = set()
+
+    os.makedirs(dst)
+    errors = []
+    for name in names:
+        if name in ignored_names:
+            continue
+        srcname = os.path.join(src, name)
+        dstname = os.path.join(dst, name)
+        try:
+            if symlinks and os.path.islink(srcname):
+                linkto = os.readlink(srcname)
+                os.symlink(linkto, dstname)
+            elif os.path.isdir(srcname):
+                copytree_ext(srcname, dstname, symlinks, ignore)
+            else:
+                if copy_stats:
+                    shutil.copy2(srcname, dstname)
+                else:
+                    shutil.copy(srcname,dstname)
+            # XXX What about devices, sockets etc.?
+        except (IOError, os.error), why:
+            errors.append((srcname, dstname, str(why)))
+        # catch the Error from the recursive copytree so that we can
+        # continue with other files
+        except Error, err:
+            errors.extend(err.args[0])
+    if copy_stats:
+        try:
+            shutil.copystat(src, dst)
+        except OSError, why:
+            if WindowsError is not None and isinstance(why, WindowsError):
+                # Copying file access times may fail on Windows
+                pass
+            else:
+                errors.extend((src, dst, str(why)))
+    if errors:
+        raise Error, errors
 
