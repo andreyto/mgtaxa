@@ -559,9 +559,11 @@ class TaxaTree(object):
         Node links are created based on getParentId() calls to each node. For the root node, and root node only,
         this method must return a value that evaluates to False in logical expression (e.g. 0 or None)."""
 
-        nodes = storage.load()
+        data = storage.load()
+        nodes = data["nodes"]
         self.nodes = nodes
         self.rootNode = None
+        self.merged = data.get("merged",{})
         for v in nodes.itervalues():
             #We use None for parent link of the root node
             try:
@@ -630,11 +632,20 @@ class TaxaTree(object):
     def setMaxSubtreeRank(self,ranks=None,nameAttr=None):
         self.getRootNode().setMaxSubtreeRank(ranks=ranks,nameAttr=nameAttr)
 
-    def getNode(self,id):
-        return self.nodes[id]
+    def getNode(self,id,useMerged=True):
+        try:
+            return self.nodes[id]
+        except KeyError:
+            if useMerged:
+                return self.nodes[self.merged[id]]
+            else:
+                raise
 
-    def hasNode(self,id):
-        return self.nodes.has_key(id)
+    def hasNode(self,id,useMerged=True):
+        has = self.nodes.has_key(id)
+        if not has and useMerged:
+            has = self.nodes.has_key(self.merged.get(id,None))
+        return has
     
     def getNodes(self,ids):
         """Return an array of nodes corresponding to an N-d array or sequence of ids"""
@@ -679,7 +690,10 @@ class TaxaTree(object):
 
     def getNodesDict(self):
         return self.nodes
-    
+   
+    def getMerged(self):
+        return self.merged
+
     def numNodes(self):
         return len(self.nodes)
 
@@ -1315,7 +1329,6 @@ def downloadTaxaGenbankSeqs(taxids,outFile,taxaTree,giToTaxa,withSubnodes=True):
             taxaTree=taxaTree,
             giToTaxa=giToTaxa,
             withSubnodes=withSubnodes)
-    pdb.set_trace()
     print "Getting Genbank records for %s GIs" % len(taxgi)
     gis = taxgi["gi"]
     req = EzRequest(batchSize=50000)
@@ -1323,7 +1336,6 @@ def downloadTaxaGenbankSeqs(taxids,outFile,taxaTree,giToTaxa,withSubnodes=True):
     giChunk=40000
     for iGi in xrange(0,len(gis),giChunk):
         iGiEnd = min(iGi+giChunk,len(gis))
-        req.fetch(ids=gis[iGi:iGiEnd],outFile=outFile)
+        req.fetch_blocked(ids=gis[iGi:iGiEnd],outFile=outFile)
         
-
 

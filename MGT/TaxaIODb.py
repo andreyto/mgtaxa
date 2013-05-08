@@ -29,7 +29,7 @@ def sqlIsSubTree(aliasSub,aliasSup,withEquality=False):
 
 class NodeStorageDb:
     """Taxonomy nodes storage in SQL DB"""
-
+    ##@todo Implement saving and loading of 'merged' node map.
     ## Currently, we consider taxa names immutable and originating
     ## from the initial NCBI taxonomy dump file, so load them from a fixed
     ## DB table named by 'tblNames'. This assumes that all other trees that
@@ -67,7 +67,7 @@ class NodeStorageDb:
                 node.divid = rec['divid']
                 nodes[node.id] = node
         reader.close()
-        return nodes
+        return dict(nodes=nodes,merged={})
 
     def save(self,tree):
         db = self.db

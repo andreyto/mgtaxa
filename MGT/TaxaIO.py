@@ -36,13 +36,14 @@ class NodeStorageNcbiDump:
     # We will be parsing this string:
     # '1\t|\t1\t|\tno rank\t|\t\t|\t8\t|\t0\t|\t1\t|\t0\t|\t0\t|\t0\t|\t0\t|\t0\t|\t\t|\n'
     
-    def __init__(self,ncbiDumpFile=None,ncbiNamesDumpFile=None,allNames=False):
+    def __init__(self,ncbiDumpFile=None,ncbiNamesDumpFile=None,ncbiMergedDumpFile=None,allNames=False):
         """Load taxonomy tree nodes from NCBI dump files.
         @param ncbiDumpFile nodes.dump
         @param ncbiNamesDumpFile names.dump
         @param allNames whether to load all names to node attribute 'names'"""
         self.ncbiDumpFile = ncbiDumpFile
         self.ncbiNamesDumpFile = ncbiNamesDumpFile
+        self.ncbiMergedDumpFile = ncbiMergedDumpFile
         self.allNames = allNames
     
     def _loadNodes(self,ncbiDumpFile):
@@ -90,11 +91,22 @@ class NodeStorageNcbiDump:
                     node.names = { rec[1] : rec[3] }
         inp.close()
 
+    def _loadMerged(self,ncbiMergedDumpFile):
+        inp = openCompressed(ncbiMergedDumpFile,'r')
+        data = dict(( (int(rec[0].strip()),int(rec[1].strip())) for rec in \
+                ( line.split("|") for line in inp ) ))
+        inp.close()
+        return data
+
     def load(self):
         self._loadNodes(self.ncbiDumpFile)
         if self.ncbiNamesDumpFile is not None:
             self._loadNames(self.ncbiNamesDumpFile)
-        return self.nodes
+        if self.ncbiMergedDumpFile is not None:
+            merged = self._loadMerged(self.ncbiMergedDumpFile)
+        else:
+            merged = {}
+        return dict(nodes=self.nodes,merged=merged)
 
 
 class NodeStorageNewick:
@@ -167,16 +179,18 @@ class NodeStoragePickleDict:
 
     def save(self,tree):
         nodes = tree.getNodesDict()
+        merged = tree.getMerged()
         # TaxaTreeNode.__getstate__() now takes care of skipping node cross-references
         #for node in nodes.itervalues():
         #    del (node.par, node.children)
-        dumpObj(nodes,self.fileName)
+        dumpObj(dict(nodes=nodes,merged=merged),self.fileName)
 
     def load(self):
-        nodes = loadObj(self.fileName)
+        data = loadObj(self.fileName)
+        nodes = data["nodes"]
         for node in nodes.itervalues():
             node.children = []
-        return nodes
+        return data
 
 
 class NodeStoragePickle:
@@ -189,10 +203,12 @@ class NodeStoragePickle:
 
     def save(self,tree):
         nodes = tree.getNodesDict()
+        merged = tree.getMerged()
         # TaxaTreeNode.__getstate__() now takes care of skipping node cross-references
         #for node in nodes.itervalues():
         #    del (node.par, node.children)
         out = openCompressed(self.fileName,"w")
+        dump(merged,out,-1)
         for node in nodes.itervalues():
             dump(node,out,-1)
         out.close()
@@ -201,6 +217,7 @@ class NodeStoragePickle:
         #nodes = loadObj(self.fileName)
         nodes = {}
         inp = openCompressed(self.fileName,"rb")
+        merged = load(inp)
         try:
             while True:
                 node = load(inp)
@@ -209,7 +226,7 @@ class NodeStoragePickle:
         except:
             pass
         inp.close()
-        return nodes
+        return dict(nodes=nodes,merged=merged)
 
 ##@todo there are tons of Python wrappers around streaming (SAX-like) JSON C libs,
 ##e.g. http://pypi.python.org/pypi/ijson/. They are supposed to be much faster,
@@ -226,26 +243,32 @@ class NodeStorageJsonPy:
     def save(self,tree):
         import json
         nodes = tree.getNodesDict()
+        merged = tree.getMerged()
         # TaxaTreeNode.__getstate__() now takes care of skipping node cross-references
         #for node in nodes.itervalues():
         #    del (node.par, node.children)
         out = openCompressed(self.fileName,"w")
         #json saves keys as strings, so there would be little point in
-        #dumping the nodes dict
-        json.dump(nodes.values(),out,check_circular=False,separators=(',', ':'),default=TaxaNode.__getstate__)
+        #dumping the nodes dict or merged dict
+        json.dump(dict(nodes=nodes.values(),merged=merged.items()),
+                out,
+                check_circular=False,
+                separators=(',', ':'),
+                default=TaxaNode.__getstate__)
         out.close()
 
     def load(self):
         import json
         inp = openCompressed(self.fileName,"rb")
-        nodes = json.load(inp,object_hook=lambda o: TaxaNode(**o) if "idpar" in o else o)
+        data = json.load(inp,object_hook=lambda o: TaxaNode(**o) if "idpar" in o else o)
         print "JsonDict Loaded the nodes"
         inp.close()
-        nodes = dict( ((node.id,node) for node in nodes) )
+        data["nodes"] = dict( ((node.id,node) for node in data["nodes"]) )
+        data["merged"] = dict( (item for item in data["merged"]) )
         print "Made dict"
-        return nodes
+        return data
 
-class NodeStorageJson:
+class NodeStorageJsonUjson:
     """
     Implements NodeStorage interface through json module serialization.
     This pickles nodes as list"""
@@ -256,13 +279,53 @@ class NodeStorageJson:
     def save(self,tree):
         import json
         nodes = tree.getNodesDict()
+        merged = tree.getMerged()
         # TaxaTreeNode.__getstate__() now takes care of skipping node cross-references
         #for node in nodes.itervalues():
         #    del (node.par, node.children)
         out = openCompressed(self.fileName,"w")
         #json saves keys as strings, so there would be little point in
         #dumping the nodes dict
-        json.dump(nodes.values(),out,check_circular=False,separators=(',', ':'),default=TaxaNode.__getstate__)
+        json.dump(dict(nodes=nodes.values(),merged=merged.items()),
+                out,check_circular=False,
+                separators=(',', ':'),
+                default=TaxaNode.__getstate__)
+        out.close()
+
+    def load(self):
+        import ujson
+        inp = openCompressed(self.fileName,"rb")
+        buf = inp.read()
+        inp.close()
+        #nodes = json.loads(buf,object_hook=lambda o: TaxaNode(**o) if "idpar" in o else o)
+        #return dict( ((node.id,node) for node in nodes) )
+        data = ujson.loads(buf)
+        data["nodes"] = dict( ((node["id"],TaxaNode(**node)) for node in data["nodes"]) )
+        data["merged"] = dict( (item for item in data["merged"]) )
+        return data
+
+class NodeStorageJsonLib:
+    """
+    Implements NodeStorage interface through json module serialization.
+    This pickles nodes as list"""
+
+    def __init__(self,fileName):
+        self.fileName = fileName
+
+    def save(self,tree):
+        import json
+        nodes = tree.getNodesDict()
+        merged = tree.getMerged()
+        # TaxaTreeNode.__getstate__() now takes care of skipping node cross-references
+        #for node in nodes.itervalues():
+        #    del (node.par, node.children)
+        out = openCompressed(self.fileName,"w")
+        #json saves keys as strings, so there would be little point in
+        #dumping the nodes dict
+        json.dump(dict(nodes=nodes.values(),merged=merged.items()),
+                out,check_circular=False,
+                separators=(',', ':'),
+                default=TaxaNode.__getstate__)
         out.close()
 
     def load(self):
@@ -272,9 +335,10 @@ class NodeStorageJson:
         inp.close()
         #nodes = json.loads(buf,object_hook=lambda o: TaxaNode(**o) if "idpar" in o else o)
         #return dict( ((node.id,node) for node in nodes) )
-        nodes = jsonlib.read(buf,use_float=True)
-        nodes = dict( ((node["id"],TaxaNode(**node)) for node in nodes) )
-        return nodes
+        data = jsonlib.read(buf,use_float=True)
+        data["nodes"] = dict( ((node["id"],TaxaNode(**node)) for node in data["nodes"]) )
+        data["merged"] = dict( (item for item in data["merged"]) )
+        return data
 
 class NodeStorageJsonLines:
     """
@@ -308,6 +372,8 @@ class NodeStorageJsonLines:
             nodes[node["id"]] = TaxaNode(**node)
         inp.close()
         return nodes
+
+NodeStorageJson = NodeStorageJsonPy
 
 class LibSeaElement:
 

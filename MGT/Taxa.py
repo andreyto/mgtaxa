@@ -15,10 +15,28 @@ from MGT.TaxaIODb import *
 
 def loadTaxaTree(ncbiDumpFile=options.taxaNodesFile,
         ncbiNamesDumpFile=options.taxaNamesFile,
+        ncbiMergedDumpFile=options.taxaMergedFile,
+        ncbiTaxaDumpDir=None,
         allNames=False,pklFile=None,jsonFile=None):
     if pklFile is None and jsonFile is None:
-        return TaxaTree(NodeStorageNcbiDump(ncbiDumpFile=ncbiDumpFile,
-            ncbiNamesDumpFile=ncbiNamesDumpFile,
+        name_trans = {
+                'ncbiDumpFile':'taxaNodesFile',
+                'ncbiNamesDumpFile':'taxaNamesFile',
+                'ncbiMergedDumpFile':'taxaMergedFile'
+                }
+        if ncbiTaxaDumpDir is not None:
+            dirFiles = getTaxaDumpFileNames(taxaDumpDir=ncbiTaxaDumpDir)
+        else:
+            dirFiles = None
+        x = {}
+        for name in ("ncbiDumpFile","ncbiNamesDumpFile","ncbiMergedDumpFile"):
+            if dirFiles:
+                x[name] = dirFiles[name_trans[name]]
+            else:
+                x[name] = vars()[name]
+        return TaxaTree(NodeStorageNcbiDump(ncbiDumpFile=x["ncbiDumpFile"],
+            ncbiNamesDumpFile=x["ncbiNamesDumpFile"],
+            ncbiMergedDumpFile=x["ncbiMergedDumpFile"],
             allNames=allNames))
     elif pklFile is not None and jsonFile is None:
         storePickle = NodeStoragePickle(fileName=pklFile)
@@ -32,18 +50,21 @@ def loadTaxaTree(ncbiDumpFile=options.taxaNodesFile,
 def loadTaxaTreeNew(allNames=False):
     return loadTaxaTree(ncbiDumpFile=options.taxaNodesFileNew,
         ncbiNamesDumpFile=options.taxaNamesFileNew,
+        ncbiMergedDumpFile=option.taxaMergedFileNew,
         allNames=allNames)
 
 def loadTaxaTreeTest(allNames=False):
     return loadTaxaTree(ncbiDumpFile=options.taxaNodesFileTest,
         ncbiNamesDumpFile=options.taxaNamesFileTest,
+        ncbiMergedDumpFile=option.taxaMergedFileTest,
         allNames=allNames)
 
 def makeGiTaxBin(ncbiDumpFiles,outFile):
     """Create and save a pickled numpy gi->taxid index from a list of ncbi dump files.
     Typically, there are two dump files: one for nucleotide and another for protein sequences.
     This function checks that no GI is present in more than one file.
-    The resulting file can be loaded back into memory with loadGiTaxBin()."""
+    The resulting file can be loaded back into memory with loadGiTaxBin().
+    Unused array elements are set to 0"""
     dst = None
     for ncbiDumpFile in ncbiDumpFiles:
         inp = openCompressed(ncbiDumpFile,'r')
@@ -65,7 +86,9 @@ def makeGiTaxBin(ncbiDumpFiles,outFile):
             dst[src_ind] = src[src_ind]
     dumpObj(dst,outFile)
 
-def loadGiTaxBin(inFile=options.taxaPickled):
+def loadGiTaxBin(inFile=options.taxaPickled,ncbiTaxaDumpDir=None):
+    if ncbiTaxaDumpDir is not None:
+        inFile = getTaxaDumpFileNames(taxaDumpDir=ncbiTaxaDumpDir)["taxaPickled"]
     return loadObj(inFile)
 
 def loadGiTaxBinNew(inFile=options.taxaPickledNew):

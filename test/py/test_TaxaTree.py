@@ -13,8 +13,15 @@ from MGT.Config import options
 
 from time import time
 
+def test_merged(tree):
+    merged = tree.getMerged()
+    id_merged = merged.keys()[0]
+    node = tree.getNode(id_merged)
+    assert merged[id_merged] == node.id
+
 store = NodeStorageNcbiDump(ncbiDumpFile=options.taxaNodesFile,
-        ncbiNamesDumpFile=options.taxaNamesFile)
+        ncbiNamesDumpFile=options.taxaNamesFile,
+        ncbiMergedDumpFile=options.taxaMergedFile)
 
 print "Creating the tree from NCBI dump file"
 
@@ -43,6 +50,10 @@ else:
     
     print "DEBUG: Done in %s sec" % (time() - start)
 
+test_merged(taxaTree)
+
+
+#
 #storeOut = NodeStorageNewick(fileName="test_TaxaTree.newick",
 #    labeler=lambda n: "%s_%s_%s" % (n.name,n.rank,n.id))
 
@@ -78,6 +89,8 @@ taxaTreeJson = TaxaTree(storage=storeJson)
 print "DEBUG: Done in %s sec" % (time() - start)
 
 taxaTreeJson.reindex()
+
+test_merged(taxaTreeJson)
 
 ####### Pickle #########
 
