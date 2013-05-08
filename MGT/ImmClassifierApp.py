@@ -19,6 +19,7 @@ from MGT.ImmClassifierBench import *
 from MGT.ImmClassifierAppUtils import *
 from MGT.GraphicsKrona import *
 from MGT.ImmScoreRescaler import *
+from MGT.TaxaPred import TaxaPred
 
 import functools
 
@@ -41,9 +42,6 @@ def fastaReaderFilterNucDegen(fastaReader,extraFilter=None):
                         yield line
     return FastaReader(line_gen())
 
-class TaxaPred(Struct):
-    """Class to represent taxonomic predictions - one taxid per sample"""
-    pass
 
 class ImmClassifierApp(App):
     """App-derived class for building and using IMM-based taxonomic classifier in the spirit of Phymm.
@@ -257,6 +255,11 @@ class ImmClassifierApp(App):
             dest="outScoreComb",
             help="Output file for combined raw scores [--out-dir/combined.%s]"%(ImmApp.scoreSfx,)),
         
+            optParseMakeOption_Path(None, "--taxa-tree-ncbi-dir",
+            dest="taxaTreeNcbiDir",
+            help="Directory where standard NCBI taxonomy tree is saved as a set of NCBI 'dump' files. "+\
+                    "Mutually exclusive with --taxa-tree-pkl."),
+            
             optParseMakeOption_Path(None, "--taxa-tree-pkl",
             dest="taxaTreePkl",
             help="Custom taxonomy tree saved in JSON format. If not set, standard NCBI tree is used, "+\
@@ -524,7 +527,9 @@ class ImmClassifierApp(App):
         opt.setIfUndef("outScoreComb",pjoin(opt.outDir,"combined"+ImmApp.scoreSfx))
         opt.setIfUndef("predOutTaxa",pjoin(opt.predOutDir,"pred-taxa"))
         opt.setIfUndef("predOutTaxaCsv",opt.predOutTaxa+".csv")
+        opt.setIfUndef("predOutTaxaSummCsv",opt.predOutTaxa+".summ.csv")
         opt.setIfUndef("predOutDbSqlite",opt.predOutTaxa+".sqlite")
+        opt.setIfUndef("writeEachSampleSqlite",False)
         opt.setIfUndef("predOutStatsDir", pjoin(opt.predOutDir,"stats"))
         opt.setIfUndef("predOutStatsCsv", pjoin(opt.predOutStatsDir,"stats.csv"))
         opt.setIfUndef("predOutStatsPdf", pjoin(opt.predOutStatsDir,"stats.pdf"))
@@ -661,7 +666,8 @@ class ImmClassifierApp(App):
 
     def getTaxaTree(self):
         if self.taxaTree is None:
-            self.taxaTree = loadTaxaTree(jsonFile=self.opt.taxaTreePkl)
+            self.taxaTree = loadTaxaTree(ncbiTaxaDumpDir=self.opt.taxaTreeNcbiDir,
+                    jsonFile=self.opt.taxaTreePkl)
         return self.taxaTree
 
     def getTaxaLevels(self):
@@ -1324,12 +1330,6 @@ class ImmClassifierApp(App):
         indScores = scores.argsort(axis=1)[:,-1:-topScoreN-1:-1]
         return idImms[indScores]
 
-    def _getImmScores(self,reload=False):
-        if not hasattr(self,"immScores") or reload:
-            self.immScores = loadObj(self.opt.outScoreComb)
-            self.immScores.idImm = n.asarray(self.immScores.idImm,dtype=int)
-        return self.immScores
-
 
     def _normalizeScores(self,immScores,immScoresRnd):
         sc = immScores
@@ -1390,13 +1390,17 @@ class ImmClassifierApp(App):
         @param rndScoreComb File with ImmScores object for random query sequences
         @param predOutTaxa Output file with predicted taxa
         """
+        opt = self.opt
         sc = immScores.getData()
-        #assume idScore are taxids:
-        idScore = n.asarray(sc.idScore[:],dtype=int)
+        makeFilePath(opt.predOutTaxa)
+        pred = TaxaPred(opt.predOutTaxa,mode="w")
+        pred.init(idSamp=sc.idSamp,lenSamp=sc.lenSamp)
+        pr = pred.getData()
         kind = immScores.getKind()
         if kind == "ImmScoresReduced":
-            predTaxid = idScore
-            predScore = sc.score[:]
+            #implicit conversion into int
+            array_chunked_copy(sc.idScore,pr.predTaxid,chunk=2)
+            array_chunked_copy(sc.score,pr.predScore,chunk=2)
         elif kind == "ImmScoresDenseMatrix":
             #scRnd = loadObj(opt.rndScoreComb)
             #sc.score = self._normalizeScores(sc,scRnd)
@@ -1404,6 +1408,13 @@ class ImmClassifierApp(App):
             #sc.score = ((sc.score.T - sc.score.mean(1))/sc.score.std(1)).T
             #normalize to Z-score over entire matrix
             #sc.score = ((sc.score - sc.score.mean())/sc.score.std())
+            #Until we optimize chunk layout of the HDF5 score matrix
+            #(by using dataset copy method),
+            #we have to load the entire matrix into RAM, otherwise
+            #reading it by columns is extremely slow. Once this is
+            #optimized, simply remove [:] after sc.score. Better
+            #still, convert argmax to iteration to avoid creating
+            #argmax array.
             score = sc.score[:]
             #taxaTree = self.getTaxaTree()
             #taxaLevels = self.getTaxaLevels()
@@ -1420,11 +1431,12 @@ class ImmClassifierApp(App):
             #topTaxids = self._taxaTopScores(taxaTree,immScores=sc,topScoreN=10)
             argmaxSc = score.argmax(0)
             #maxSc = score.max(0)
-            predTaxid = idScore[argmaxSc]
-            predScore = score[argmaxSc,n.arange(score.shape[1])]
+            #Implicit conversion to int
+            pr.predTaxid[:] = sc.idScore[argmaxSc]
+            pr.predScore[:] = score[argmaxSc,n.arange(score.shape[1])]
         else:
             raise ValueError("Unknown kind of score object: %s" % (kind,))
-        return dict(predTaxid=predTaxid,predScore=predScore)
+        return pred
 
     def filterPredictions(self,immScores,predTaxid,**kw):
         """Generate taxonomic predictions from raw IMM scores.
@@ -1482,15 +1494,9 @@ class ImmClassifierApp(App):
         """
         opt = self.opt
         immScores = openImmScores(opt,fileName=opt.outScoreComb,mode="r")
-        scorePred = self.scoresToPredictions(immScores=immScores,**kw)
-        predTaxid = scorePred["predTaxid"]
-        predScore = scorePred["predScore"]
-        self.filterPredictions(immScores=immScores,predTaxid=predTaxid)
-        sc = immScores.getData()
-        pred = TaxaPred(idSamp=sc.idSamp[:],predTaxid=predTaxid,
-                predScore=predScore,lenSamp=sc.lenSamp[:])
-        makeFilePath(opt.predOutTaxa)
-        dumpObj(pred,opt.predOutTaxa)
+        pred = self.scoresToPredictions(immScores=immScores,**kw)
+        self.filterPredictions(immScores=immScores,predTaxid=pred.getData().predTaxid)
+        pred.close()
         self.exportPredictions()
         #todo: matrix of predhost idlevel's; batch imm.score() jobs; score hist;
 
@@ -1507,7 +1513,10 @@ class ImmClassifierApp(App):
         """
         opt = self.opt
         self._exportPredictions()
-        self._reExportPredictionsWithSql()
+        #if you need all individual predictions as SQL too, set the option to True
+        if opt.writeEachSampleSqlite:
+            self._loadPredictionsIntoSql(csvFile=opt.predOutTaxaCsv,isSumm=False)
+        self._loadPredictionsIntoSql(csvFile=opt.predOutTaxaSummCsv,isSumm=True)
         self.statsPred()
 
     def _buildCustomTaxidToRefTaxidMap(self,predOutTaxa):
@@ -1517,17 +1526,20 @@ class ImmClassifierApp(App):
         and returns a dict that maps custom taxonomic id generated
         here to assigned reference DB taxid"""
         opt = self.opt
-        taxaPred = loadObj(predOutTaxa)
+        pred = TaxaPred(predOutTaxa,mode="r")
+        taxaPred = pred.getData()
         custToRef = {}
         for idS,taxidRef,lenS in it.izip(taxaPred.idSamp,taxaPred.predTaxid,taxaPred.lenSamp):
             taxidCust = self._customTrainSeqIdToTaxid(idS)
             if taxidCust:
                 custToRef[taxidCust] = taxidRef
+        pred.close()
         return custToRef
 
     def _exportPredictions(self):
         opt = self.opt    
-        taxaPred = loadObj(opt.predOutTaxa)
+        pred = TaxaPred(opt.predOutTaxa,mode="r")
+        taxaPred = pred.getData()
         taxaTree = self.getTaxaTree()
         taxaLevels = self.getTaxaLevels()
         levNames = taxaLevels.getLevelNames("ascend")
@@ -1543,23 +1555,50 @@ class ImmClassifierApp(App):
         resc = ImmScoreRescaler(predScoreRescaleModel=opt.predScoreRescaleModel)
         krona = KronaWriter(taxaTree=taxaTree)
         krona.initCount()
-        flds = ["id","len","taxid","name","rank"]
+        flds = ["id","len","taxid","name","rank","weight"]
         for levName in levNames:
             if levName not in skipLevNames:
                 flds += ["taxid_"+levName,"name_"+levName,"score_"+levName]
         w = csv.DictWriter(out, fieldnames=flds, restval='null',dialect='excel-tab')
         w.writerow(dict([(fld,fld) for fld in flds]))
+        def _row_iter_2d(arr,n_col):
+            for row in arr:
+                yield row[:n_col]
+        def _row_iter_1d(arr):
+            for el in arr:
+                yield (el,)
         predPerSample = 1
         if predPerSample > 1:
-            predTaxidRows = taxaPred.topTaxid[:,:predPerSample]
-            predScoreRows = taxaPred.topScores[:,:predPerSample]
+            predTaxidRows = _row_iter_2d(taxaPred.topTaxid,predPerSample)
+            predScoreRows = _row_iter_2d(taxaPred.topScores,predPerSample)
         else:
-            predTaxidRows = taxaPred.predTaxid[:,n.newaxis]
-            predScoreRows = taxaPred.predScore[:,n.newaxis]
-        for idS,taxids,scores,lenS in it.izip(taxaPred.idSamp,predTaxidRows,
-                predScoreRows,taxaPred.lenSamp):
+            predTaxidRows = _row_iter_1d(taxaPred.predTaxid)
+            predScoreRows = _row_iter_1d(taxaPred.predScore)
+        if opt.sampAttrib:
+            sampAttribCsvFileInp = openCompressed(opt.sampAttrib,"r")
+            sampAttribCsv = csv.reader(sampAttribCsvFileInp,dialect="excel-tab")
+        else:
+            sampAttribCsvFileInp = None
+            sampAttribCsv = None
+        taxSumm = {}
+        predIter = it.izip(taxaPred.idSamp,predTaxidRows,
+                                predScoreRows,taxaPred.lenSamp)
+        if sampAttribCsv:
+            recIter = join_sorted_records_right_check(iter1=predIter,
+                    iter2=sampAttribCsv,
+                    key1=0,
+                    key2=0)
+        else:
+            recIter = it.izip(predIter,it.repeat(None))
+        for ((idS,taxids,scores,lenS),recAttr) in recIter:
             if lenS < opt.predMinLenSamp:
                 continue
+            if recAttr:
+                weight = float(recAttr[1])
+            else:
+                #if weight attribute is not provided, we use length of each sample
+                #as weight
+                weight = float(lenS)
             for (taxid,score) in it.izip(taxids,scores):
                 row = dict(id=idS,len=lenS)
                 if transTaxaMap:
@@ -1589,9 +1628,39 @@ class ImmClassifierApp(App):
                                 scoresResc[levNode.id] = scoreResc
                                 row["score_"+levName] = scoreResc
                 row["taxid"] = taxid
+                row["weight"] = weight
                 w.writerow(row)
-                krona.addSample( (idS,taxid,lenS,scoresResc) )
+                krona.addSample( (idS,taxid,weight,scoresResc) )
+                #aggregate into taxa summary table
+                if not taxid in taxSumm:
+                    rec = dict(row)
+                    rec["cnt"] = 1
+                    taxSumm[taxid] = rec
+                else:
+                    rec = taxSumm[taxid]
+                    rec["cnt"] += 1
+                    rec["weight"] += row["weight"]
+                    rec["len"] += row["len"]
+                    for fld_name in rec.keys():
+                        if fld_name.startswith("score_"):
+                            rec[fld_name] += row[fld_name]
         out.close()
+        pred.close()
+        if sampAttribCsvFileInp:
+            sampAttribCsvFileInp.close()
+        #dump taxa summary table into CSV file
+        makeFilePath(opt.predOutTaxaSummCsv)
+        out = openCompressed(opt.predOutTaxaSummCsv,"w")
+        flds.append("cnt")
+        w = csv.DictWriter(out, fieldnames=flds, restval='null',dialect='excel-tab')
+        w.writerow(dict([(fld,fld) for fld in flds]))
+        for taxid,rec in sorted(taxSumm.items()):
+            for fld_name in rec.keys():
+                if fld_name.startswith("score_"):
+                    rec[fld_name] /= rec["cnt"]
+            w.writerow(rec)
+        out.close()
+        #finalize and write Krona file
         krona.finishCount()
         if not opt.isUndef("predOutStatsKronaEmbed"):
             #abspath(join(a,b)) works correctly even when b=='/c'
@@ -1605,75 +1674,52 @@ class ImmClassifierApp(App):
                     )
         krona.write(htmlOut=opt.predOutStatsHtml,kronaUrl=opt.predOutStatsKronaUrl)
         
-    def _reExportPredictionsWithSql(self):
+    def _loadPredictionsIntoSql(self,csvFile,isSumm=True):
         opt = self.opt    
         taxaLevels = self.getTaxaLevels()
         levNames = [ lev for lev in taxaLevels.getLevelNames("ascend") \
                 if lev not in self.skipLevNamesInPredOut ]
         fieldsMap={"len":SqlField(type="integer")}
+        if isSumm:
+            fieldsMap["cnt"] = SqlField(type="integer")
+            indices = {"names":("cnt","taxid","name","len")}
+            tblName = "scaff_pred_summ"
+        else:
+            indices = {"names":("id","taxid","name","len")}
+            tblName = "scaff_pred"
         for levName in levNames:
             fieldsMap["score_"+levName] = SqlField(type="real")
         makeFilePath(opt.predOutDbSqlite)
         db = DbSqlLite(dbpath=opt.predOutDbSqlite,strategy="exclusive_unsafe")
-        db.createTableFromCsv(name="scaff_pred_1",
-                csvFile=opt.predOutTaxaCsv,
+        db.createTableFromCsv(name=tblName,
+                csvFile=csvFile,
                 hasHeader=True,
                 fieldsMap=fieldsMap,
-                indices={"names":("id",)})
-
-        if opt.sampAttrib:
-            db.createTableFromCsv(name="scaff_attr",
-                    csvFile=opt.sampAttrib,
-                    hasHeader=False,
-                    fieldsMap={0:SqlField(name="id"),
-                        1:SqlField(name="weight",type="real")},
-                    indices={"names":("id",)})
-        else:
-            db.createTableAs("scaff_attr",
-                    """\
-                    select distinct id,1.0 as weight
-                    from scaff_pred_1""",
-                    indices={"names":("id",)})
-        #make sure all samples can be matched up with attribute records
-        db.executeAndAssertZero(\
-                """select count(*) from scaff_pred_1 a
-                where a.id not in (select id from scaff_attr)
-                limit 1
-                """,
-                message="Some samples do not have matching sample attribute records - "+\
-                        "check your --inp-seq-attrib file - it has to be strictly tab-delimited "+\
-                        "with no extra spaces around fields.")
-        sql = \
-                """select a.*,b.weight as weight
-                from scaff_pred_1 a, scaff_attr b
-                where a.id = b.id
-                """
-        db.createTableAs("scaff_pred",sql,indices={"names":("id","taxid","name","len")})
-        db.exportAsCsv("select * from scaff_pred",
-            opt.predOutTaxaCsv,
-            comment=None,
-            sqlAsComment=False)
+                indices=indices)
         db.close()
 
     def _sqlReport(self,db,dbTable,levName,outCsv=None):
         if levName:
             fldGrp = "name_"+levName
             fldScore = "score_"+levName
+            fldTaxid = "taxid_"+levName
         else:
             fldGrp = "name"
             fldScore = 0
+            fldTaxid = "taxid"
         dbTableRep = dbTable+"_grp_"+levName
         sql = """\
                 select %(fldGrp)s as clade,
+                %(fldTaxid)s as taxid,
                 sum(weight) as sum_weight,
-                count(*) as cnt_samp,
+                sum(cnt) as cnt_samp,
                 sum(len) as len_samp,
-                avg(len) as avg_len_samp,
-                avg(%(fldScore)s) as avg_score
+                sum(len)/sum(cnt) as avg_len_samp,
+                sum(%(fldScore)s*cnt)/sum(cnt) as avg_score
                 from %(dbTable)s
                 group by %(fldGrp)s
                 order by len_samp desc
-        """ % dict(fldGrp=fldGrp,fldScore=fldScore,dbTable=dbTable)
+        """ % dict(fldGrp=fldGrp,fldScore=fldScore,fldTaxid=fldTaxid,dbTable=dbTable)
         db.createTableAs(dbTableRep,sql)
         if outCsv:
             comment = "Count of assignments grouped by %s" % \
@@ -1717,14 +1763,9 @@ class ImmClassifierApp(App):
         from matplotlib.backends.backend_pdf import PdfPages
         outBackend = PdfPages(opt.predOutStatsPdf)
         sqlAsComment = True
-        sqlpar = dict(lenMin = opt.predMinLenSamp)
-        db.ddl("""\
-                create temporary view scaff_pred_filt as 
-                select * from scaff_pred 
-                where len >= %(lenMin)s""" % sqlpar)
         for levName in levNames+[""]: #"" is for lowest clade
-            dbTableRep = self._sqlReport(db=db,dbTable="scaff_pred_filt",levName=levName,outCsv=outCsv)
-            self._graphicsReport(db=db,dbTableRep=dbTableRep,levName=levName,fldRep="len_samp",
+            dbTableRep = self._sqlReport(db=db,dbTable="scaff_pred_summ",levName=levName,outCsv=outCsv)
+            self._graphicsReport(db=db,dbTableRep=dbTableRep,levName=levName,fldRep="sum_weight",
                     outBackend=outBackend,maxClades=20)
         outCsv.close()
         outBackend.close()
