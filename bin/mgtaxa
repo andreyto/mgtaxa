@@ -1,0 +1,23 @@
+#!/bin/bash
+set -e
+
+MGT_HOME=$(cd $(dirname $0)/.. && pwd)
+. $MGT_HOME/etc/mgtaxa.shrc
+
+mgt_cmd=$1
+
+[ -n "$mgt_cmd" ] || die "Provide a path to MGTAXA command and possibly arguments.
+The path should be relative to MGT_HOME location.
+
+Examples:
+mgtaxa MGT/ImmClassifierApp.py --out-dir . --mode predict ...
+mgtaxa bin/gi_taxonomy.py --out-dir . --gi-list my_list.csv
+
+'mgtaxa' is a shell wrapper scripts that sets up necessary
+environment variables and then calls the provided command."
+
+shift
+#arguments need to be quoted otherwise those with spaces
+#inside (like --lrm-user-options "-P 1111" will ge busted
+exec python $MGT_HOME/$mgt_cmd "$@"
+
