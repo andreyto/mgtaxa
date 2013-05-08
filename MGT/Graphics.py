@@ -151,75 +151,75 @@ def barHorizArea(data,xLabel,yLabel,outBackend):
     #import here in case we want to set backend in the calling code,
     #which has to be done before importing pylab
     import pylab as pl
-    labels = [ row[0] for row in data ]
-    y = n.asarray([ row[1] for row in data ],dtype='f4')
-
-    o = n.zeros(len(y),dtype='f4')
-    area=y
-    # Because we use horizontal bars, width and height roles are reversed
-    width=n.sqrt(area)
-    left=n.roll(n.add.accumulate(n.maximum(width,20)),1)
-    left[0]=0
-    left += n.arange(len(width))*10
-    height=n.sqrt(area)
-    bottom=o.copy()
-    bottom[:]=0
     fig = pl.figure(figsize=(4, 5), dpi=600)
-    #fig.subplots_adjust(right=0.5)
-    ax = fig.add_subplot(111)
-    recs = ax.bar(left=bottom,height=width,width=height,bottom=left,orientation='horizontal',color="cyan")
-    txts = []
-    min_bar_wid = height.min()
-    txt_to_bar_dist = min_bar_wid*0.3
-    for (rec,lab) in zip(recs,labels):
-        txts.append(ax.text(rec.get_x()+rec.get_width()+txt_to_bar_dist,rec.get_y(),lab.upper(),ha='left', va='bottom',size=7,family="sans-serif",variant="small-caps"))
-        #txts[-1].set_stretch("semi-expanded")
-        #txts.append(ax.text(1.1*(rec.get_x()+rec.get_width()),rec.get_y(),lab.upper(),ha='left', va='bottom',size="x-small"))
-    #hide vertical ticks and lines - they have no meaning
-    pl.setp(ax.get_yticklabels(),visible=False)
-    pl.setp(ax.get_yticklines(),visible=False)
-    # run through all lines drawn for xticks
-    for i, line in enumerate(ax.get_xticklines()):
-        if i%2 == 1:   # odd indices
-            line.set_visible(False)
-    ax.set_xlabel(xLabel)
-    ax.set_ylabel(yLabel)
-    state = dict(chLab=False)
+    if len(data):
+        labels = [ row[0] for row in data ]
+        y = n.asarray([ row[1] for row in data ],dtype='f4')
+        o = n.zeros(len(y),dtype='f4')
+        area=y
+        # Because we use horizontal bars, width and height roles are reversed
+        width=n.sqrt(area)
+        left=n.roll(n.add.accumulate(n.maximum(width,20)),1)
+        left[0]=0
+        left += n.arange(len(width))*10
+        height=n.sqrt(area)
+        bottom=o.copy()
+        bottom[:]=0
+        #fig.subplots_adjust(right=0.5)
+        ax = fig.add_subplot(111)
+        recs = ax.bar(left=bottom,height=width,width=height,bottom=left,orientation='horizontal',color="cyan")
+        txts = []
+        min_bar_wid = height.min()
+        txt_to_bar_dist = min_bar_wid*0.3
+        for (rec,lab) in zip(recs,labels):
+            txts.append(ax.text(rec.get_x()+rec.get_width()+txt_to_bar_dist,rec.get_y(),lab.upper(),ha='left', va='bottom',size=7,family="sans-serif",variant="small-caps"))
+            #txts[-1].set_stretch("semi-expanded")
+            #txts.append(ax.text(1.1*(rec.get_x()+rec.get_width()),rec.get_y(),lab.upper(),ha='left', va='bottom',size="x-small"))
+        #hide vertical ticks and lines - they have no meaning
+        pl.setp(ax.get_yticklabels(),visible=False)
+        pl.setp(ax.get_yticklines(),visible=False)
+        # run through all lines drawn for xticks
+        for i, line in enumerate(ax.get_xticklines()):
+            if i%2 == 1:   # odd indices
+                line.set_visible(False)
+        ax.set_xlabel(xLabel)
+        ax.set_ylabel(yLabel)
+        state = dict(chLab=False)
 
-    def on_draw(event):
-        if not state["chLab"]:
-            #make x labels to reflect the area of bars instead of their linear size
-            ax.set_xticklabels([ float(x.get_text())**2 for x in ax.get_xticklabels() ],size="xx-small")
-            state["chLab"] = True
-        for (rec,txt,irec) in zip(recs,txts,xrange(len(recs))):
-            bbox = txt.get_window_extent()
-            # the figure transform goes from relative coords->pixels and we
-            # want the inverse of that
-            bboxi = bbox.inverse_transformed(fig.transFigure)
+        def on_draw(event):
+            if not state["chLab"]:
+                #make x labels to reflect the area of bars instead of their linear size
+                ax.set_xticklabels([ float(x.get_text())**2 for x in ax.get_xticklabels() ],size="xx-small")
+                state["chLab"] = True
+            for (rec,txt,irec) in zip(recs,txts,xrange(len(recs))):
+                bbox = txt.get_window_extent()
+                # the figure transform goes from relative coords->pixels and we
+                # want the inverse of that
+                bboxi = bbox.inverse_transformed(fig.transFigure)
 
-            #print str(bboxi)
-            #t_x1,t_y1 = t.get_position()
-            #x_lim = ax.get_xlim()
-            if bboxi.xmax > 1 or irec == 1:
-                txt.set_x(rec.get_x()+rec.get_width()-txt_to_bar_dist)
-                txt.set_y(rec.get_y()+rec.get_height()*0.1)
-                txt.set_ha("right")
-                #txt.set_color("green")
-        #fig.canvas.draw()
-        #return False
+                #print str(bboxi)
+                #t_x1,t_y1 = t.get_position()
+                #x_lim = ax.get_xlim()
+                if bboxi.xmax > 1 or irec == 1:
+                    txt.set_x(rec.get_x()+rec.get_width()-txt_to_bar_dist)
+                    txt.set_y(rec.get_y()+rec.get_height()*0.1)
+                    txt.set_ha("right")
+                    #txt.set_color("green")
+            #fig.canvas.draw()
+            #return False
 
 
-    #title('Clade counts', bbox={'facecolor':'0.8', 'pad':5})
+        #title('Clade counts', bbox={'facecolor':'0.8', 'pad':5})
 
-    # We need to get the bounding box of the text element to move it if
-    # it is outside the axes border. This is
-    # only possible when the drawing backend is already active. Therefore,
-    # that processing will be done inside the 'draw' event hadler.
-    fig.canvas.mpl_connect('draw_event', on_draw)
-    #pl.show()
-    #this makes visible changes made by on_draw() event handler
-    #we cannot call it from on_draw() because it would cause infinite recursion
-    fig.canvas.draw()
+        # We need to get the bounding box of the text element to move it if
+        # it is outside the axes border. This is
+        # only possible when the drawing backend is already active. Therefore,
+        # that processing will be done inside the 'draw' event hadler.
+        fig.canvas.mpl_connect('draw_event', on_draw)
+        #pl.show()
+        #this makes visible changes made by on_draw() event handler
+        #we cannot call it from on_draw() because it would cause infinite recursion
+        fig.canvas.draw()
     outBackend.savefig(figure=fig)
 
 def barHorizArea2(data,xLabel,yLabel,outPrefix):
@@ -247,93 +247,93 @@ def barHorizArea2(data,xLabel,yLabel,outPrefix):
         y.append(_y2)
     y = n.asarray(y,dtype=float)
     group = n.asarray(group,dtype=int)
-
-    o = n.zeros(len(y),dtype='f4')
-    area=y
-    # Because we use horizontal bars, width and height roles are reversed
-    width=n.sqrt(area)
-    #TMP:
-    left=n.roll(n.add.accumulate(n.maximum(width,20)),1)
-    #left=n.roll(n.add.accumulate(n.maximum(width,1)),1)
-    left[0]=0
-    left += 40
-    #add empty padding between bars
-    left += n.arange(len(width)) *10
-    left += group*20
-    height=n.sqrt(area)
-    bottom=o.copy()
-    bottom[:]=0
     fig = pl.figure(figsize=(4, 5), dpi=600) # 150
-    #fig.subplots_adjust(right=0.5)
-    ax = fig.add_subplot(111)
-    recs = ax.bar(left=bottom,height=width,width=height,bottom=left,orientation='horizontal',color=color)
-    txts = []
-    min_bar_wid = height.min()
-    #TMP:
-    #txt_to_bar_dist = min_bar_wid*0.3
-    txt_to_bar_dist = max(min_bar_wid*0.3,3)
-    for group_start in xrange(0,len(recs),2):
-        lab = labels[group_start]
-        txt_x = max([ (rec.get_x()+rec.get_width()+txt_to_bar_dist) for rec in
-            recs[group_start:group_start+2] ])
-        if y[group_start] == 0:
-            txt_y = recs[group_start+1].get_y()
-        elif y[group_start+1] == 0:
-            txt_y = recs[group_start].get_y()
-        else:
+    if len(y):
+        o = n.zeros(len(y),dtype='f4')
+        area=y
+        # Because we use horizontal bars, width and height roles are reversed
+        width=n.sqrt(area)
+        #TMP:
+        left=n.roll(n.add.accumulate(n.maximum(width,20)),1)
+        #left=n.roll(n.add.accumulate(n.maximum(width,1)),1)
+        left[0]=0
+        left += 40
+        #add empty padding between bars
+        left += n.arange(len(width)) *10
+        left += group*20
+        height=n.sqrt(area)
+        bottom=o.copy()
+        bottom[:]=0
+        #fig.subplots_adjust(right=0.5)
+        ax = fig.add_subplot(111)
+        recs = ax.bar(left=bottom,height=width,width=height,bottom=left,orientation='horizontal',color=color)
+        txts = []
+        min_bar_wid = height.min()
+        #TMP:
+        #txt_to_bar_dist = min_bar_wid*0.3
+        txt_to_bar_dist = max(min_bar_wid*0.3,3)
+        for group_start in xrange(0,len(recs),2):
+            lab = labels[group_start]
+            txt_x = max([ (rec.get_x()+rec.get_width()+txt_to_bar_dist) for rec in
+                recs[group_start:group_start+2] ])
+            if y[group_start] == 0:
+                txt_y = recs[group_start+1].get_y()
+            elif y[group_start+1] == 0:
+                txt_y = recs[group_start].get_y()
+            else:
+                txt_y = (recs[group_start].get_y() + recs[group_start+1].get_y())/2.
             txt_y = (recs[group_start].get_y() + recs[group_start+1].get_y())/2.
-        txt_y = (recs[group_start].get_y() + recs[group_start+1].get_y())/2.
-        txts.append(ax.text(txt_x,txt_y,lab,ha='left', va='bottom',size=7,family="sans-serif",variant="small-caps"))
-        txt_y = recs[group_start+1].get_y()
-        txts.append(ax.text(txt_x,txt_y,"",ha='left', va='bottom',size=7,family="sans-serif",variant="small-caps"))
-        #txts[-1].set_stretch("semi-expanded")
-        #txts.append(ax.text(1.1*(rec.get_x()+rec.get_width()),rec.get_y(),lab.upper(),ha='left', va='bottom',size="x-small"))
-    #hide vertical ticks - they have no meaning
-    pl.setp(ax.get_yticklabels(), visible=False)
-    # run through all lines drawn for xticks
-    for i, line in enumerate(ax.get_xticklines()):
-        if i%2 == 1:   # odd indices
-            line.set_visible(False)
-    pl.setp(ax.get_yticklines(),visible=False)
-    ax.set_xlabel(xLabel)
-    ax.set_ylabel(yLabel)
-    state = dict(chLab=False)
+            txts.append(ax.text(txt_x,txt_y,lab,ha='left', va='bottom',size=7,family="sans-serif",variant="small-caps"))
+            txt_y = recs[group_start+1].get_y()
+            txts.append(ax.text(txt_x,txt_y,"",ha='left', va='bottom',size=7,family="sans-serif",variant="small-caps"))
+            #txts[-1].set_stretch("semi-expanded")
+            #txts.append(ax.text(1.1*(rec.get_x()+rec.get_width()),rec.get_y(),lab.upper(),ha='left', va='bottom',size="x-small"))
+        #hide vertical ticks - they have no meaning
+        pl.setp(ax.get_yticklabels(), visible=False)
+        # run through all lines drawn for xticks
+        for i, line in enumerate(ax.get_xticklines()):
+            if i%2 == 1:   # odd indices
+                line.set_visible(False)
+        pl.setp(ax.get_yticklines(),visible=False)
+        ax.set_xlabel(xLabel)
+        ax.set_ylabel(yLabel)
+        state = dict(chLab=False)
 
-    def on_draw(event):
-        if not state["chLab"]:
-            #make x labels to reflect the area of bars instead of their linear size
-            ax.set_xticklabels([ int(float(x.get_text())**2) for x in ax.get_xticklabels() ],size="xx-small")
-            state["chLab"] = True
-        for (rec,txt,irec) in zip(recs,txts,xrange(len(recs))):
-            bbox = txt.get_window_extent()
-            # the figure transform goes from relative coords->pixels and we
-            # want the inverse of that
-            bboxi = bbox.inverse_transformed(fig.transFigure)
+        def on_draw(event):
+            if not state["chLab"]:
+                #make x labels to reflect the area of bars instead of their linear size
+                ax.set_xticklabels([ int(float(x.get_text())**2) for x in ax.get_xticklabels() ],size="xx-small")
+                state["chLab"] = True
+            for (rec,txt,irec) in zip(recs,txts,xrange(len(recs))):
+                bbox = txt.get_window_extent()
+                # the figure transform goes from relative coords->pixels and we
+                # want the inverse of that
+                bboxi = bbox.inverse_transformed(fig.transFigure)
 
-            #print str(bboxi)
-            #t_x1,t_y1 = t.get_position()
-            #x_lim = ax.get_xlim()
-            if bboxi.xmax > 0.90:
-                txt.set_x(txt.get_position()[0]/2)
-                #txt.set_x(rec.get_x()+rec.get_width()-txt_to_bar_dist)
-                #txt.set_y(rec.get_y()+rec.get_height()*0.1)
-                #txt.set_ha("right")
-                #txt.set_color("white")
-        #fig.canvas.draw()
-        #return False
+                #print str(bboxi)
+                #t_x1,t_y1 = t.get_position()
+                #x_lim = ax.get_xlim()
+                if bboxi.xmax > 0.90:
+                    txt.set_x(txt.get_position()[0]/2)
+                    #txt.set_x(rec.get_x()+rec.get_width()-txt_to_bar_dist)
+                    #txt.set_y(rec.get_y()+rec.get_height()*0.1)
+                    #txt.set_ha("right")
+                    #txt.set_color("white")
+            #fig.canvas.draw()
+            #return False
 
 
-    #title('Clade counts', bbox={'facecolor':'0.8', 'pad':5})
+        #title('Clade counts', bbox={'facecolor':'0.8', 'pad':5})
 
-    # We need to get the bounding box of the text element to move it if
-    # it is outside the axes border. This is
-    # only possible when the drawing backend is already active. Therefore,
-    # that processing will be done inside the 'draw' event hadler.
-    fig.canvas.mpl_connect('draw_event', on_draw)
-    pl.show()
-    #this makes visible changes made by on_draw() event handler
-    #we cannot call it from on_draw() because it would cause infinite recursion
-    fig.canvas.draw()
+        # We need to get the bounding box of the text element to move it if
+        # it is outside the axes border. This is
+        # only possible when the drawing backend is already active. Therefore,
+        # that processing will be done inside the 'draw' event hadler.
+        fig.canvas.mpl_connect('draw_event', on_draw)
+        pl.show()
+        #this makes visible changes made by on_draw() event handler
+        #we cannot call it from on_draw() because it would cause infinite recursion
+        fig.canvas.draw()
     for format in ("png",):
         fig.savefig("%s.%s" % (outPrefix,format),format=format,dpi=600)
 
