@@ -49,7 +49,7 @@ class GFF3Attributes(dict):
             quote_val = self.quote_val_url
         else:
             quote_val = self.quote_val_re
-        return ';'.join(( "%s=%s" % (tag, quote_val(value) if isinstance(value,str) or \
+        return ';'.join(( "%s=%s" % (tag, quote_val(value) if isinstance(value,basestring) or \
                 not hasattr(value,"__len__") else ','.join( (quote_val(x) for x in value) )) for \
                 (tag,value) in sorted(self.items())))
 
