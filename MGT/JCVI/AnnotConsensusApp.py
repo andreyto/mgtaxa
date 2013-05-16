@@ -1,4 +1,5 @@
 from MGT.JCVI.MgxAnnotFormat import *
+from MGT.JCVI.MgxAnnotFormatApisJSON import *
 from MGT.GFF import GFF3Record, GFF3Attributes, GFF3Header
 from MGT.GFFTools import GFF3Graphics
 from MGT.Taxa import *
@@ -557,6 +558,7 @@ APIS records that do not provide any taxonomic ID are treated as unassigned and 
             csvRec["recType"] = outRecType
             csvRec["bott_rank"] = botNode.linn_level if botNode else None
             csvRec["bott_name"] = botNode.name if botNode else None
+            csvRec["bott_taxid"] = botNode.id if botNode else None
             levNames = taxaLevels.getLevelNames("ascend")
             if botNode:
                 linFixed = taxaLevels.lineageFixedList(botNode,format="node")
@@ -564,8 +566,9 @@ APIS records that do not provide any taxonomic ID are treated as unassigned and 
                 linFixed = [None]*len(levNames)
             for lev,node in zip(levNames,linFixed):
                 csvRec[lev] = node.name if node else None
+                csvRec[lev+'_taxid'] = node.id if node else None
             for item in sorted(recRest.items()):
-                if isinstance(item[1],str) or not hasattr(item[1],"__len__"):
+                if isinstance(item[1],basestring) or not hasattr(item[1],"__len__"):
                     csvRec[item[0]] = item[1]
             outRec = []
             for x in csvRec.items():
@@ -617,25 +620,23 @@ memory = Memory(cachedir="cache.tmp", verbose=0)
 def loadLengthsFromFasta(inpContigs):
     return fastaLengths(inpContigs)
 
-if __name__ == '__main__':
-    apisAnnot,inpAnnot,inpPep,inpContigs,predTaxa,predMinLenSamp,outDir,taskOffset,taskStride = sys.argv[1:]
-    if apisAnnot == "None":
-        apisAnnot = None
-    if inpAnnot == "None":
-        inpAnnot = None
-    if inpPep == "None":
-        inpPep = None
-    if inpContigs == "None":
-        inpContigs = None
-    if predTaxa == "None":
-        predTaxa = None
-    if taskOffset == "None":
-        taskOffset = None
-    else:
+def classify(apisAnnot=None,
+        inpAnnot=None,
+        inpPep=None,
+        inpContigs=None,
+        predTaxa=None,
+        predMinLenSamp=1,
+        gffMinLenSamp=5000,
+        outDir=None,
+        taskOffset=None,
+        taskStride=1):
+    args = locals()
+    if outDir is None:
+        outDir=os.path.abspath("results")
+    if taskOffset is not None:
         taskOffset = int(taskOffset)
     #taskStride is # of jobs
     taskStride = int(taskStride)
-    gffMinLenSamp = 5000
     assert not os.path.exists(outDir),("I cannot append to pre-existing output directory: %s. " + \
             "Remove the directory first if you want to start from scratch.") \
             % (outDir,)
@@ -654,9 +655,13 @@ if __name__ == '__main__':
             outDirT = "%s.%000i" % (outDir,iT)
             targ = pjoin(outDirT,"ok")
             dep = ""
-            args = " ".join(sys.argv[1:-3])
-            args = "%s %s %s %s" % (args,outDirT,iT,taskStride)
-            cmd = "python %s %s" % (sys.argv[0],args)
+            args["outDir"] = outDirT
+            args["taskOffset"] = iT
+            args["taskStride"] = taskStride
+            argsStr = " ".join(["--{0} {1}".format(key,val) \
+                    for (key,val) in args.items() \
+                    if val is not None])
+            cmd = ". {0} && python {1} classify {2}".format(os.environ["MGT_RC"],sys.argv[0],argsStr)
             mkf.write("%s:%s\n\t%s\n" % (targ,dep,cmd))
         mkf.close()
     else:
@@ -701,4 +706,17 @@ if __name__ == '__main__':
             rmf(mkfFileName)
             gffWriter.graphics(gdFormat="pdf",mkfFileName=mkfFileName)
             gffWriter.graphics(gdFormat="png",mkfFileName=mkfFileName)
+
+
+def sort_apis(apisAnnotInp,apisAnnotOut,inpPep=None,dropTreeAttrib=True):
+    ApisAnnotReader.sortInPepOrder(apisAnnotInp,apisAnnotOut,inpPep=inpPep,dropTreeAttrib=dropTreeAttrib)
+
+def main():
+    from argh import ArghParser
+    parser = ArghParser()
+    parser.add_commands([classify,sort_apis])
+    parser.dispatch()
+
+if __name__ == '__main__':
+    main()
 
