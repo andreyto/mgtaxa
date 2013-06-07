@@ -17,7 +17,7 @@ def array_chunked_copy(src,dst,chunk):
     dst[:] = src. It requires intermediate conversion into 
     numpy array. If datasets are large, dst[:] = src[:]
     will use a lot of RAM. The method implemented here will be both fast
-    and memory conserving of chunk parameter is selected properly.
+    and memory conserving if chunk parameter is selected properly.
     Alternative approach of using node.copy() is not appropriate when
     implicit element type conversion is expected to happen during 
     assignment.
