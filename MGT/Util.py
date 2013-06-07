@@ -1398,3 +1398,12 @@ def copytree_ext(src, dst, symlinks=False, ignore=None, copy_stats=True):
     if errors:
         raise Error, errors
 
+class null_file:
+    """File-like object that does nothing"""
+    
+    def write(self,s):
+        pass
+
+    def close(self):
+        pass
+
