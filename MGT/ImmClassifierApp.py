@@ -381,6 +381,14 @@ class ImmClassifierApp(App):
                     "and assign taxonomy using all models; 'taxa-vir' will assume a "+\
                     "viral sample and use only viral models to make predictions."),
             
+            make_option(None, "--skip-pred-out-taxa-csv",
+            action="store",
+            type="int",
+            default=0,
+            dest="skipPredOutTaxaCsv",
+            help="If set to non-zero, --pred-out-taxa-csv file will not be produced - "+\
+                    "useful when you only want the summary stats"),
+            
             make_option(None, "--incremental-work",
             action="store",
             type="int",
@@ -1394,13 +1402,13 @@ class ImmClassifierApp(App):
         sc = immScores.getData()
         makeFilePath(opt.predOutTaxa)
         pred = TaxaPred(opt.predOutTaxa,mode="w")
-        pred.init(idSamp=sc.idSamp,lenSamp=sc.lenSamp)
+        pred.initFromSamp(idSamp=sc.idSamp,lenSamp=sc.lenSamp)
         pr = pred.getData()
         kind = immScores.getKind()
         if kind == "ImmScoresReduced":
             #implicit conversion into int
-            array_chunked_copy(sc.idScore,pr.predTaxid,chunk=2)
-            array_chunked_copy(sc.score,pr.predScore,chunk=2)
+            array_chunked_copy(sc.idScore,pr.predTaxid,chunk=10**6)
+            array_chunked_copy(sc.score,pr.predScore,chunk=10**6)
         elif kind == "ImmScoresDenseMatrix":
             #scRnd = loadObj(opt.rndScoreComb)
             #sc.score = self._normalizeScores(sc,scRnd)
@@ -1549,8 +1557,11 @@ class ImmClassifierApp(App):
             transTaxaMap = self._buildCustomTaxidToRefTaxidMap(opt.transPredOutTaxa)
         else:
             transTaxaMap = None
-        makeFilePath(opt.predOutTaxaCsv)
-        out = openCompressed(opt.predOutTaxaCsv,"w")
+        if not opt.skipPredOutTaxaCsv:
+            makeFilePath(opt.predOutTaxaCsv)
+            out = openCompressed(opt.predOutTaxaCsv,"w")
+        else:
+            out = null_file()
         makeFilePath(opt.predOutStatsHtml)
         resc = ImmScoreRescaler(predScoreRescaleModel=opt.predScoreRescaleModel)
         krona = KronaWriter(taxaTree=taxaTree)
