@@ -7,6 +7,8 @@ from MGT.ImmClassifierApp import ImmClassifierApp
 def gi_list_to_taxa_pred(gi_list,gi_format,ncbi_taxonomy_dir,pred_out_taxa):
     import re
     re_gi = re.compile(r"[^\t]+\t[^\t]*\bgi\|([0-9]+\b)")
+    if ncbi_taxonomy_dir:
+        ncbi_taxonomy_dir = os.path.abspath(ncbi_taxonomy_dir)
     giToTaxa = loadGiTaxBin(ncbiTaxaDumpDir=ncbi_taxonomy_dir)
     inp = openCompressed(gi_list,"r")
     if gi_format == "ncbi_pipes":
@@ -107,15 +109,82 @@ def gi_list_to_taxa_pred(gi_list,gi_format,ncbi_taxonomy_dir,pred_out_taxa):
 
     print "Read {0} input records. Taxid not found for {1} records".format(i_samp,n_unresolved)
 
+def annot_cons_to_taxa_pred(annot_cons,rec_type,min_len_samp,pred_out_taxa):
+    
+    makeFilePath(pred_out_taxa)
 
-def gi_taxonomy(gi_list,out_dir="results",gi_format="ncbi_pipes_blast_m8",ncbi_taxonomy_dir=None):
-    import time
+    pred = TaxaPred(pred_out_taxa,mode="w")
+    pred.initForAppend(expectedrows=10**6)
+    data = pred.getData()
+
+    idSamp = []
+    lenSamp = []
+    predTaxid = []
+    predScore = []
+    i_samp_batch = 0
+
+    flush_buff_size = 10**5
+
+    inp = openCompressed(annot_cons,"r")
+
+    for i_samp,line in enumerate(inp):
+        words = line.rstrip("\n").split("\t")
+        rec = dict(it.izip(words[::2],words[1::2]))
+        
+        rec_len_samp = int(rec.get("lenSamp",0))
+
+        if not ( rec_len_samp  >= min_len_samp and \
+                rec.get("recType","") == rec_type ):
+            continue
+        taxid = rec["bott_taxid"]
+        if taxid:
+            taxid = int(taxid)
+        else:
+            taxid = rejTaxid
+            #print "DEBUG: empty taxid in rec: {0}".format(str(rec))
+        idSamp.append(rec["idSamp"])
+        lenSamp.append(rec_len_samp)
+        predTaxid.append(taxid)
+        predScore.append(float(rec.get("score",rec.get("conf_x",1.))))
+        
+        i_samp_batch += 1
+        
+            
+        if i_samp % flush_buff_size == 0:
+            print "Read {0} input records.".format(i_samp)
+            data.idSamp.append(idSamp)
+            data.lenSamp.append(lenSamp)
+            data.predTaxid.append(predTaxid)
+            data.predScore.append(predScore)
+            idSamp = []
+            lenSamp = []
+            predTaxid = []
+            predScore = []
+            i_samp_batch = 0
+            pred.flush()
+    
+    
+    data.idSamp.append(idSamp)
+    data.lenSamp.append(lenSamp)
+    data.predTaxid.append(predTaxid)
+    data.predScore.append(predScore)
+    idSamp = []
+    lenSamp = []
+    predTaxid = []
+    predScore = []
+    i_samp_batch = 0
+    pred.flush()
+
+    pred.close()
+    inp.close()
+
+    print "Read {0} input records.".format(i_samp)
+
+def taxonomy_report(pred_out_taxa,out_dir="results",ncbi_taxonomy_dir=None):
+    pred_out_taxa = os.path.abspath(pred_out_taxa)
     out_dir = os.path.abspath(out_dir)
-    pred_out_taxa=pjoin(out_dir,"taxa_samp")
-    start_time = time.time()  
-    gi_list_to_taxa_pred(gi_list,gi_format,ncbi_taxonomy_dir,pred_out_taxa)
-    end_time = time.time()
-    print "DEBUG: loaded hit list in {0} sec.".format(end_time-start_time)
+    if ncbi_taxonomy_dir:
+        ncbi_taxonomy_dir = os.path.abspath(ncbi_taxonomy_dir)
     opt = Struct()
     opt.runMode = "inproc"
     opt.web = False
@@ -124,16 +193,37 @@ def gi_taxonomy(gi_list,out_dir="results",gi_format="ncbi_pipes_blast_m8",ncbi_t
     opt.predOutDir = out_dir
     opt.predOutTaxa = pred_out_taxa
     opt.predMinLenSamp = 1
-    opt.taxaTreeNcbiDir = os.path.abspath(ncbi_taxonomy_dir)
+    opt.skipPredOutTaxaCsv = 1
+    opt.taxaTreeNcbiDir = ncbi_taxonomy_dir
     opt.predOutStatsKronaEmbed = "krona"
 
     ImmClassifierApp.fillWithDefaultOptions(opt)
     imm = ImmClassifierApp(opt=opt)
     imm.run()
 
+def ncbi_gi(gi_list,gi_format="ncbi_pipes_blast_m8",out_dir="results",ncbi_taxonomy_dir=None):
+    import time
+    out_dir = os.path.abspath(out_dir)
+    pred_out_taxa=pjoin(out_dir,"taxa_samp")
+    start_time = time.time()  
+    gi_list_to_taxa_pred(gi_list,gi_format,ncbi_taxonomy_dir,pred_out_taxa)
+    end_time = time.time()
+    print "DEBUG: loaded hit list in {0} sec.".format(end_time-start_time)
+    taxonomy_report(pred_out_taxa=pred_out_taxa,out_dir=out_dir,ncbi_taxonomy_dir=ncbi_taxonomy_dir)
+
+def mgtaxa_annot_consensus(annot_cons,rec_type="annotPred",min_len_samp=0,out_dir="results",ncbi_taxonomy_dir=None):
+    import time
+    out_dir = os.path.abspath(out_dir)
+    pred_out_taxa=pjoin(out_dir,"taxa_samp")
+    start_time = time.time()  
+    annot_cons_to_taxa_pred(annot_cons,rec_type,min_len_samp,pred_out_taxa)
+    end_time = time.time()
+    print "DEBUG: loaded hit list in {0} sec.".format(end_time-start_time)
+    taxonomy_report(pred_out_taxa=pred_out_taxa,out_dir=out_dir,ncbi_taxonomy_dir=ncbi_taxonomy_dir)
+
 def main():
     import argh
-    argh.dispatching.dispatch_command(gi_taxonomy)
+    argh.dispatching.dispatch_commands([ncbi_gi,mgtaxa_annot_consensus])
 
 if __name__ == '__main__':
     main()
