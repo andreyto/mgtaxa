@@ -10,7 +10,7 @@ optTpl.runMode = "inproc" #"batchDep"
 optTpl.batchBackend = "makeflow"
 optTpl.lrmUserOptions = r"'-P 0413'"
 optTpl.cwd = pabs("opt_work")
-optTpl.web = True
+optTpl.web = False
 optTpl.needTerminator = True
 
 makedir(optTpl.cwd)
@@ -187,6 +187,7 @@ def procScoresRefAgainstCustom(jobs):
     opt.taxaTreePkl = pjoin(opt.cwd,"92830.tree.pkl")
     opt.outScoreComb = pjoin(opt.cwd,"92830.combined.score")
     opt.predOutDir = pjoin(opt.cwd,"92830.results")
+    opt.sampAttrib = pjoin(seqDbPath1,"195.immClassifier.attrib.csv")
 
     ImmClassifierApp.fillWithDefaultOptions(opt)
 
@@ -255,8 +256,8 @@ def runSomeTests():
     #jobs = scoreRefAgainstRef(jobs)
     #jobs = procScoresRefAgainstRef(jobs)
     
-    jobs = trainCustom(jobs)
-    print jobs
+    #jobs = trainCustom(jobs)
+    #print jobs
     jobs = scoreRefAgainstCustom(jobs)
     print jobs
     jobs = procScoresRefAgainstCustom(jobs)
