@@ -218,6 +218,8 @@ install: all
 	install -t $(sysconfdir) mgtaxa.shrc $(PROJ_DIR)/etc/gt.sketch.default.style
 	install -t $(exec_bindir) $(PROGRAMS)
 	$(CPR) $(BIN_PY_DIR)/* $(bindir)
+	#configure/make/install cmake project
+	$(PROJ_DIR)/cmake_build $(PROJ_DIR)
 
 .PHONY: clean
 clean:		
