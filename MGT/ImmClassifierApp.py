@@ -1766,8 +1766,6 @@ class ImmClassifierApp(App):
         return dbTableRep
     
     def _graphicsReport(self,db,dbTableRep,levName,outBackend,fldRep="len_samp",maxClades=20):
-        import matplotlib
-        matplotlib.use('AGG')
         from MGT import Graphics
         data=db.selectAll("""select
             clade, %(fldRep)s            
@@ -1791,6 +1789,8 @@ class ImmClassifierApp(App):
         #rmrf(opt.predOutStatsDir)
         makeFilePath(opt.predOutStatsCsv)
         outCsv = openCompressed(opt.predOutStatsCsv,'w')
+        import matplotlib
+        matplotlib.use('AGG')
         from matplotlib.backends.backend_pdf import PdfPages
         outBackend = PdfPages(opt.predOutStatsPdf)
         sqlAsComment = True
