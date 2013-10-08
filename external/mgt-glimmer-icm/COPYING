@@ -1,0 +1,26 @@
+The distribution and use of files from the original Glimmer3 source code 
+package (as obtained as part of the Phymm source package and
+identified by the header in each file)
+is controlled by the content of the LICENSE.GLIMMER file.
+
+Some modifications have been made to the original Glimmer3 files.
+As per the conditions of the above Glimmer3 license, all such
+modifications are placed into the Public Domain. The scope of 
+modifications is described in the header of each corresponding
+source file. The resulting executables no longer behave like
+the standard Glimmer3 executables. Thus, they have been renamed
+to avoide possible confusion. See README file for more details.
+
+Some new source files were created, under the copyright of J. Craig Venter Institute, 
+2011, as identified by the header of each such file. Such files
+can be redistributed and/or modified under the terms of the GNU General 
+Public License as published by the Free Software Foundation, either version 3 
+of the License, or (at your option) any later version.
+
+The work on the above modifications and additions was supported by the U.S. National
+Science Foundation grant 0850256.
+
+The above modifications and additions are distributed in the hope that they will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+

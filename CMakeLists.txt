@@ -1,0 +1,11 @@
+cmake_minimum_required(VERSION 2.8)
+
+PROJECT(MGTAXA)
+
+SET( ${PROJECT_NAME}_MAJOR_VERSION 1 )
+SET( ${PROJECT_NAME}_MINOR_VERSION 4 )
+SET( ${PROJECT_NAME}_PATCH_LEVEL 0 )
+
+#MESSAGE("CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}")
+
+add_subdirectory(external/mgt-glimmer-icm)

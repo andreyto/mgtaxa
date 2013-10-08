@@ -1,0 +1,17 @@
+This package is a modified clone of the SimpleMake subdirectory
+of the Glimmer3 package as obtained from the source code distribution
+of the Phymm package.
+Our primary goal was to use the Interpolated Context Models (ICMs) for taxonomic
+classification of the metagenomic sequences, following in the Phymm
+footsteps. To that end, we made some modifications in the original
+Glimmer3 source files (see CHANGELOG and corresponding files).
+Our build procedure, based on Cmake, creates executables with a prefix "mgt-glm-"
+to avoide confusion with the original Glimmer executables. A library is also
+created, with a simple API, to facilitate training and classification with ICMs
+from external code without creating a subprocess for ICM executables.
+See COPYING document for use and re-distribution terms conforming with the 
+original Glimmer3 license.
+Author of modifications:
+Andrey Tovchigrechko <andreyto@gmail.com>
+This package is distributed as part of the MGTAXA suite of programs.
+

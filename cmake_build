@@ -1,0 +1,30 @@
+#!/bin/bash
+set -ex
+
+if [ -f CMakeLists.txt ]; then
+    echo "You should run it from a separate build dir, not from source dir. Exiting..."
+    exit 1
+fi
+
+src_dir=$1
+
+if [ -z "$src_dir" ]; then
+    echo "Usage: $(basename $0) <source_dir>"
+    exit 1
+fi
+
+rm -f CMakeCache.txt
+
+cmake \
+-D CMAKE_PREFIX_PATH="$INSTMACH:$INST" \
+-D CMAKE_INSTALL_PREFIX="$INSTMACH" \
+-G 'Unix Makefiles' \
+$src_dir
+
+make -j 4
+
+make install
+
+# HINTS:
+# You can run "make VERBOSE=1" to have compiler commands printed
+
