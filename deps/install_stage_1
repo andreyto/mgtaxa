@@ -11,7 +11,7 @@ topdir=$(pwd)
 ## a chain of dirs - do it for them here
 mkdir -p $INST $INSTMACH
 #cd gcc && ${topdir}/install_gcc && cd ${topdir}
-cd atlas && ${topdir}/install_atlas && cd ${topdir}
+#cd atlas && ${topdir}/install_atlas && cd ${topdir}
 cd tcltk && ${topdir}/install_tcltk && cd ${topdir}
 if [ -n "$PY_BUILD_INTERP" ]; then
 cd python/Python && ${topdir}/install_python && cd ${topdir}

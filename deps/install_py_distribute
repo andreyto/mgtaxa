@@ -1,0 +1,9 @@
+#!/bin/bash
+set -ex
+wget http://pypi.python.org/packages/source/d/distribute/distribute-0.6.35.tar.gz
+tar -xzvf distribute-0.6.35.tar.gz
+pushd distribute-0.6.35
+python setup.py install --prefix $INST
+popd
+rm -rf distribute-0.6.35*
+

@@ -6,7 +6,8 @@ set -ex #abort if any command fails and echo all commands
 
 topdir=$(pwd)
 
-cd globus && ${topdir}/install_globus && cd ${topdir}
+##Gridway no longer depends on Globus if Globus is not used
+#cd globus && ${topdir}/install_globus && cd ${topdir}
 
 cd gridway && ${topdir}/install_gridway && cd ${topdir}
 
@@ -26,4 +27,9 @@ easy_install --upgrade --prefix=$INSTMACH rpy2
 ## R VERSION output
 easy_install --upgrade --prefix=$INSTMACH rpy/rpy-1.0.3a.zip
 easy_install --upgrade --prefix=$INSTMACH http://downloads.sourceforge.net/project/gnuplot-py/Gnuplot-py/1.8/gnuplot-py-1.8.tar.gz
+
+##This still needs overlaying of extra and private files
+#(pushd $INSTMACH && hg clone https://andreyto@bitbucket.org/andreyto/mgtaxa-galaxy)
+
+cd krona && ${topdir}/install_krona && cd ${topdir}
 

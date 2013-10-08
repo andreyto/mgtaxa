@@ -55,6 +55,13 @@ export JAVA_HOME=/usr/local/packages/jdk-6u41
 ## QPID needs java 6+
 export JAVA_6_HOME=/usr/local/packages/jdk-6u41
 
+export GCC_HOME=/usr/local/packages/gcc-4.7.1
+
+#Now gcc is in the PATH but its libraries are not
+export PATH=$GCC_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$GCC_HOME/lib64:$LD_LIBRARY_PATH
+export LDFLAGS="$LDFLAGS -L$GCC_HOME/lib64 -Wl,-R$GCC_HOME/lib64"
+
 else
 
 #This Java path is identical on Intranet and DMZ, although it seems that the main

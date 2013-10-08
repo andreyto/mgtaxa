@@ -8,10 +8,10 @@ rm -rf $BUILD
 bunzip2 -c $SOURCE | tar -xf -
 cd $BUILD
 
-cd src
-make distclean
+#cd src
+#make distclean
 ./configure --prefix=$PGSQL_LOCATION --disable-rpath --with-openssl
-make
+make -j 4
 make install
 make check
 

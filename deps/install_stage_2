@@ -1,8 +1,7 @@
 #!/bin/bash
 set -ex #abort if any command fails and echo all commands
 topdir=$(pwd)
-## this assumes that there is only one egg per version
-bash setuptools/setuptools-*-py${PY_VER}.egg --prefix=$INST
+./install_py_distribute
 easy_install --prefix=$INST --upgrade mercurial
 easy_install --prefix=$INST --upgrade nose
 easy_install --prefix=$INST argcomplete argh
@@ -12,15 +11,23 @@ cd mysql/mysql && ${topdir}/install_mysql && cd ${topdir}
 cd egenix/egenix-mx-base && ${topdir}/install_egenix && cd ${topdir}
 #For python 2.6 and numpy 1.6, easy_install works
 #cd numpy/numpy && ${topdir}/install_numpy && cd ${topdir}
-easy_install --prefix=$INSTMACH --upgrade numpy
+#w/o -shared linker will look for main() when linking lapack_lite
+LDFLAGS="$LDFLAGS -shared" F77=`which gfortran` easy_install --prefix=$INSTMACH --upgrade numpy
 #cd pymol && ${topdir}/install_pymol && cd ${topdir}
-cd reportlab/reportlab && ${topdir}/install_reportlab && cd ${topdir}
-cd biopython/biopython && ${topdir}/install_biopython && cd ${topdir}
+easy_install --prefix $INSTMACH -U reportlab
+easy_install --prefix $INSTMACH -U biopython
+easy_install --prefix $INSTMACH -U matplotlib
+easy_install --prefix=$INST -U argcomplete argh
+
+#cd reportlab/reportlab && ${topdir}/install_reportlab && cd ${topdir}
+#cd biopython/biopython && ${topdir}/install_biopython && cd ${topdir}
 cd boost/boost && ${topdir}/install_boost && cd ${topdir}
-cd matplotlib/matplotlib && ${topdir}/install_matplotlib && cd ${topdir}
+#cd matplotlib/matplotlib && ${topdir}/install_matplotlib && cd ${topdir}
 cd mysql/MySQL-python/MySQL-python && ${topdir}/install_pymysql && cd ${topdir}
 cd pytables && ${topdir}/install_pytables && cd ${topdir}
-easy_install --prefix=$INST --upgrade bx-python
+##easy_install hits and error, but pip works
+#easy_install --prefix=$INST --upgrade bx-python
+pip install --install-option "--prefix=$INST" --upgrade bx-python
 easy_install --prefix=$INST --upgrade ipython
 #A simple easy_install call below should work, but it does not. So we use specific tarball link.
 #easy_install --upgrade MDP
@@ -33,7 +40,8 @@ cd genometools/genometools && ${topdir}/install_genometools && cd ${topdir}
 easy_install --prefix=$INST --upgrade sqlalchemy
 easy_install --prefix=$INST --upgrade drmaa
 cd qpid && ${topdir}/install_qpid_client_py && cd ${topdir}
-cd glimmer && ${topdir}/install_glimmer && cd ${topdir}
+##glimmer ICM code is now build as part of MGTAXA
+#cd glimmer && ${topdir}/install_glimmer && cd ${topdir}
 #this installer gives unimportant error in its atexit() handler, ignore
 #any errors
 easy_install --prefix=$INST --upgrade joblib || true
