@@ -238,10 +238,10 @@ def strToFileName(s,remove=''):
     return osNameFilter(s.replace(' ','_'),remove=remove)
 
 class SymbolRunsCompressor:
-    """Compress all consequitive runs of identical symbol sym that are longer than minLen into minLen."""
+    """Compress all consequitive runs of identical symbol(s) sym that are longer than minLen into minLen."""
     def __init__(self,sym,minLen):
-        assert len(sym) == 1
-        self.rex = re.compile('%s{%i,}'%(sym,minLen+1))
+        #assert len(sym) == 1
+        self.rex = re.compile('[%s]{%i,}'%(sym,minLen+1))
         self.rep = sym*minLen
 
     def __call__(self,s):

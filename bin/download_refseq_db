@@ -18,10 +18,12 @@ mkdir -p $dldir
 
 topUrl=ftp://ftp.ncbi.nlm.nih.gov/refseq/release
 
+orgGroups="microbial viral"
 #orgGroups="microbial protozoa viral"
-orgGroups="fungi invertebrate plant vertebrate_mammalian vertebrate_other"
+#orgGroups="fungi invertebrate plant vertebrate_mammalian vertebrate_other"
 
-onlyFna=1
+# set to something to just download FASTA files and w/o processing
+onlyFna=
 
 for name in $orgGroups; do
     if [ -z "$onlyFna" ]; then

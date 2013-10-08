@@ -1039,28 +1039,50 @@ class ImmClassifierApp(App):
     def makeCustomTaxaTreeAndSeqDb(self,**kw):
         """Add provided scaffolds as custom nodes to the taxonomy tree and save the tree, and also create SeqDbFasta for them.
         The resulting SeqDbFasta and TaxaTree can be used to train the IMM models.
-        Each scaffold is treated as a separate taxonomic unit under the super-node of environmental bacterial sequences."""
+        Each scaffold is treated as a separate taxonomic unit under the super-node of environmental bacterial sequences.
+        Alternatively, if the FASTA defline starts with TAXIDXXX_, where XXX 
+        is an integer number, the number is interpreted as a taxid of the
+        parent node. In that case the parent taxid must be already present in
+        the currently loaded tree.
+        This method recreates the currently loaded tree."""
         opt = self.opt
         assert opt.taxaTreePkl, "File name for a custom taxonomic tree must be provided"
         self.seqDb = None
         seqDb = SeqDbFasta.open(path=opt.seqDb,mode="c")
-        compr = SymbolRunsCompressor(sym="N",minLen=1)
+        compr = SymbolRunsCompressor(sym="Nn",minLen=1)
         nonDegenSymb = "ATCGatcg"
         newTaxaTop = TaxaNode(id=opt.newTaxidTop,name=opt.newTaxNameTop,
                 rank=unclassRank,divid=dividEnv,names=list())
+        newTaxaTopUsed = False
         nextNewTaxid = newTaxaTop.id + 1
         fastaReader = FastaReader(opt.inpTrainSeq)
         nNodesOut = 0
+        #load pristine NCBI tree because we will save it at the end
+        #after adding new nodes
+        self.taxaTree = None
+        taxaTree = loadTaxaTree(ncbiTaxaDumpDir=opt.taxaTreeNcbiDir)
+        self.taxaTree = taxaTree
+        #####
         for rec in fastaReader.records():
             hdr = rec.header()
-            seqid = rec.getId() # scf768709870
+            seqid = rec.getId() # scf768709870 or TAXIDXXXX_YYYYY
             seq = compr(rec.sequence())
-            if not checkSaneAlphaHist(seq,nonDegenSymb,minNonDegenRatio=0.99):
+            if not checkSaneAlphaHist(seq,nonDegenSymb,minNonDegenRatio=0.90):
                 print "WARNING: ratio of degenerate symbols is too high, "+\
                         "skipping the reference scaffold id %s" % (seqid,)
             if len(seq) >= opt.trainMinLenSamp:
                 taxaNode = TaxaNode(id=nextNewTaxid,name=self._customTrainSeqIdToTaxaName(seqid),rank=unclassRank,divid=dividEnv,names=list())
-                taxaNode.setParent(newTaxaTop)
+                if seqid.lower().startswith("taxid"):
+                    parTaxid = int(seqid[len("taxid"):].split("_",1)[0])
+                    try:
+                        parent = taxaTree.getNode(parTaxid)
+                    except:
+                        print "Parent taxid {0} not found".format(seqid)
+                        parent = taxaTree.getRootNode()
+                else:
+                    parent = newTaxaTop
+                    newTaxaTopUsed = True
+                taxaNode.setParent(parent)
                 # that will be used by the following call to defineImms()
                 taxaNode.pickedSeqDbIds = [ taxaNode.id ]
                 taxaNode.trainSelStatus = self.TRAIN_SEL_STATUS_DIRECT
@@ -1077,14 +1099,12 @@ class ImmClassifierApp(App):
         fastaReader.close()
         taxaSampLengths = self._makeTaxaSampLengths(seqDb=seqDb,trainMinLenSamp=opt.trainMinLenSamp)
         self.taxaSampLengths = taxaSampLengths
-        self.taxaTree = None
-        taxaTree = loadTaxaTree() # pristine NCBI tree
-        envBacTop = taxaTree.getNode(envBacTaxid)
-        newTaxaTop.setParent(envBacTop)
+        if newTaxaTopUsed:
+            envBacTop = taxaTree.getNode(envBacTaxid)
+            newTaxaTop.setParent(envBacTop)
         taxaTree.rebuild()
         taxaTreeStore = NodeStorageJson(opt.taxaTreePkl)
         taxaTreeStore.save(taxaTree)
-        self.taxaTree = taxaTree
     
     def setupTraining(self,**kw):
         opt = self.opt

@@ -10,7 +10,8 @@
 
 set -ex
 
-curdir=$MGT_NCBI_DB
+#curdir=$MGT_NCBI_DB
+curdir=$(pwd)
 
 topdb=$curdir
 
