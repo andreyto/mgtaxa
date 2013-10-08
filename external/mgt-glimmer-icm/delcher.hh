@@ -26,6 +26,7 @@
 #include  <string>
 #include  <new>
 #include  <cstdlib>
+#include  <cstring>
 #include  <iostream>
 #include  <iomanip>
 #include  <fstream>

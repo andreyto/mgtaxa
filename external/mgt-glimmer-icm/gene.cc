@@ -260,7 +260,7 @@ void  PWM_t :: Print
 //  Print the contents of this PWM to  fp .
 
   {
-   char  * tag = "acgt";
+   const char  * tag = "acgt";
    int  width;
    int  i, j;
 
@@ -443,9 +443,7 @@ int  Char_Sub
 //  Return a subscript corresponding to character  ch .
 
   {
-   char  * p;
-
-   p = strchr (CONVERSION_STRING, tolower (ch));
+   const char  * p = strchr (CONVERSION_STRING, tolower (ch));
    if  (p == NULL)
        return  4;
 

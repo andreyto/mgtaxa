@@ -1981,9 +1981,7 @@ int  Subscript
 //  model) for character  ch .
 
   {
-   char  * p;
-
-   p = strchr (ALPHA_STRING, tolower (Filter (ch)));
+   const char  * p = strchr (ALPHA_STRING, tolower (Filter (ch)));
    if  (p == NULL)
        {
         fprintf (stderr, "ERROR:  Bad character %c in subscript conversion",
