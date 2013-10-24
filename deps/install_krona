@@ -23,5 +23,6 @@ rsync -a ./ $INSTMACH/krona/
 ## Charts should be generated pointing to that
 ## location such as:
 ## scripts/ImportXML.pl -u /static/krona xml.txt 
-rsync -a img src $GALAXY_LOCATION/static/krona/
+## We already checked these into our Galaxy repo
+#rsync -a img src $GALAXY_LOCATION/static/krona/
 

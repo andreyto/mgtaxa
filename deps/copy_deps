@@ -6,15 +6,15 @@
 #export DEP_SRC_ORIG=/usr/local/depot/projects/MGTAXA/atovtchi/mgtaxa-dep-src
 # CD to the directory where this script is located and run it.
 if [[ -z "$DEP_SRC_TOP" ]]; then
-    print "DEP_SRC_TOP is undefined, exiting."
+    echo "DEP_SRC_TOP is undefined, exiting."
     exit 1
 fi
 if [[ -z "$DEP_SRC_ORIG" ]]; then
-    print "DEP_SRC_ORIG is undefined, exiting."
+    echo "DEP_SRC_ORIG is undefined, exiting."
     exit 1
 fi
 if [[ ! -f copy_deps ]]; then
-    print "Should run from this script's dir, exiting."
+    echo "Should run from this script's dir, exiting."
     exit 1
 fi
 
