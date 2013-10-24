@@ -345,7 +345,7 @@ def runSomeTests():
 
     #jobs = trainCustomWithParent(jobs)
     #print jobs
-    jobs = scoreCustomWithParentAgainstJoint(jobs)
+    #jobs = scoreCustomWithParentAgainstJoint(jobs)
     jobs = procScoresCustomWithParentAgainstJoint(jobs)
 
 runSomeTests()
