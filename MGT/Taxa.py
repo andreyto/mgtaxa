@@ -60,7 +60,7 @@ def loadTaxaTreeTest(allNames=False):
         allNames=allNames)
 
 def makeGiTaxBin(ncbiDumpFiles,outFile):
-    """Create and save a pickled numpy gi->taxid index from a list of ncbi dump files.
+    """Create and save with numpy.save() a gi->taxid index from a list of ncbi dump files.
     Typically, there are two dump files: one for nucleotide and another for protein sequences.
     This function checks that no GI is present in more than one file.
     The resulting file can be loaded back into memory with loadGiTaxBin().
@@ -84,15 +84,15 @@ def makeGiTaxBin(ncbiDumpFiles,outFile):
             assert numpy.logical_not(numpy.logical_and(dst_sub > 0,src > 0)).all()
             src_ind = numpy.where(src>0)
             dst[src_ind] = src[src_ind]
-    dumpObj(dst,outFile)
+    dumpNumpy(dst,outFile)
 
 def loadGiTaxBin(inFile=options.taxaPickled,ncbiTaxaDumpDir=None):
     if ncbiTaxaDumpDir is not None:
         inFile = getTaxaDumpFileNames(taxaDumpDir=ncbiTaxaDumpDir)["taxaPickled"]
-    return loadObj(inFile)
+    return loadNumpy(inFile)
 
 def loadGiTaxBinNew(inFile=options.taxaPickledNew):
-    return loadObj(inFile)
+    return loadNumpy(inFile)
 
 def ncbiFastaRecordsWithTaxa(fastaReader,taxaTree,giToTaxa,errorCounter):
     errorCounter.bounds=0

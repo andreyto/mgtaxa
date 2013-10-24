@@ -16,10 +16,17 @@ import time
 from copy import copy, deepcopy
 from cPickle import dump, load, Pickler, Unpickler
 from cStringIO import StringIO
+
 import numpy
+
 n = numpy
 nma = numpy.ma
 import numpy.random as nrnd
+
+np = numpy
+npma = numpy.ma
+import numpy.random as nprnd
+
 from tempfile import mkstemp
 from textwrap import dedent
 from collections import defaultdict as defdict
@@ -74,6 +81,17 @@ def dumpObj(obj,fileName,**kw):
 def loadObj(fileName,**kw):
     inp = openCompressed(fileName,'rb',**kw)
     ret = load(inp)
+    inp.close()
+    return ret
+
+def dumpNumpy(obj,fileName,**kw):
+    out = openCompressed(fileName,'w',**kw)
+    np.save(out,obj)
+    out.close()
+    
+def loadNumpy(fileName,**kw):
+    inp = openCompressed(fileName,'rb',**kw)
+    ret = np.load(inp)
     inp.close()
     return ret
 
