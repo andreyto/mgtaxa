@@ -85,12 +85,15 @@ def loadObj(fileName,**kw):
     return ret
 
 def dumpNumpy(obj,fileName,**kw):
-    out = openCompressed(fileName,'w',**kw)
+    #numpy.save does not like non-file streams
+    #out = openCompressed(fileName,'w',**kw)
+    out = open(fileName,'w',**kw)
     np.save(out,obj)
     out.close()
     
 def loadNumpy(fileName,**kw):
-    inp = openCompressed(fileName,'rb',**kw)
+    #inp = openCompressed(fileName,'rb',**kw)
+    inp = open(fileName,'rb',**kw)
     ret = np.load(inp)
     inp.close()
     return ret
