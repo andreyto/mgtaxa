@@ -147,7 +147,7 @@ class MGTOptions(Options):
                 #extra default arguments to python that executes the App script
                 extraPyArgs = None 
                 )
-        self.wrapper = pjoin(self.binDir,"mgt_wrapper")
+        self.wrapper = pjoin(self.binDir,"mgt-wrapper")
         self.makeflow = Options(
                 exe=pjoin(os.environ["INSTMACH"],"bin/makeflow"),
                 )
