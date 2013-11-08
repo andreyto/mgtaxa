@@ -2,21 +2,74 @@
 from MGT.Common import *
 
 class MakeflowWriter(object):
+
+    _tab = " "*4
     
     def __init__(self,out,vars=None,exports=None,mode="w"):
         if isinstance(out,str):
             self.out = open(out,mode)
+            #do not repeat default exports on append -
+            #this breaks the Makeflow
+            if "a" in mode and exports is None:
+                exports = []
+        elif exports is None:
+            #do not add default exports when existing
+            #stream is supplied. The caller should use
+            #appendInitExports() when needed.
+            exports = []
+
+        self.appendInitExports(exports=exports)
+        self._write_vars(vars,0)
         #store IDs of already processed MGT jobs to avoid submitting any job twice
         self.done = set()
+    
+    @classmethod
+    def getStandardExports(klass):
+        return [
+                 "BATCH_OPTIONS",
+                 "MAKEFLOW_BATCH_QUEUE_TYPE",
+                 "MAKEFLOW_MAX_REMOTE_JOBS"
+            ]
 
-    def appendJob(self,targets,inputs,cmd,
+    def appendInitExports(self,exports):
+        if exports is None:
+            exports = self.getStandardExports()
+        w = self.out.write
+        for export in exports:
+            w("export {}\n".format(export))
+
+    def _write_vars(self,vars,tab_level=0):
+        if vars is None:
+            vars = []
+        w = self.out.write
+        for var in vars:
+            w(self._tab*tab_level+"{}\n".format(var))
+    
+    def appendJob(self,cmd,targets=[],inputs=[],
             vars=None):
         w = self.out.write
         w(' '.join([str(t) for t in targets])+": "+\
                 ' '.join([str(t) for t in inputs])+'\n')
-        if vars:
-            w("\n".join(["    {}".format(v) for v in vars])+'\n')
-        w("    {}\n\n".format(cmd))
+        self._write_vars(vars,1)
+        w(self._tab+"{}\n\n".format(cmd))
+
+    def appendMakeflow(self,flow,targets=[],inputs=[],
+            vars=None):
+        """Append a task that is itself is Makeflow.
+        This will mark the sub-makeflow as local unless
+        it is already marked otherwise in the 'vars'"""
+        if flow not in inputs:
+            inputs = inputs + [flow]
+        if vars is None:
+            vars = []
+        for var in vars:
+            if var.strip().startswith("@BATCH_LOCAL"):
+                break
+        else:
+            vars = vars + ["@BATCH_LOCAL=1"]
+        self.appendJob(targets=targets,inputs=inputs,
+                cmd="MAKEFLOW {}".format(flow),
+                vars=vars)
 
     def appendMgtJob(self,job):
         """Append to current makeflow one MGTAXA job object.
@@ -33,7 +86,6 @@ class MakeflowWriter(object):
             targets = job.outputs
             cmd = "bash " + job.scriptName
             self.appendJob(targets=targets,inputs=inputs,cmd=cmd)
-            A
             self.done.add(job.jobId)
 
         
