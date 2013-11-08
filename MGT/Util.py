@@ -16,6 +16,7 @@ import time
 from copy import copy, deepcopy
 from cPickle import dump, load, Pickler, Unpickler
 from cStringIO import StringIO
+import json
 
 import numpy
 
@@ -1343,6 +1344,12 @@ def none_from_str(s):
             return None
     return s
 
+def get_current_script():
+    return os.path.abspath(sys.argv[0])
+
+def get_current_python():
+    return sys.executable
+
 def copytree_ext(src, dst, symlinks=False, ignore=None, copy_stats=True):
     """Recursively copy a directory tree.
     This is a modified clone of shutil.copytree() from Python 2.6.
@@ -1427,4 +1434,39 @@ class null_file:
 
     def close(self):
         pass
+
+def cmd_self(wrapper=""):
+    """Return command line and components of command line that 
+    would run current Python script.
+    @param wrapper [""] is a wrapper script that should set up
+    necessary environment variables and then exec its arguments"""
+    exe = get_current_python()
+    script = get_current_script()
+    return (
+            {
+            "cmd":"{} {} {}".format(wrapper,
+                exe,
+                script),
+            "wrapper":wrapper,
+            "exe":exe,
+            "script":script,
+            "files":[wrapper,exe,script] if wrapper else [exe,script]
+            }
+           )
+
+def cmd_python(wrapper=""):
+    """Return command line and components of command line that 
+    would run current Python.
+    @param wrapper [""] is a wrapper script that should set up
+    necessary environment variables and then exec its arguments"""
+    exe = get_current_python()
+    return (
+            {
+            "cmd":"{} {}".format(wrapper,
+                exe),
+            "wrapper":wrapper,
+            "exe":exe,
+            "files":[wrapper,exe] if wrapper else [exe]
+            }
+           )
 

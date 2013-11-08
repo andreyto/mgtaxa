@@ -10,11 +10,21 @@
 Reads standard input, writes to standard ouput"""
 
 import sys
+from MGT.Common import *
 
 skip = False
 nSeqLines = 0
-inp = sys.stdin
-out = sys.stdout
+
+try:
+    inp = openCompressed(sys.argv[1],"r")
+except IndexError:
+    inp = sys.stdin
+
+try:
+    out = openCompressed(sys.argv[2],"w")
+except IndexError:
+    out = sys.stdout
+
 while True:
     line = inp.readline()
     if not line:
