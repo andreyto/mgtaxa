@@ -5,8 +5,8 @@
         "refseq" :
         {
             "path_base":"/refseq/release",
-            ".org_groups":["microbial","protozoa","viral"],
-            "org_groups":["viral"],
+            "org_groups":["microbial","protozoa","viral"],
+            ".test.org_groups":["viral"],
             "file_types":["genomic.fna","genomic.gbff","protein.faa","protein.gpff"],
             "exclude_rxs":[".*nonredundant_protein.*"]
         }
