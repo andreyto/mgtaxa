@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 MGT_HOME=$(cd $(dirname $0)/.. && pwd)
 . $MGT_HOME/etc/mgtaxa.shrc

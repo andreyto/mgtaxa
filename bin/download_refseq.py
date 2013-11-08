@@ -42,6 +42,9 @@ class ftputil_download_progress_reporter:
 
 class RefseqDownloader:
 
+    def __init__(self):
+        self.wrapper = options["wrapper"]
+
     def list_remote_files(self,
             config_file,
             remote_paths_file
@@ -81,7 +84,7 @@ class RefseqDownloader:
             ):
         conf = load_config_json(config_file)
         conf_ftp = conf["ftp"]
-        wrapper = conf.get("wrapper","")
+        wrapper = self.wrapper
         file_paths = load_config_json(remote_paths_file)
         mkf = MakeflowWriter(makeflow_file,mode="a")
         cmd_pref = cmd_self(wrapper)["cmd"]
@@ -131,7 +134,7 @@ class RefseqDownloader:
             makeflow_file
             ):
         conf = load_config_json(config_file)
-        wrapper = conf.get("wrapper","")
+        wrapper = self.wrapper
         file_paths = load_config_json(local_paths_file)
         mkf = MakeflowWriter(makeflow_file,mode="a")
         cmd_pref = cmd_python(wrapper)["cmd"]
@@ -190,7 +193,7 @@ class RefseqDownloader:
             ):
         """Main entry point: get and process the database"""
         conf = load_config_json(config_file)
-        wrapper = conf.get("wrapper","")
+        wrapper = self.wrapper
         cmd = cmd_self(wrapper)
         cmd_pref = cmd["cmd"]
         name_root = stripSfx(os.path.basename(cmd["script"]))
