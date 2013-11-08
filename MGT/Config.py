@@ -147,6 +147,9 @@ class MGTOptions(Options):
                 #extra default arguments to python that executes the App script
                 extraPyArgs = None 
                 )
+        self.makeflow = Options(
+                exe=pjoin(os.environ["INSTMACH"],"bin/makeflow"),
+                )
         self.genomeTools = Options(
                 exe=pjoin(os.environ["INSTMACH"],"bin/gt"),
                 sketchConf=pjoin(self.confDir,"gt.sketch.default.style")
