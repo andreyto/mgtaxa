@@ -9,6 +9,8 @@ from MGT.Common import *
 from MGT.BatchMakeflow import *
 from MGT.Logging import *
 
+from argh import ArghParser,arg
+
 log = logging.getLogger(os.path.basename(sys.argv[0]))
 
 class ftputil_download_progress_reporter:
@@ -40,7 +42,7 @@ class ftputil_download_progress_reporter:
 
 class RefseqDownloader:
 
-    def list_files(self,
+    def list_remote_files(self,
             config_file,
             remote_paths_file
             ):
@@ -85,7 +87,7 @@ class RefseqDownloader:
         cmd_pref = cmd_self(wrapper)["cmd"]
         for rec in file_paths:
             local_file = rec["r_file"].split("/")[-1]
-            cmd = "{} download-file {} {} {}".\
+            cmd = "{} internal download-file {} {} {}".\
                     format(cmd_pref,config_file,
                     rec["r_file"],local_file)
             mkf.appendJob(
@@ -112,6 +114,15 @@ class RefseqDownloader:
                         local_file=local_file,
                         log=log)
                     )
+    
+    def extract_fasta_header(self,fasta_file,hdr_file):
+        inp = openCompressed(fasta_file,"r")
+        out = openCompressed(hdr_file,"w")
+        for line in inp:
+            if line.startswith(">"):
+                out.write(line)
+        inp.close()
+        out.close()
 
     def wf_extract_headers(self,
             config_file,
@@ -124,6 +135,7 @@ class RefseqDownloader:
         file_paths = load_config_json(local_paths_file)
         mkf = MakeflowWriter(makeflow_file,mode="a")
         cmd_pref = cmd_python(wrapper)["cmd"]
+        cmd_self_pref = cmd_self(wrapper)["cmd"]
         for rec in file_paths:
             local_file = rec["l_file"]
             do_skip = False
@@ -133,8 +145,8 @@ class RefseqDownloader:
                         format(cmd_pref,local_file,hdr_file)
             elif fnmatch.fnmatch(local_file,"*.f[na]a.gz"):
                 hdr_file = stripSfx(local_file)+".hdr.gz"
-                cmd = "{} zgrep '>' {} | gzip -c > {}".\
-                        format(wrapper,local_file,hdr_file)
+                cmd = "{} internal extract-fasta-header {} {}".\
+                        format(cmd_self_pref,local_file,hdr_file)
             else:
                 do_skip = True
             if not do_skip:
@@ -148,17 +160,100 @@ class RefseqDownloader:
                 rec["hdr_file"] = None
         save_config_json(file_paths,hdr_paths_file)
 
+    def wf_generate(self,
+            config_file,
+            remote_paths_file,
+            local_paths_file,
+            hdr_paths_file,
+            makeflow_file
+            ):
+        """Generate internal workflow"""
+        #create default header
+        MakeflowWriter(makeflow_file).close()
+        #these will append to the makeflow file
+        self.wf_download_files(
+            config_file,
+            remote_paths_file,
+            local_paths_file,
+            makeflow_file
+            )
+        self.wf_extract_headers(
+            config_file,
+            local_paths_file,
+            hdr_paths_file,
+            makeflow_file
+            )
+
+    @arg("config-file",type=os.path.abspath)
+    def checkout(self,
+            config_file
+            ):
+        """Main entry point: get and process the database"""
+        conf = load_config_json(config_file)
+        wrapper = conf.get("wrapper","")
+        cmd = cmd_self(wrapper)
+        cmd_pref = cmd["cmd"]
+        name_root = stripSfx(os.path.basename(cmd["script"]))
+
+        remote_paths_file = name_root+".remote_paths.json"
+        local_paths_file = name_root+".local_paths.json"
+        hdr_paths_file = name_root+".hdr_paths.json"
+        makeflow_file = name_root+".internal.mkf"
+        makeflow_file_checkout = name_root+".mkf"
+
+        mkf = MakeflowWriter(makeflow_file_checkout)
+        mkf.appendJob(
+                targets=[remote_paths_file],
+                inputs=[config_file],
+                cmd="{} internal list-remote-files {} {}".format( 
+                    cmd_pref,
+                    config_file,
+                    remote_paths_file
+                    )
+                )
+        mkf.appendJob(
+                targets=[
+                    local_paths_file,
+                    hdr_paths_file,
+                    makeflow_file
+                    ],
+                inputs=[
+                    config_file,
+                    remote_paths_file
+                    ],
+                cmd="{} internal wf-generate {} {} {} {} {}".format( 
+                    cmd_pref,
+                    config_file,
+                    remote_paths_file,
+                    local_paths_file,
+                    hdr_paths_file,
+                    makeflow_file
+                    )
+                )
+
+        mkf.appendMakeflow(
+                    flow = makeflow_file
+                    )
+        mkf.close()
+
+
 def main():
-    from argh import ArghParser
     logging_config(detail="high")
     parser = ArghParser()
     ref_down = RefseqDownloader()
     parser.add_commands([
-        ref_down.list_files,
+        ref_down.checkout
+        ]
+        )
+    parser.add_commands([
+        ref_down.list_remote_files,
         ref_down.download_file,
-        ref_down.wf_download_files,
-        ref_down.wf_extract_headers
-        ])
+        ref_down.wf_generate,
+        ref_down.extract_fasta_header
+        ],
+        namespace="internal",
+        title="Commands used internally by the application"
+        )
     parser.dispatch()
 
 if __name__ == "__main__":
