@@ -1,0 +1,27 @@
+#!/bin/bash
+
+MGT_HOME=$(cd $(dirname $0)/.. && pwd)
+. $MGT_HOME/etc/mgtaxa.shrc
+
+mgt_cmd=$1
+
+[ -n "$mgt_cmd" ] || die "Provide a path to arbitrary command and possibly arguments.
+
+Examples:
+mgt_wrapper python -c 'print \"Hello\"'
+
+This is a shell wrapper scripts that sets up necessary
+environment variables and then calls the provided command.
+
+The primary use is to wrap any commands submitted to
+a batch execution system such as SGE, because depending
+on the configuration, such systems might or might not 
+source shell profiles or have various 'sensitive'
+environment variables (e.g. LD_LIBRARY_PATH) squashed
+when a job is executed.
+"
+
+#arguments need to be quoted otherwise those with spaces
+#inside (like --lrm-user-options "-P 1111" will ge busted
+exec "$@"
+
