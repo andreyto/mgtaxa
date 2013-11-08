@@ -90,6 +90,9 @@ class FastaTrainingSeqFilter(object):
         elif self.policy == "extra-chrom-only":
             if not parsed.genElType & typeEnum["extra_chrom"]:
                 action = "drop"
+        elif self.policy == "drop-extra-chrom":
+            if parsed.genElType & typeEnum["extra_chrom"]:
+                action = "drop"
         else:
             raise ValueError("Unknown value for %s" % (self.policy,))
         if action == "pass":

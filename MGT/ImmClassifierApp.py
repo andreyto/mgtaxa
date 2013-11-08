@@ -225,11 +225,11 @@ class ImmClassifierApp(App):
             make_option(None, "--inp-ncbi-seq-sel-policy",
             action="store",
             type="choice",
-            choices=("drop-plasmids","extra-chrom-only"),
-            default="drop-plasmids",
+            choices=("drop-plasmids","extra-chrom-only","drop-extra-chrom"),
+            default="drop-extra-chrom",
             dest="inpNcbiSeqPolicy",
             help="Policy preset for filtering reference training sequence based on the type of "+\
-                    "genomic element [drop-plasmids]"),
+                    "genomic element [%default]"),
             
             make_option(None, "--max-seq-id-cnt",
             action="store", 
