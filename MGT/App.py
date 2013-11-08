@@ -252,8 +252,8 @@ class App:
             choices=("batch","inproc","batchDep"),
             dest="runMode",
             default="inproc",
-            help="Set to 'batchDep' to batch-run as a DAG or to 'inproc' to run in-process "+\
-                    "'batchDep' will self-submit and print the ID to track completion with the LRM"),
+            help="Set to 'batchDep' to batch-run as a DAG or to 'inproc' to run in-process. "+\
+                    "'batchDep' will use --batch-backend."),
             
             make_option(None, "--batch-backend",
             action="store", 
@@ -261,8 +261,10 @@ class App:
             choices=("qsub","makeflow"),
             dest="batchBackend",
             default=None,
-            help="Execution backend to use if --run-mode batchDep  is selected: 'qsub' will immediately "+\
-                    "submit jobs to LRM, and 'makeflow' will generate a Makeflow script ("+\
+            help="Execution backend to use if --run-mode batchDep  is selected: - 'qsub' will immediately "+\
+                    "submit jobs to LRM and print the ID of the terminating job "+\"
+                    to track completion with "+\
+                    "the LRM; - 'makeflow' will generate a Makeflow script ("+\
                     "named 'workflow'. "+\
                     "For the makeflow, you then should run makeflow with the options "+\
                     "specific for your execution environment and script name as the "+\
