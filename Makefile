@@ -215,10 +215,12 @@ install: all
 	$(CPR) $(EXAMPLE_DATA_DIR) $(prefix)
 	install -t $(extdir) $(PYEXT) MGTX/__init__.py
 	$(CPR) $(DOC_DIR)/html $(docdir)
-	install -t $(sysconfdir) mgtaxa.shrc $(PROJ_DIR)/etc/gt.sketch.default.style
+	install -t $(sysconfdir) mgtaxa.shrc \
+		$(PROJ_DIR)/etc/gt.sketch.default.style \
+		$(PROJ_DIR)/etc/ncbi.json
 	install -t $(exec_bindir) $(PROGRAMS)
 	$(CPR) $(BIN_PY_DIR)/* $(bindir)
-	#configure/make/install cmake project
+	##configure/make/install cmake project
 	$(PROJ_DIR)/cmake_build $(PROJ_DIR)
 
 .PHONY: clean
