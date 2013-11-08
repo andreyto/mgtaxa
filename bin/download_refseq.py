@@ -96,7 +96,10 @@ class RefseqDownloader:
             mkf.appendJob(
                     targets=[local_file],
                     inputs=[config_file],
-                    cmd=cmd
+                    cmd=cmd,
+                    vars=[
+                        "@BATCH_LOCAL=1"
+                        ]
                     )
             rec["l_file"] = local_file
         save_config_json(file_paths,local_paths_file)
