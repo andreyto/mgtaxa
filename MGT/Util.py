@@ -1245,6 +1245,33 @@ def basedir(path):
         basen = os.path.basename(dirn)
     return basen
 
+def split_path(path):
+    """Split path in a list of components similar to str.split().
+    Unlike os.path.split(), this will split 'a/b/c' into ['a','b','c'].
+    Otherwise, semantics is the same on various corner cases if
+    the last returned component as basename and all the leading ones -
+    as dirnames. In particular, at least two components are always returned,
+    with one of them possibly empty.
+
+    os.path.join(split_path(path)) == path"""
+
+    parts = []
+    pathn = path
+    while True:
+        dirn,basen = os.path.split(pathn)
+        if dirn == pathn:
+            if len(parts) == 0:
+                parts.insert(0,basen)
+            parts.insert(0,dirn)
+            break
+        parts.insert(0,basen)
+        if dirn:
+            pathn = dirn
+        else:
+            if len(parts) == 1:
+                parts.insert(0,dirn)
+            break
+    return tuple(parts)
 
 def urljoin_path(base,url):
     import urlparse
@@ -1469,4 +1496,105 @@ def cmd_python(wrapper=""):
             "files":[wrapper,exe] if wrapper else [exe]
             }
            )
+
+
+class PathHasher:
+    """Converts file paths into a deep directory hierarchy.
+    Use this when you need to create so many files 
+    that placing them in a single directory will slow
+    down file system meta operations such as search.
+    """
+
+    param_file = ".path_hasher.json"
+
+    def __init__(self,root,n_subdirs=2**10,mode="w"):
+        """Ctor.
+        @param root Top level directory of the hierarchy.
+        When converting input paths, it will be assumed that
+        they are given relative to this root.
+        @param n_subdirs maximum number of internmediate 
+        subdirectories per parent directory
+        @param mode {"w","r"}["w"] default access mode. If "w",
+        generate new hierarchy; If "r" - expect an existing 
+        hierarchy and read the parameters saved under "root".
+        """
+        import math
+        #depth is currently fixed at 1
+        #the depth of existing hierachy could be found
+        #out from param file by future versions of the code
+        param_file = os.path.join(root,self.param_file)
+        if mode != "w":
+            assert os.path.isfile(param_file)
+        if os.path.isfile(param_file):
+            opt = load_config_json(param_file)
+            self.opt = opt
+        else:
+            opt = {}
+            opt["depth"] = 1
+            opt["n_subdirs"] = n_subdirs
+            self.opt = opt
+            makedir(root)
+            save_config_json(opt,param_file)
+        self.mode = mode
+        n_digits = int(math.ceil(math.log10(opt["n_subdirs"])))
+        self.dir_hash_tpl = "ph_{:0%i}" % (n_digits,)
+        self.root = root
+
+    def path(self,name,mode=None):
+        """Convert a file name into the actual path.
+        @param name file name relative to the root directory
+        of this object; name can be a multicomponent relative
+        path
+        @param mode {"w","r"}[self.mode] If "w", intermediate
+        directory levels will be created; If "r", intermediate
+        directory levels must exist and assertion will be made
+        @return join(root,intermediate levels,name)
+        
+        Examples: 
+        a -> root/1/a
+        a/b/c -> root/1/a/b/c
+        """
+        assert not os.path.isabs(name),\
+                "Path must be relative (to root of this object): {}".format(name)
+        if mode is None:
+            mode = self.mode
+        #name like "a/b/c" will be hashed only
+        #by first component
+        first_comp = split_path(name)[0]
+        if not first_comp:
+            first_comp = os.path.basename(name)
+        assert first_comp, "Empty file name is not allowed"
+        dir_hash = self.dir_hash_tpl.format(hash(first_comp) % self.opt["n_subdirs"])
+        full_hash = os.path.join(self.root,dir_hash)
+        if mode == "w":
+            makedir(full_hash)
+        else:
+            assert os.path.isdir(full_hash)
+        return os.path.join(full_hash,name)
+
+    def buckets(self):
+        #when implementing for larger depths, use os.walk and control the depth value
+        for sub in os.listdir(self.root):
+            if sub.startswith("ph_"):
+                psub = os.path.join(self.root,sub)
+                if os.path.isdir(psub):
+                    yield psub
+    
+    def listdir(self):
+        for bucket in self.buckets():
+            for name in os.listdir(bucket):
+                yield os.path.join(bucket,name)
+
+    def glob(self,pattern):
+        for bucket in self.buckets():
+            for path in glob.iglob(os.path.join(bucket,pattern)):
+                yield path
+
+    def walk(self,*l,**kw):
+        for bucket in self.buckets():
+            for v in os.walk(bucket,*l,**kw):
+                yield v
+
+    def __call__(self,name,mode=None):
+        return self.path(name,mode=mode)
 
