@@ -17,12 +17,13 @@ class ftputil_download_progress_reporter:
 
     import time
 
-    def __init__(self,host,remote_file,local_file,log=None,log_period=10):
+    def __init__(self,host,remote_file,local_file,log=None,log_period=10,keep_alive=False):
         self.host = host
         self.remote_file = remote_file
         self.local_file = local_file
         self.log = log
         self.log_period = log_period
+        self.keep_alive = keep_alive
         self.length = 0
         self._last_cnt = 0
         self._last_sec = time.time()
@@ -38,7 +39,8 @@ class ftputil_download_progress_reporter:
                     self._last_sec = sec
                     self.log.info("{}: {}MB ready".\
                         format(self.local_file,cnt))
-        self.host.keep_alive()
+        if keep_alive:
+            self.host.keep_alive()
 
 class RefseqDownloader:
 
@@ -80,16 +82,18 @@ class RefseqDownloader:
             config_file,
             remote_paths_file,
             local_paths_file,
-            makeflow_file
+            makeflow_file,
+            output_dir
             ):
         conf = load_config_json(config_file)
         conf_ftp = conf["ftp"]
         wrapper = self.wrapper
         file_paths = load_config_json(remote_paths_file)
+        path_hasher = PathHasher(output_dir)
         mkf = MakeflowWriter(makeflow_file,mode="a")
         cmd_pref = cmd_self(wrapper)["cmd"]
         for rec in file_paths:
-            local_file = rec["r_file"].split("/")[-1]
+            local_file = path_hasher(rec["r_file"].split("/")[-1])
             cmd = "{} internal download-file {} {} {}".\
                     format(cmd_pref,config_file,
                     rec["r_file"],local_file)
@@ -171,7 +175,8 @@ class RefseqDownloader:
             remote_paths_file,
             local_paths_file,
             hdr_paths_file,
-            makeflow_file
+            makeflow_file,
+            output_dir
             ):
         """Generate internal workflow"""
         #create default header
@@ -181,7 +186,8 @@ class RefseqDownloader:
             config_file,
             remote_paths_file,
             local_paths_file,
-            makeflow_file
+            makeflow_file,
+            output_dir
             )
         self.wf_extract_headers(
             config_file,
@@ -191,8 +197,10 @@ class RefseqDownloader:
             )
 
     @arg("config-file",type=os.path.abspath)
+    @arg("output-dir",type=os.path.abspath)
     def checkout(self,
-            config_file
+            config_file,
+            output_dir
             ):
         """Main entry point: get and process the database"""
         conf = load_config_json(config_file)
@@ -233,7 +241,8 @@ class RefseqDownloader:
                     remote_paths_file,
                     local_paths_file,
                     hdr_paths_file,
-                    makeflow_file
+                    makeflow_file,
+                    output_dir
                     )
                 )
 
