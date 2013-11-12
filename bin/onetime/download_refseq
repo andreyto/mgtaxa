@@ -1,0 +1,4 @@
+#!/bin/bash
+$MGT_HOME/bin/mgt_wrapper python $MGT_HOME/bin/download_refseq.py checkout $MGT_HOME/etc/ncbi.json refseq
+MAKEFLOW_BATCH_QUEUE_TYPE=sge BATCH_OPTIONS='-P 9223 -b n' $MGT_HOME/bin/mgt_wrapper makeflow download_refseq.mkf
+
