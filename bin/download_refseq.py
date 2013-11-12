@@ -39,7 +39,7 @@ class ftputil_download_progress_reporter:
                     self._last_sec = sec
                     self.log.info("{}: {}MB ready".\
                         format(self.local_file,cnt))
-        if keep_alive:
+        if self.keep_alive:
             self.host.keep_alive()
 
 class RefseqDownloader:
@@ -115,7 +115,9 @@ class RefseqDownloader:
             ):
         conf = load_config_json(config_file)
         conf_ftp = conf["ftp"]
-
+        ##@todo Some downloads on RefSeq hang forever. Create a separate download
+        #method that uses ftplib.FTP.transfercmd to get a socket, sets timeout on 
+        #the socket and uses recv(): http://docs.python.org/2/library/socket.html.
         with ftputil.FTPHost(conf_ftp["host"], 'anonymous', options.toolEmail) as host:
             host.download(remote_file,local_file,mode="b",
                     callback=ftputil_download_progress_reporter(
@@ -235,7 +237,7 @@ class RefseqDownloader:
                     config_file,
                     remote_paths_file
                     ],
-                cmd="{} internal wf-generate {} {} {} {} {}".format( 
+                cmd="{} internal wf-generate {} {} {} {} {} {}".format( 
                     cmd_pref,
                     config_file,
                     remote_paths_file,
