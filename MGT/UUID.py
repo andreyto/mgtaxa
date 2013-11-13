@@ -8,10 +8,11 @@
 
 """UUID generation functions"""
 
+import random
+import string
 import uuid
-import numpy
 
-__all__ = ["maxIdLen","idDtype","genId","zeroId"]
+__all__ = ["maxIdLen","idDtype","genId","zeroId","random_string"]
 
 # maximum length of UUID
 maxIdLen = 32
@@ -31,15 +32,21 @@ def genId(n=None):
     if n is None:
         return uuid.uuid4().hex
     else:
+        import numpy
         a = numpy.empty(n,dtype=idDtype)
         for i in xrange(n):
             a[i] = uuid.uuid4().hex
         return a
 
 def zeroId(n,val=None):
+    import numpy
     a = numpy.zeros(n,dtype=idDtype)
     if val is not None:
         a[:] = val
     return a
 
+_random_symbols_choice = string.ascii_lowercase + string.digits
+
+def random_string(length=6, symbols=_random_symbols_choice):
+    return ''.join(random.choice(symbols) for x in range(length))
 
