@@ -222,6 +222,11 @@ class ImmClassifierApp(App):
             dest="inpNcbiSeq",
             help="File or shell glob with input NCBI FASTA sequences for training main set of models"),
             
+            optParseMakeOption_Path(None, "--inp-ncbi-seq-list",
+            dest="inpNcbiSeqList",
+            help="File that contains a list of file names (one per line) of the "+\
+                    "input NCBI FASTA sequences for training main set of models"),
+            
             make_option(None, "--inp-ncbi-seq-sel-policy",
             action="store",
             type="choice",
@@ -285,7 +290,7 @@ class ImmClassifierApp(App):
             default=0,
             dest="trainCompositeModels",
             help="If non-zero, train models for the inner nodes of the taxonomic "+\
-                    "tree by concatenating balanced-picked leaf sequences [0]."),
+                    "tree by concatenating balanced-picked leaf sequences [%default]."),
             
             make_option(None, "--train-min-len-samp",
             action="store", 
@@ -573,11 +578,16 @@ class ImmClassifierApp(App):
         
         if opt.mode == "train":
             opt.setIfUndef("trainMinLenSamp",2000)
-            opt.setIfUndef("trainMinLenSampModel",20000)
+            opt.setIfUndef("trainMinLenSampModel",10000)
 
         if opt.mode == "make-ref-seqdb":
             globOpt = globals()["options"]
-            opt.setIfUndef("inpNcbiSeq",pjoin(globOpt.refSeqDataDir,"microbial.genomic.fna.gz"))
+            if opt.isUndef("inpNcbiSeq") and opt.isUndef("inpNcbiSeqList"):
+                ph = PathHasher(globOpt.refSeqDataDir,mode="r")
+                opt.inpNcbiSeqList = pjoin(opt.cwd,"inp_ncbi_seq.csv")
+                with open(opt.inpNcbiSeqList,"w") as out:
+                    for f in ph.glob("*.fna.gz"):
+                        out.write("{}\n".format(f))
         if opt.benchNLevTestModelsMin < 1:
             parser.error("--bench-n-lev-test-model-min must be at least 1")
 
@@ -724,7 +734,15 @@ class ImmClassifierApp(App):
                 extraFilter=policyFilter)
         seqDb = SeqDbFasta.open(path=opt.seqDb,mode="c")
         seqDb.setTaxaTree(self.getTaxaTree())
-        seqDb.importByTaxa(glob.glob(opt.inpNcbiSeq),filt=filt)
+        inpNcbiFiles = []
+        if not opt.isUndef(opt.inpNcbiSeq):
+            inpNcbiFiles += list(glob.glob(opt.inpNcbiSeq))
+        if not opt.isUndef(opt.inpNcbiSeqList):
+            with closing(openCompressed(opt.inpNcbiSeqList,"r")) as inp:
+                for line in inp:
+                    inpNcbiFiles += [os.path.abspath(f) for f in glob.glob(line.strip())]
+
+        seqDb.importByTaxa(inpNcbiFiles,filt=filt)
 
         # For now, we filter by length when we build models.
         #taxids = seqDb.getTaxaList()
