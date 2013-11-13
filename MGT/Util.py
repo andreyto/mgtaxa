@@ -6,6 +6,7 @@
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
 from __future__ import with_statement  # only for python 2.5
+from contextlib import contextmanager, closing
 from types import *
 import re
 import string, os, sys
@@ -295,6 +296,7 @@ def editSymlink(source,link_name):
         os.remove(link_name)
     os.symlink(source,link_name)
 
+
 def openCompressed(filename,mode,compressFormat=None,**kw):
     """Open a filename which can be either compressed or plain file.
     @param compressFormat if None, an attempt will be made to autodetect format 
@@ -309,19 +311,21 @@ def openCompressed(filename,mode,compressFormat=None,**kw):
             cform = "bz2"
     #print "DEBUG: openCompressed(%s,%s,%s)" % (filename,mode,cform)
     k = kw.copy()
+    ret = None
     if cform == "gzip":
         if "buffering" in k:
             k["bufsize"] = k["buffering"]
             del k["buffering"]
-        return openGzip(filename,mode,**kw)
+        ret = openGzip(filename,mode,**kw)
     elif cform == "bz2":
         k.setdefault("buffering",2**20)
-        return bz2.BZ2File(filename,mode,**kw)
+        ret = bz2.BZ2File(filename,mode,**kw)
     elif cform == "none":
         k.setdefault("buffering",2**20)
-        return open(filename,mode,**kw)
+        ret = open(filename,mode,**kw)
     else:
         raise ValueError(compressFormat)
+    return ret
 
 def compressFile(inputFile,compressFormat="gz"):
     """Compress input file in place, like gzip does by default"""
