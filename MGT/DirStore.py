@@ -30,7 +30,8 @@ class DirStore:
         @li "w" - will open exisiting store or create new and call save() method
         @li "c" - will erase existing store (if exists) then create the new store and call save()
         @li "r" - will open existing store, will never create a new one, will not call save()
-        @li "a" - if store exists, acts same as "r", else same as "w"."""
+        @li "r+" - will open existing store for updates; store must exist
+        @li "a" - if store exists, acts same as "r+", else same as "w"."""
         dPath = klass._dumpPath(path)
         if mode == "c":
             rmdir(path)
@@ -39,11 +40,16 @@ class DirStore:
             if not os.path.isfile(dPath):
                 mode = "w"
             else:
-                mode = "r"
-        if mode == "r":
+                mode = "r+"
+        if mode[0] == "r":
             o = loadObj(dPath)
-            o.path = path
             # fix path so that we can safely move store trees on disk
+            o.path = path
+            if mode.endswith("+"):
+                hashers_mode = "w"
+            else:
+                hashers_mode = "r"
+            o.path_hasher, o.meta_path_hasher = klass._getPathHashers(path,mode=hashers_mode)
         elif mode == "w":
             o = klass(path=path,**kw)
             o.save()
@@ -55,9 +61,9 @@ class DirStore:
         """Constructor.
         @param save If False [default], this only creates in-memory instance but does not touch
         the file system in any way. This is an intented behavior, so that
-        the suer code could create a hierarchy of these objects w/o commiting
+        the user code could create a hierarchy of these objects w/o commiting
         anything to disk (if it only needs to get to the leaves, for instance).
-        To commit the object to dosk, pass save as True. Alternatively, you ca call save() 
+        To commit the object to disk, pass save as True. Alternatively, you ca call save() 
         on this instance, or create the instance with a factory class method open().
         """
         self.path = path
@@ -73,6 +79,7 @@ class DirStore:
             os.makedirs(mDir)
         dPath = self._dumpPath(self.path)
         dumpObj(self,dPath)
+        self.path_hasher, self.meta_path_hasher = self._getPathHashers(self.path,mode="w")
 
     def close(self):
         pass
@@ -84,13 +91,18 @@ class DirStore:
     @classmethod
     def _dumpPath(klass,path):
         return pjoin(klass._metaPath(path),klass.dumpName)
+    
+    @classmethod
+    def _getPathHashers(klass,path,mode):
+        return (PathHasher(path,mode=mode),
+                PathHasher(klass._metaPath(path),mode=mode))
 
     @classmethod
     def isStore(klass,path):
         return os.path.isdir(klass._metaPath(path))
 
     def getFileMetaPath(self,name):
-        return pjoin(self._metaPath(self.path),name+self.metaExt)
+        return self.meta_path_hasher(name+self.metaExt)
 
     def delFileMetaData(self,name):
         p = self.getFileMetaPath(name)
@@ -106,7 +118,7 @@ class DirStore:
         dumpObj(obj,p)
     
     def getFilePath(self,name):
-        return pjoin(self.path,name)
+        return self.path_hasher(name)
     
     def getObjPath(self,name):
         assert name != self.metaDirName
@@ -162,18 +174,18 @@ class DirStore:
         return klass.open(path=self.getStorePath(name),**kw)
 
     def objNames(self,pattern="*"):
-        for path in glob.iglob(self.getFilePath(pattern+self.objExt)):
+        for path in self.path_hasher.glob(self.getFilePath(pattern+self.objExt)):
             yield stripSfx(os.path.basename(path),self.objExt)
 
     def getFilePaths(self,pattern="*"):
-        for path in glob.iglob(self.getFilePath(pattern)):
+        for path in self.path_hasher.glob(self.getFilePath(pattern)):
             yield path
     
     def fileNames(self,pattern="*",sfxStrip=None,iterPaths=None):
         """Iterate over names that optionally filtered by the shell pattern.
         @param pattern Shel-style pattern
         @param sfxStrip Filename suffix to strip before returning the remaining
-        part (math is done before stripping)
+        part (match is done before stripping)
         @param iterPaths If defined, must be an iterable over file paths - it 
         will be used instead of the content of this store. This option can be
         used to build multi-level filters.
@@ -186,7 +198,7 @@ class DirStore:
                         yield item
         else:
             def _iter_glob():
-                for item in glob.iglob(self.getFilePath(pattern)):
+                for item in self.path_hasher.glob(pattern):
                     yield item
         for path in _iter_glob():
             f = os.path.basename(path)
@@ -195,7 +207,7 @@ class DirStore:
             yield f
     
     def storeNames(self,pattern="*"):
-        for path in glob.iglob(self.getFilePath(pattern)):
+        for path in self.path_hasher.glob(pattern):
             if self.isStore(path):
                 yield os.path.basename(path)
 

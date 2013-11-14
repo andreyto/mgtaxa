@@ -25,7 +25,7 @@ class SeqDbFasta(DirKeyStore):
 
     def importByTaxa(self,inpFiles,filt=None):
         taxaTree = self.getTaxaTree()
-        splitFastaFilesByTaxa(inSeqs=inpFiles,taxaTree=taxaTree,giToTaxa=None,outDir=self.getPath(),filt=filt,outSfx=self.objUncomprSfx)
+        splitFastaFilesByTaxa(inSeqs=inpFiles,taxaTree=taxaTree,giToTaxa=None,outStore=self,filt=filt,outSfx=self.objUncomprSfx)
 
     def loadTaxaList(self,objSfx=None):
         self.taxaList = n.asarray([ int(f) for f in self.iterIds(objSfx=objSfx) ])
@@ -48,7 +48,7 @@ class SeqDbFasta(DirKeyStore):
         #first compress, so that updateMetaDataById could find the file
         dataFileUncompr = self.getFilePathById(id,objSfx=self.objUncomprSfx)
         if os.path.exists(dataFileUncompr):
-            compressFile(dataFileUncompr)
+            compressFile(dataFileUncompr,self.getFilePathById(id))
         self.updateMetaDataById(id)
 
     def fastaReader(self,id):
