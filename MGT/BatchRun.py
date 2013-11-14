@@ -17,7 +17,6 @@ class BatchJob(Struct):
 
 _BatchJobTemplateBash = \
 """#!/bin/bash
-set -e
 #$$ -cwd
 #$$ -r n
 ${lrmSiteOptions}
@@ -52,6 +51,7 @@ if [ -n "$$batchHostDebug" ]; then
     top -b -n 1 | head -n 15
     ####
 fi
+set -e
 """
 _BatchJobTemplate = _BatchJobTemplateBash
 
