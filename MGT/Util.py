@@ -18,6 +18,7 @@ from copy import copy, deepcopy
 from cPickle import dump, load, Pickler, Unpickler
 from cStringIO import StringIO
 import json
+import tempfile
 
 import numpy
 
@@ -28,6 +29,8 @@ import numpy.random as nrnd
 np = numpy
 npma = numpy.ma
 import numpy.random as nprnd
+
+import random
 
 from tempfile import mkstemp
 from textwrap import dedent
@@ -327,10 +330,13 @@ def openCompressed(filename,mode,compressFormat=None,**kw):
         raise ValueError(compressFormat)
     return ret
 
-def compressFile(inputFile,compressFormat="gz"):
-    """Compress input file in place, like gzip does by default"""
+def compressFile(inputFile,outputFile=None,compressFormat="gz"):
+    """Compress input file in place, like gzip does by default.
+    Optionally, move the result into outputFile"""
     if compressFormat == "gz":
         run(["gzip","--force",inputFile])
+        if outputFile:
+            shutil.move(inputFile+".gz",outputFile)
     else:
         raise ValueError("Unknown compressFormat: %s" % (compressFormat,))
 
@@ -1568,12 +1574,7 @@ class PathHasher:
         if not first_comp:
             first_comp = os.path.basename(name)
         assert first_comp, "Empty file name is not allowed"
-        dir_hash = self.dir_hash_tpl.format(hash(first_comp) % self.opt["n_subdirs"])
-        full_hash = os.path.join(self.root,dir_hash)
-        if mode == "w":
-            makedir(full_hash)
-        else:
-            assert os.path.isdir(full_hash)
+        full_hash = self._gen_bucket_int(hash(first_comp),mode=mode)
         return os.path.join(full_hash,name)
 
     def buckets(self):
@@ -1583,6 +1584,26 @@ class PathHasher:
                 psub = os.path.join(self.root,sub)
                 if os.path.isdir(psub):
                     yield psub
+
+    def _gen_bucket_int(self,i,mode):
+        dir_hash = self.dir_hash_tpl.format( i % self.opt["n_subdirs"])
+        full_hash = os.path.join(self.root,dir_hash)
+        if mode == "w":
+            if not os.path.exists(full_hash):
+                #other process could have created full_hash
+                #in the meantime, so as long as full_hash exists
+                #we ignore any errors
+                try:
+                    os.makedirs(full_hash)
+                except:
+                    if not os.path.isdir(full_hash):
+                        raise
+        else:
+            assert os.path.isdir(full_hash),"Bucket directory does not exist: {}".format(full_hash)
+        return full_hash
+
+    def random_bucket(self):
+        return self._gen_bucket_int(random.randrange(self.opt["n_subdirs"]),mode="w")
     
     def listdir(self):
         for bucket in self.buckets():
@@ -1601,4 +1622,25 @@ class PathHasher:
 
     def __call__(self,name,mode=None):
         return self.path(name,mode=mode)
+
+    def mkdtemp(self,suffix="",prefix=""):
+        """Create a temporary directory.
+        Directories are spread evenly among the bins.
+        @post If ret is a returned value, then 
+        self.path(basename(ret)) != ret.
+        In other words, you will not be able to map
+        the returned file name back to its bucket using
+        self.path() method. You should store and use the full
+        returned path. The reason behind this is because the
+        bucket is determined by applying a hashing function to
+        the file name, but the unique file name can be only reliably
+        generated without race conditions once the bucket is
+        known. To work around this, we first generate a random
+        bucket, and then generate
+        a unique temporary directory name in the selected bucket.
+        @return directory path"""
+
+        return tempfile.mkdtemp(suffix=suffix,
+                    prefix=prefix,
+                    dir=self.random_bucket())
 
