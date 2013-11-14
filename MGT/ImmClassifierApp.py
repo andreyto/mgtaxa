@@ -696,11 +696,9 @@ class ImmClassifierApp(App):
             self.taxaLevels = TaxaLevels(self.taxaTree)
         return self.taxaLevels
     
-    def getSeqDb(self):
+    def getSeqDb(self,mode="r"):
         opt = self.opt
-        if self.seqDb is None:
-            self.seqDb = SeqDbFasta.open(opt.seqDb,mode="r") #"r"
-            return self.seqDb
+        return SeqDbFasta.open(opt.seqDb,mode=mode)
 
     def makeRefSeqDb(self,**kw):
         """Create reference SeqDb (the "main" SeqDb)"""
@@ -735,9 +733,9 @@ class ImmClassifierApp(App):
         seqDb = SeqDbFasta.open(path=opt.seqDb,mode="c")
         seqDb.setTaxaTree(self.getTaxaTree())
         inpNcbiFiles = []
-        if not opt.isUndef(opt.inpNcbiSeq):
+        if not opt.isUndef("inpNcbiSeq"):
             inpNcbiFiles += list(glob.glob(opt.inpNcbiSeq))
-        if not opt.isUndef(opt.inpNcbiSeqList):
+        if not opt.isUndef("inpNcbiSeqList"):
             with closing(openCompressed(opt.inpNcbiSeqList,"r")) as inp:
                 for line in inp:
                     inpNcbiFiles += [os.path.abspath(f) for f in glob.glob(line.strip())]
@@ -754,7 +752,7 @@ class ImmClassifierApp(App):
     def finRefSeqDb(self,**kw):
         """Finalize creation of SeqDb for training ICM model from NCBI RefSeq"""
         opt = self.opt
-        seqDb = self.getSeqDb()
+        seqDb = self.getSeqDb(mode="r+")
         taxids = seqDb.getIdList(objSfx=seqDb.objUncomprSfx)
         taxids = n.asarray(taxids,dtype="O")
         nrnd.shuffle(taxids)
@@ -770,7 +768,7 @@ class ImmClassifierApp(App):
     def finRefSeqDbBatch(self,**kw):
         """Sub-task of finalizing creation of SeqDb for training ICM model from NCBI RefSeq"""
         opt = self.opt
-        seqDb = self.getSeqDb()
+        seqDb = self.getSeqDb(mode="w")
         taxids = opt.seqDbIds
         for taxid in taxids:
             seqDb.finById(taxid)
