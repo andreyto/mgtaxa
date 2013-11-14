@@ -7,6 +7,7 @@
 
 
 from MGT.Common import *
+from MGT.UUID import *
 from optparse import OptionParser, make_option
 import tempfile
 
@@ -262,9 +263,9 @@ class App:
             dest="batchBackend",
             default=None,
             help="Execution backend to use if --run-mode batchDep  is selected: - 'qsub' will immediately "+\
-                    "submit jobs to LRM and print the ID of the terminating job "+\"
-                    to track completion with "+\
-                    "the LRM; - 'makeflow' will generate a Makeflow script ("+\
+                    "submit jobs to LRM and print the ID of the terminating job "+\
+                    "to track completion with "+\
+                    "the LRM; - 'makeflow' will generate a Makeflow script "+\
                     "named 'workflow'. "+\
                     "For the makeflow, you then should run makeflow with the options "+\
                     "specific for your execution environment and script name as the "+\
@@ -332,11 +333,12 @@ class App:
         if opt.optFile is not None:
             opt = loadObj(opt.optFile)
         else:
-            #cwd
-            d = tempfile.mkdtemp(suffix=".work",
-                prefix=klass.getAppName()+".",
-                dir=os.getcwd())
-            opt.setIfUndef("cwd",d)
+            if opt.isUndef("cwd"):
+                root = os.getcwd()
+                ph = PathHasher(root,mode="w")
+                prefix = klass.getAppName()+"."
+                opt["cwd"] = ph.mkdtemp(suffix=".work",
+                        prefix=prefix)
             #batch-backend
             #take it from global options if not provided through command-line,
             #and then overwrite the global options because only one default value makes
@@ -430,14 +432,16 @@ class App:
             klassname = self.__class__.__name__
             return sys.executable + " " + extraPyArgs + " -c 'import %s; %s.%s(args=None).run()'" % (modname,modname,klassname)
 
-    def getCmdOptFile(self,cwd=os.getcwd(),**kw):
+    def getCmdOptFile(self,cwd=None,**kw):
         """Generate unique file name for a new options pickle file and build full command line with it.
         @param cwd optional directory for the new file (current dir by default)
         @ret Struct(optFile,cmd) where optFile is file name, cmd is command line, 
         such as self.getCmd()+' --opt-file '+optFile."""
         opt = self.opt
-        makedir(opt.cwd)
-        out,optFile = makeTmpFile(suffix=".opt.pkl",prefix=self.getAppName()+'.',dir=opt.cwd,withTime=True)
+        if cwd is None:
+            cwd = opt.cwd
+        makedir(cwd)
+        out,optFile = makeTmpFile(suffix=".opt.pkl",prefix=self.getAppName()+'.',dir=cwd,withTime=True)
         out.close()
         return Struct(optFile=optFile,cmd=self.getCmd() + " --opt-file %s" % optFile)
 
