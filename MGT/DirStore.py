@@ -159,7 +159,7 @@ class DirStore:
                 raise ValueError("Name %s does not point to a valid object" % name)
 
     def loadStore(self,name):
-        return self.open(path=self.getStorePath(name),mode="r")
+        return self.open(path=self.getStorePath(name),mode="r+")
 
     def saveObj(self,obj,name):
         if not isinstance(obj,DirStore):
