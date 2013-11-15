@@ -73,6 +73,10 @@ class DirStore:
         if save:
             self.save()
 
+    def __getstate__(self):
+        """Pickling support - exclude everything but self.opt and self.path to make saved objects lightweight."""
+        return dict(opt=self.opt,path=self.path)
+
     def save(self):
         mDir = self._metaPath(self.path)
         if not os.path.isdir(mDir):
