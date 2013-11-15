@@ -136,9 +136,12 @@ class App:
                         ret = appT.run(depend=depend)
                         assert len(ret) == 1,"Terminator should always be a singleton job"
                 elif opt.batchBackend == "makeflow":
-                    mkw = MakeflowWriter(opt.workflowFile)
-                    mkw.appendMgtJobs(jobs=depend)
-                    mkw.close()
+                    if os.path.isfile(opt.workflowFile):
+                        os.remove(opt.workflowFile)
+                    workflowFileWork = opt.workflowFile+"."+random_string()
+                    with closing(MakeflowWriter(workflowFileWork)) as mkw:
+                        mkw.appendMgtJobs(jobs=depend)
+                    os.rename(workflowFileWork,opt.workflowFile)
                     #currently we just leave ret as it is, so that opt.web can print some jobId
                     #if submitting makeflow itself here, do not forget to set batchBackend to 'qsub'
                 else:
