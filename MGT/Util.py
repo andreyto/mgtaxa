@@ -79,29 +79,24 @@ class Timer(object):
         return "%s. Elapsed: %s" % (s,self())
 
 def dumpObj(obj,fileName,**kw):
-    out = openCompressed(fileName,'w',**kw)
-    dump(obj,out,-1)
-    out.close()
+    #print "DEBUG: dumpObj({},{},{})".format(obj,fileName,kw)
+    with closing(openCompressed(fileName,'wb',**kw)) as out:
+        dump(obj,out,-1)
     
 def loadObj(fileName,**kw):
-    inp = openCompressed(fileName,'rb',**kw)
-    ret = load(inp)
-    inp.close()
-    return ret
+    with closing(openCompressed(fileName,'rb',**kw)) as inp:
+        return load(inp)
 
 def dumpNumpy(obj,fileName,**kw):
     #numpy.save does not like non-file streams
     #out = openCompressed(fileName,'w',**kw)
-    out = open(fileName,'w',**kw)
-    np.save(out,obj)
-    out.close()
+    with closing(open(fileName,'wb',**kw)) as out:
+        np.save(out,obj)
     
 def loadNumpy(fileName,**kw):
     #inp = openCompressed(fileName,'rb',**kw)
-    inp = open(fileName,'rb',**kw)
-    ret = np.load(inp)
-    inp.close()
-    return ret
+    with closing(open(fileName,'rb',**kw)) as inp:
+        return np.load(inp)
 
 def PickleReader(inp,**kw):
     if isinstance(inp,str):
