@@ -450,7 +450,7 @@ class ImmApp(App):
                 immOpt.mode = "train-one"
                 immOpt.immId = immId
                 immOpt.immSeqIds = immSeqIds
-                immApp = ImmApp(opt=immOpt)
+                immApp = self.factory(opt=immOpt)
                 jobs += immApp.run(**kw)
         #TODO: add combiner job that validates that all models have been built
         return jobs
