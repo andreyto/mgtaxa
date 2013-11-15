@@ -60,11 +60,13 @@ class App:
             app.run()
         if calling from Python code:
             construct opt as a Struct() instance, specify only attributes with non-default values, then
-            app = App(opt=opt) #that fills yet unset options with defaults
+            app = App(opt=opt) #that fills yet unset options with defaults and can modify already set options
             app.run() #either runs in the same process, or submits itself or a set of other Apps to batch queue
         """
         optArgs, args = self.parseCmdLine(args=args,_explicitOpt=opt)
-        optArgs.updateOtherMissing(opt)
+        #optArgs.updateOtherMissing(opt)
+        #accept modifications to existing options:
+        opt.update(optArgs)
         self._instanceOptionsPostBase(opt)
         self.instanceOptionsPost(opt)
         # this is now checked in parseCmdLine
@@ -216,6 +218,7 @@ class App:
         bkw = BatchSubmitter.defaultOptions()
         ## pull only relevant options
         bkw.updateFromOtherExisting(opt)
+        bkw.setIfUndef("cwd",opt.cwd)
         ## kw options override all
         bkw.update(kw)
         bkw["depend"] = self._ajustDepend(**bkw.asDict())
@@ -239,6 +242,13 @@ class App:
             optParseMakeOption_Path(None, "--cwd",
             dest="cwd",
             help="A directory to use as a 'current working directory' [work]"),
+            
+            make_option(None, "--cwd-hash",
+            action="store", 
+            type="int",
+            dest="cwdHash",
+            default=1,
+            help="Modify --cwd into a hashed path ('a' -> 'random()/a')"),
             
             make_option(None, "--opt-file",
             action="store", 
@@ -333,12 +343,7 @@ class App:
         if opt.optFile is not None:
             opt = loadObj(opt.optFile)
         else:
-            if opt.isUndef("cwd"):
-                root = os.getcwd()
-                ph = PathHasher(root,mode="w")
-                prefix = klass.getAppName()+"."
-                opt["cwd"] = ph.mkdtemp(suffix=".work",
-                        prefix=prefix)
+            opt.cwd = klass.genCwd(opt.get("cwd",None),opt.get("cwdHash",1))
             #batch-backend
             #take it from global options if not provided through command-line,
             #and then overwrite the global options because only one default value makes
@@ -351,6 +356,22 @@ class App:
                 opt.needTerminator = True
         return opt,args
 
+    @classmethod
+    def genCwd(klass,cwd=None,cwdHash=1):
+        if not cwd:
+            root = os.getcwd()
+        elif not cwdHash:
+            return cwd
+        else:
+            root = cwd
+        ph = PathHasher(root,mode="w")
+        prefix = klass.getAppName()+"."
+        ret = ph.mkdtemp(suffix=".work",
+                prefix=prefix)
+        print "DEBUG: cwd={}    exists={}".format(ret,os.path.exists(ret))
+        return ret
+                
+    
     @classmethod
     def makeOptionParserArgs(klass):
         """Return a Struct with optparse.OptionParser constructor arguments specific to the application.
