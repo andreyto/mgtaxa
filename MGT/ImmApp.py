@@ -370,7 +370,7 @@ class ImmApp(App):
         opt = self.opt
         self.taxaTree = None #will be lazy-loaded
         self.seqDb = None #will be lazy-loaded
-        #self.store = SampStore.open(path=self.opt.get("cwd",os.getcwd()))
+        self.store = SampStore.open(path=self.opt.get("cwd",os.getcwd()))
         self.immStore = ImmStore.open(path=self.opt.immDb)
         if opt.mode == "score":
             if opt.isUndef("immIds"):
@@ -404,7 +404,7 @@ class ImmApp(App):
         return self.immStore.getImmPath(immId)
 
     def getScoreBatchPath(self,scoreBatchId):
-        return pjoin(self.opt.outDir,"%s%s" % (scoreBatchId,self.scoreSfx))
+        return self.store.getFilePath("%s%s" % (scoreBatchId,self.scoreSfx))
     
     def trainOne(self,**kw):
         """Train and save one IMM.
@@ -527,7 +527,7 @@ class ImmApp(App):
             immOpt.mode = "score-batch"
             immOpt.immIds = immIdsBatch #now this is a sequence, not a file name
             immOpt.scoreBatchId = scoreBatchId
-            immApp = ImmApp(opt=immOpt)
+            immApp = self.factory(opt=immOpt)
             jobs += immApp.run(**kw)
             scoreBatchIds.append(scoreBatchId)
         coOpt = copy(opt)
