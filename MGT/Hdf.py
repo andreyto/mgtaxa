@@ -11,7 +11,7 @@ import tables as pt
 
 import os.path
 
-def array_chunked_copy(src,dst,chunk):
+def array_chunked_copy(src,dst,chunk,op=None):
     """Assign elements of src to elements of dst in chunks.
     PyTables cannot copy from Array or other Node directly like
     dst[:] = src. It requires intermediate conversion into 
@@ -24,11 +24,19 @@ def array_chunked_copy(src,dst,chunk):
     @param dst destination node
     @param source node
     @param chunk chunk size in records
+    @param op optional operation to apply to each chunk;
+    op must be a function that takes numpy array and returns
+    numpy array or compatible sequence.
     """
     l = len(src)
-    for i in xrange(0,l,chunk):
-        j = min(i+chunk,l)
-        dst[i:j] = src[i:j]
+    if not op:
+        for i in xrange(0,l,chunk):
+            j = min(i+chunk,l)
+            dst[i:j] = src[i:j]
+    else:
+        for i in xrange(0,l,chunk):
+            j = min(i+chunk,l)
+            dst[i:j] = op(src[i:j])
 
 def hdfSplitPath(path):
     return os.path.split(path)
