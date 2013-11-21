@@ -140,7 +140,9 @@ class ImmScoresReducedHdf(ImmScoresHdf):
         """Concatenate into self a sequence of ImmScores objects representing different Imms for the same set of samples.
         @param fileNames sequence of object names to be concatenated
         @param idScoreSel optional sequence of all idScores that are expected to be present in the inputs;
-        KeyError exception will be raised if any is missing"""
+        KeyError exception will be raised if any is missing.
+        
+        @post Datatypes will be determined from the first file in fileNames"""
         assert len(fileNames) > 0,"Need a non-empty sequence of input object names"
         firstFileName = fileNames[0]
         pt.copyFile(firstFileName,self.fileName, overwrite=True)
@@ -247,7 +249,9 @@ class ImmScoresDenseMatrixHdf(ImmScoresHdf):
         """Concatenate into self a sequence of ImmScores objects with different or same idScores for the same set of samples.
         @param fileNames sequence of object names to be concatenated
         @param idScoreSel optional sequence of all idScores that are expected to be present in the inputs;
-        KeyError exception will be raised if any is missing"""
+        KeyError exception will be raised if any is missingi.
+        
+        @post Datatypes will be determined from the first file in fileNames."""
         assert len(fileNames) > 0,"Need a non-empty sequence of input object names"
         idSamp = None
         lenSamp = None
@@ -332,15 +336,6 @@ class ImmStoreWithTaxids(ImmStore):
     def listTaxidsWithLeafModels(self,iterPaths=None):
         return list(set(meta["taxid"] for (id,meta) in self.iterMetaData(iterPaths=iterPaths) if meta["is_leaf"]))
 
-def makeDefaultImmSeqIds(seqDb):
-    """Return a default dict(immId -> [ seqDb-Id, ... ]) to use as opt.immIdToSeqIds in ImmApp.
-    This will create a single IMM for each ID in seqDb.
-    @param seqDb Either instance of SeqDbFasta or path"""
-
-    if isinstance(seqDb,str):
-        seqDb = SeqDbFasta.open(seqDb)
-    return dict( [ (x,[x]) for x in seqDb.getTaxaList() ] )
-
 class ImmApp(App):
     """App-derived class for building collections of IMMs/ICMs and scoring against them"""
 
@@ -357,7 +352,6 @@ class ImmApp(App):
     @classmethod
     def parseCmdLinePost(klass,options,args,parser):
         opt = options
-        opt.setIfUndef("incrementalWork",False)
         opt.setIfUndef("immDb","imm")
         opt.setIfUndef("nImmBatches",10)
         opt.setIfUndef("trainMaxLenSampModel",10**9/2) #1G with rev-compl
@@ -411,10 +405,12 @@ class ImmApp(App):
         Parameters are taken from self.opt
         @param immId Assign this ID to the IMM
         @param immSeqIds List of sequence ids from seqDb
+        @param immMeta Meta data dict for immId
         """
         opt = self.opt
         immId = opt.immId
         immSeqIds = opt.immSeqIds
+        immMeta = opt.immMeta
         seqDb = self.getSeqDb()
         immPath = self.getImmPath(immId)
         imm = Imm(path=immPath)
@@ -427,8 +423,11 @@ class ImmApp(App):
             # remove any unfinished ICM file if anything went wrong
             rmf(immPath)
             raise
-        meta = dict(taxid=immId,seq_taxids=immSeqIds,is_leaf=(len(immSeqIds)<2))
-        self.immStore.saveMetaDataById(immId,meta)
+        #@todo When making models for iterative binning+assembly,
+        #immSeqIds can get long. Perhaps not save it here,
+        #or make it a name of a separate file
+        immMeta.update(dict(seq_db_ids=immSeqIds))
+        self.immStore.saveMetaDataById(immId,meta=immMeta)
 
     def trainMany(self,**kw):
         """Train many IMMs.
@@ -440,18 +439,16 @@ class ImmApp(App):
         #in that case it is difficult to make sure when we score that all
         #IMMs have been successfuly built.
         immIdToSeqIds = loadObj(opt.immIdToSeqIds)
-        if not opt.incrementalWork:
-            rmfMany([ self.getImmPath(immId) for immId in immIdToSeqIds.keys() ])
+        immIdToMeta = loadObj(opt.immIdToMeta)
         jobs = []
         for (immId,immSeqIds) in sorted(immIdToSeqIds.items()):
-            #if it was not incrementalWork, output was already cleaned above
-            if not os.path.exists(self.getImmPath(immId)):
-                immOpt = copy(opt)
-                immOpt.mode = "train-one"
-                immOpt.immId = immId
-                immOpt.immSeqIds = immSeqIds
-                immApp = self.factory(opt=immOpt)
-                jobs += immApp.run(**kw)
+            immOpt = copy(opt)
+            immOpt.mode = "train-one"
+            immOpt.immId = immId
+            immOpt.immSeqIds = immSeqIds
+            immOpt.immMeta = immIdToMeta[immId]
+            immApp = self.factory(opt=immOpt)
+            jobs += immApp.run(**kw)
         #TODO: add combiner job that validates that all models have been built
         return jobs
 
@@ -500,11 +497,6 @@ class ImmApp(App):
         makedir(opt.outDir)
         jobs = []
         immIds = loadObj(opt.immIds)
-        if opt.incrementalWork:
-            #after we switched to combining within batches, it is harder to properly
-            #implement the incremental scoring. In any case, it will become moot
-            #after we switch to makeflow execution
-            raise ValueError("Incremental mode is currently not supported for scoring")
         rmf(opt.outScoreComb)
         #group by idScore and shuffle by hashing
         idScoreToImmId = defdict(list)
