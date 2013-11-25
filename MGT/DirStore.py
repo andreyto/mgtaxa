@@ -51,8 +51,9 @@ class DirStore:
                 hashers_mode = "r"
             o.path_hasher, o.meta_path_hasher = klass._getPathHashers(path,mode=hashers_mode)
         elif mode == "w":
-            o = klass(path=path,**kw)
-            o.save()
+            kw_c = kw.copy()
+            kw_c["save"] = True
+            o = klass(path=path,**kw_c)
         else:
             raise ValueError("%s - unknown mode value" % mode)
         return o
@@ -72,6 +73,9 @@ class DirStore:
         self.opt = opt
         if save:
             self.save()
+        else:
+            self.path_hasher, self.meta_path_hasher = \
+                    self._getPathHashers(self.path,mode="r")
 
     def __getstate__(self):
         """Pickling support - exclude everything but self.opt and self.path to make saved objects lightweight."""
@@ -112,6 +116,10 @@ class DirStore:
         p = self.getFileMetaPath(name)
         if os.exists(p):
             os.remove(p)
+    
+    def hasFileMetaData(self,name):
+        p = self.getFileMetaPath(name)
+        return os.exists(p)
     
     def loadFileMetaData(self,name):
         p = self.getFileMetaPath(name)
@@ -263,6 +271,9 @@ class DirKeyStore(DirStore):
     
     def saveMetaDataById(self,id,meta):
         self.saveFileMetaData(meta,self.getFileBaseById(id))
+    
+    def hasMetaDataById(self,id):
+        return self.hasFileMetaData(self.getFileBaseById(id))
     
     def delById(self,id):
         self.delName(self.getFileBaseById(id))

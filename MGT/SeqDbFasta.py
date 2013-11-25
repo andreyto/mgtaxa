@@ -4,6 +4,7 @@ from MGT.DirStore import *
 from MGT.Taxa import *
 from MGT.FastaIO import *
 from MGT.FeatCommon import *
+from MGT.FastaSplitters import *
 
 class SeqDbFasta(DirKeyStore):
     """An interface to a collection of FASTA files.
@@ -23,22 +24,17 @@ class SeqDbFasta(DirKeyStore):
     def setTaxaTree(self,taxaTree):
         self.taxaTree = taxaTree
 
-    def importByTaxa(self,inpFiles,filt=None):
-        taxaTree = self.getTaxaTree()
-        splitFastaFilesByTaxa(inSeqs=inpFiles,taxaTree=taxaTree,giToTaxa=None,outStore=self,filt=filt,outSfx=self.objUncomprSfx)
 
-    def loadTaxaList(self,objSfx=None):
-        self.taxaList = n.asarray([ int(f) for f in self.iterIds(objSfx=objSfx) ])
+    def loadIdList(self,objSfx=None):
+        self.idList = self.listIds(objSfx=objSfx)
 
-    def getTaxaList(self,objSfx=None):
-        if not hasattr(self,"taxaList"):
-            self.loadTaxaList(objSfx=objSfx)
-        return self.taxaList
-
-    getIdList = getTaxaList
+    def getIdList(self,objSfx=None):
+        if not hasattr(self,"idList"):
+            self.loadIdList(objSfx=objSfx)
+        return self.idList
 
     def updateMetaDataById(self,id):
-        meta = Struct()
+        meta = self.loadMetaDataById(id)
         meta["seqLengths"] = self.computeSeqLengths(id)
         self.saveMetaDataById(id,meta)
 
@@ -67,13 +63,21 @@ class SeqDbFasta(DirKeyStore):
         meta = self.loadMetaDataById(id)
         return meta["seqLengths"]
     
-    def fastaWriter(self,id,lineLen=None,mode="w"):
+    def seqLengthSum(self,id):
+        return self.seqLengths(id)["len"].sum()
+
+    def fastaWriter(self,id,lineLen=None,mode="w",objSfx=None):
         """Return FastaWriter to write INTO the DB for a given ID.
         @param id ID of the record
         @param lineLen Length of FASTA lines
         @param mode String with the same semantics as 'mode' supplied to built-in open() method
+        @param objSfx set to self.objUncomprSfx to write into uncompressed object during initial
+        serial DB construction
         """
-        return FastaWriter(out=self.getFilePathById(id),lineLen=lineLen,mode=mode)
+        return FastaWriter(out=self.getFilePathById(id,objSfx=objSfx),lineLen=lineLen,mode=mode)
+    
+    def fastaWriterUncompr(self,id,lineLen=None,mode="w"):
+        return self.fastaWriter(id,lineLen=lineLen,mode=mode,objSfx=self.objUncomprSfx)
 
     def writeFasta(self,ids,out):
         """Write FASTA stream for given sequence of IDs from DB into output file-like object"""

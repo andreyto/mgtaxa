@@ -20,27 +20,10 @@ from MGT.ImmClassifierAppUtils import *
 from MGT.GraphicsKrona import *
 from MGT.ImmScoreRescaler import *
 from MGT.TaxaPred import TaxaPred
+from MGT.FastaSplitters import *
 
 import functools
 
-def fastaReaderFilterNucDegen(fastaReader,extraFilter=None):
-    compr = SymbolRunsCompressor(sym="N",minLen=1)
-    nonDegenSymb = "ATCGatcg"
-    def line_gen():
-        for rec in fastaReader.records():
-            hdr = rec.header()
-            seq = compr(rec.sequence())
-            if not checkSaneAlphaHist(seq,nonDegenSymb,minNonDegenRatio=0.98):
-                print "WARNING: ratio of degenerate symbols is too high, "+\
-                        "skipping sequence with id %s" % (rec.getId(),)
-            else:
-                rec = extraFilter(hdr,seq)
-                if rec:
-                    hdr,seq = rec
-                    yield hdr
-                    for line in seqToLines(seq):
-                        yield line
-    return FastaReader(line_gen())
 
 
 class ImmClassifierApp(App):
@@ -113,7 +96,8 @@ class ImmClassifierApp(App):
     This currently filters the input by excluding plasmids and taxa w/o enough total sequence.
     
     mgt-icm-classifier --mode make-ref-seqdb \\
-            --inp-ncbi-seq 'test_data/seqdb-fasta/*.fasta.gz' \\
+            --inp-train-seq 'test_data/seqdb-fasta/*.fasta.gz' \\
+            --inp-train-model-descr 'test_data/seqdb-fasta/models.json' \\
             --db-seq tmp.db-seq --run-mode batchDep \\
             --lrm-user-options '-P 0413'
     
@@ -187,9 +171,13 @@ class ImmClassifierApp(App):
                     "The list of collections defined with this option will be concatenated "+\
                     "with the list defined with --db-imm option."),
             
-            optParseMakeOption_Path(None, "--imm-seq-ids",
+            optParseMakeOption_Path(None, "--imm-id-to-seq",
             dest="immIdToSeqIds",
             help="File that maps IMM IDs to lists of seq IDs during IMM training"),
+            
+            optParseMakeOption_Path(None, "--imm-id-to-meta",
+            dest="immIdToMeta",
+            help="File that maps IMM IDs to model meta data during IMM training"),
             
             optParseMakeOption_Path(None, "--imm-ids",
             dest="immIds",
@@ -216,24 +204,33 @@ class ImmClassifierApp(App):
 
             optParseMakeOption_Path(None, "--inp-train-seq",
             dest="inpTrainSeq",
-            help="File with input FASTA sequences for training extra user models"),
+            help="File or shell glob with input FASTA sequences for training models"),
             
-            optParseMakeOption_Path(None, "--inp-ncbi-seq",
-            dest="inpNcbiSeq",
-            help="File or shell glob with input NCBI FASTA sequences for training main set of models"),
-            
-            optParseMakeOption_Path(None, "--inp-ncbi-seq-list",
-            dest="inpNcbiSeqList",
+            optParseMakeOption_Path(None, "--inp-train-seq-list",
+            dest="inpTrainSeqList",
             help="File that contains a list of file names (one per line) of the "+\
-                    "input NCBI FASTA sequences for training main set of models"),
+                    "input FASTA sequences for training models"),
+            
+            make_option(None, "--inp-train-seq-format",
+            action="store",
+            type="choice",
+            choices=("generic","ncbi"),
+            default="generic",
+            dest="inpTrainSeqFormat",
+            help="Format of input training sequences: {ncbi,generic} [%default]. " +\
+                    "'generic' requires --inp-train-model-descr option defined"),
+            
+            optParseMakeOption_Path(None, "--inp-train-model-descr",
+            dest="inpTrainModelDescr",
+            help="File in JSON format that maps models to training sequences"),
             
             make_option(None, "--inp-ncbi-seq-sel-policy",
             action="store",
             type="choice",
             choices=("drop-plasmids","extra-chrom-only","drop-extra-chrom"),
             default="drop-extra-chrom",
-            dest="inpNcbiSeqPolicy",
-            help="Policy preset for filtering reference training sequence based on the type of "+\
+            dest="inpNcbiSeqSelPolicy",
+            help="Policy preset for filtering NCBI training sequence based on the type of "+\
                     "genomic element [%default]"),
             
             make_option(None, "--max-seq-id-cnt",
@@ -260,6 +257,11 @@ class ImmClassifierApp(App):
             dest="outScoreComb",
             help="Output file for combined raw scores [--out-dir/combined.%s]"%(ImmApp.scoreSfx,)),
         
+            optParseMakeOption_Path(None, "--out-id-score-meta",
+            dest="outIdScoreMeta",
+            help="Output file for combined meta-data map of score IDs "+\
+            "[--out-score-comb+id_score.meta.pkl]"),
+            
             optParseMakeOption_Path(None, "--taxa-tree-ncbi-dir",
             dest="taxaTreeNcbiDir",
             help="Directory where standard NCBI taxonomy tree is saved as a set of NCBI 'dump' files. "+\
@@ -394,15 +396,6 @@ class ImmClassifierApp(App):
             help="If set to non-zero, --pred-out-taxa-csv file will not be produced - "+\
                     "useful when you only want the summary stats"),
             
-            make_option(None, "--incremental-work",
-            action="store",
-            type="int",
-            default=0,
-            dest="incrementalWork",
-            help="Work incrementally wherever possible (restart mode). Currently, this will "+\
-                    "affect 'train' and 'predict' modes [%default]. Set to non-zero number to "+\
-                    "activate"),
-            
             make_option(None, "--reduce-scores-early",
             action="store",
             type="int",
@@ -530,7 +523,8 @@ class ImmClassifierApp(App):
                 opt.scoreTaxidsExcludeTrees = None
         optPathMultiOptToAbs(opt,"immDb")           
         optPathMultiOptToAbs(opt,"immDbArchive")           
-        opt.setIfUndef("immIdToSeqIds",pjoin(opt.cwd,"imm-seq-ids"))
+        opt.setIfUndef("immIdToSeqIds",pjoin(opt.cwd,"imm-id-to-seq"))
+        opt.setIfUndef("immIdToMeta",pjoin(opt.cwd,"imm-id-to-meta"))
         opt.setIfUndef("outDir",pjoin(opt.cwd,"scores"))
         opt.setIfUndef("predOutDir",pjoin(opt.cwd,"results"))
         opt.setIfUndef("seqDb",pjoin(opt.cwd,"seqDb"))
@@ -538,6 +532,7 @@ class ImmClassifierApp(App):
         opt.setIfUndef("dbBenchFrag",pjoin(opt.cwd,"dbBenchFrag.fna"))
         opt.setIfUndef("immIds",opt.immIdToSeqIds)
         opt.setIfUndef("outScoreComb",pjoin(opt.outDir,"combined"+ImmApp.scoreSfx))
+        opt.setIfUndef("outIdScoreMeta",opt.outScoreComb+".id_score.meta.pkl")
         opt.setIfUndef("predOutTaxa",pjoin(opt.predOutDir,"pred-taxa"))
         opt.setIfUndef("predOutTaxaCsv",opt.predOutTaxa+".csv")
         opt.setIfUndef("predOutTaxaSummCsv",opt.predOutTaxa+".summ.csv")
@@ -582,12 +577,16 @@ class ImmClassifierApp(App):
 
         if opt.mode == "make-ref-seqdb":
             globOpt = globals()["options"]
-            if opt.isUndef("inpNcbiSeq") and opt.isUndef("inpNcbiSeqList"):
+            if opt.isUndef("inpTrainSeq") and opt.isUndef("inpTrainSeqList"):
+                opt.inpTrainSeqFormat = "ncbi"
                 ph = PathHasher(globOpt.refSeqDataDir,mode="r")
-                opt.inpNcbiSeqList = pjoin(opt.cwd,"inp_ncbi_seq.csv")
-                with open(opt.inpNcbiSeqList,"w") as out:
+                opt.inpTrainSeqList = pjoin(opt.cwd,"inp_train_seq.csv")
+                with open(opt.inpTrainSeqList,"w") as out:
                     for f in ph.glob("*.fna.gz"):
                         out.write("{}\n".format(f))
+            if opt.inpTrainSeqFormat == "generic":
+                if opt.isUndef("inpTrainModelDescr"):
+                    raise ValueError("--inp-train-model-descr must be defined when --inp-train-seq-format is 'generic'")
         if opt.benchNLevTestModelsMin < 1:
             parser.error("--bench-n-lev-test-model-min must be at least 1")
 
@@ -651,7 +650,7 @@ class ImmClassifierApp(App):
         elif opt.mode == "proc-scores":
             ret = self.processImmScores(**kw)
         elif opt.mode == "setup-train":
-            return self.setupTraining(**kw)
+            return self.setupTrainingSimple(**kw)
         elif opt.mode == "combine-scores":
             ret = self.combineScores(**kw)
         elif opt.mode == "make-ref-seqdb":
@@ -721,57 +720,70 @@ class ImmClassifierApp(App):
     
     def extractRefSeqDb(self,**kw):
         """Extract reference SeqDb from input database sequences"""
-        return self.makeNCBISeqDb(**kw)
-
-    def makeNCBISeqDb(self,**kw):
-        """Create SeqDb for training ICM model from NCBI RefSeq"""
         opt = self.opt
         self.seqDb = None
-        policyFilter=FastaTrainingSeqFilter(policy=opt.inpNcbiSeqPolicy)
-        filt = functools.partial(fastaReaderFilterNucDegen,
-                extraFilter=policyFilter)
         seqDb = SeqDbFasta.open(path=opt.seqDb,mode="c")
-        seqDb.setTaxaTree(self.getTaxaTree())
-        inpNcbiFiles = []
-        if not opt.isUndef("inpNcbiSeq"):
-            inpNcbiFiles += list(glob.glob(opt.inpNcbiSeq))
-        if not opt.isUndef("inpNcbiSeqList"):
-            with closing(openCompressed(opt.inpNcbiSeqList,"r")) as inp:
+        taxaTree = self.getTaxaTree()
+        seqDb.setTaxaTree(taxaTree)
+        inpTrainSeqFiles = []
+        if not opt.isUndef("inpTrainSeq"):
+            inpTrainSeqFiles += list(glob.glob(opt.inpTrainSeq))
+        if not opt.isUndef("inpTrainSeqList"):
+            with closing(openCompressed(opt.inpTrainSeqList,"r")) as inp:
                 for line in inp:
-                    inpNcbiFiles += [os.path.abspath(f) for f in glob.glob(line.strip())]
+                    inpTrainSeqFiles += [os.path.abspath(f) for f in glob.glob(line.strip())]
+        
+        if opt.inpTrainSeqFormat == "ncbi":
+            policyFilter=FastaTrainingSeqFilter(policy=opt.inpNcbiSeqSelPolicy)
+            filt = functools.partial(fastaReaderFilterNucDegen,
+                    extraFilter=policyFilter,
+                    minNonDegenRatio=0.95)
+            splitFastaFilesByTaxa(inSeqs=inpTrainSeqFiles,
+                    outStore=seqDb,
+                    taxaTree=taxaTree,
+                    filt=filt)
 
-        seqDb.importByTaxa(inpNcbiFiles,filt=filt)
+        elif opt.inpTrainSeqFormat == "generic":
+            filt = functools.partial(fastaReaderFilterNucDegen,
+                    minNonDegenRatio=0.90)
+            splitFastaFilesByModel(inSeqs=inpTrainSeqFiles,
+                    modelsMeta=loadTrainModelsDescr(opt.inpTrainModelDescr),
+                    outStore=seqDb,
+                    taxaTree=taxaTree,
+                    checkTaxa=True,
+                    filt=filt)
+
 
         # For now, we filter by length when we build models.
-        #taxids = seqDb.getTaxaList()
+        #taxids = seqDb.getIdList()
         #for taxid in taxids:
         #    taxidSeqLen = seqDb.seqLengths(taxid)["len"].sum()
         #    if taxidSeqLen < opt.trainMinLenSamp:
         #        seqDb.delById(taxid)
 
     def finRefSeqDb(self,**kw):
-        """Finalize creation of SeqDb for training ICM model from NCBI RefSeq"""
+        """Finalize creation of SeqDb for training ICM models"""
         opt = self.opt
         seqDb = self.getSeqDb(mode="r+")
-        taxids = seqDb.getIdList(objSfx=seqDb.objUncomprSfx)
-        taxids = n.asarray(taxids,dtype="O")
-        nrnd.shuffle(taxids)
+        ids = seqDb.getIdList(objSfx=seqDb.objUncomprSfx)
+        ids = n.asarray(ids,dtype="O")
+        nrnd.shuffle(ids)
         jobs = []
-        for taxidsBatch in n.array_split(taxids,min(1000,len(taxids))):
+        for idsBatch in n.array_split(ids,min(1000,len(ids))):
             optI = copy(opt)
             optI.mode = "fin-ref-seqdb-batch"
-            optI.seqDbIds = taxidsBatch
+            optI.seqDbIds = idsBatch
             app = self.factory(opt=optI)
             jobs += app.run(**kw)
         return jobs
     
     def finRefSeqDbBatch(self,**kw):
-        """Sub-task of finalizing creation of SeqDb for training ICM model from NCBI RefSeq"""
+        """Sub-task of finalizing creation of SeqDb for training ICM models"""
         opt = self.opt
         seqDb = self.getSeqDb(mode="w")
-        taxids = opt.seqDbIds
-        for taxid in taxids:
-            seqDb.finById(taxid)
+        ids = opt.seqDbIds
+        for id in ids:
+            seqDb.finById(id)
             #print "DEBUG: finByid(%s) done" % (taxid,)
 
     ## Methods that generate benchmark dataset
@@ -926,10 +938,10 @@ class ImmClassifierApp(App):
 
     def _makeTaxaSampLengths(self,seqDb,trainMinLenSamp):
         taxaSampLengths = {} 
-        for taxid in seqDb.getTaxaList():
-             taxaSampLen = seqDb.seqLengths(taxid)["len"].sum() 
+        for seqid in seqDb.getIdList():
+             taxaSampLen = seqDb.seqLengthSum(seqid) 
              if taxaSampLen >= trainMinLenSamp:
-                 taxaSampLengths[taxid] = taxaSampLen
+                 taxaSampLengths[seqid] = taxaSampLen
         return taxaSampLengths
 
     def mapSeqToTree(self):
@@ -1017,6 +1029,15 @@ class ImmClassifierApp(App):
                         #print "Training for: ", node.lineageStr()
                         immIdToSeqIds[node.id] = node.pickedSeqDbIds
         dumpObj(immIdToSeqIds,opt.immIdToSeqIds)
+        immIdToMeta = dict( 
+                ( (taxid,
+                    dict(taxid = taxid,
+                        is_leaf = len(seqIds) == 1,
+                        name = taxaTree.getNode(taxid).name
+                        )
+                    ) for (taxid,seqIds) in immIdToSeqIds.items()) )
+                #TODO: no longer create new nodes; use this function only for DB sequences; or, rather, assign idModel[] to nodes and use those rather than node itself
+        dumpObj(immIdToMeta,opt.immIdToMeta)
 
     def _customTrainSeqIdToTaxaName(self,seqid):
         """Generate a name for new TaxaTree node from sequence ID.
@@ -1122,6 +1143,29 @@ class ImmClassifierApp(App):
         taxaTreeStore = NodeStorageJson(opt.taxaTreePkl)
         taxaTreeStore.save(taxaTree)
     
+    def defineImmsSimple(self,**kw):
+        opt = self.opt
+        taxaTree = self.getTaxaTree()
+        seqDb = self.getSeqDb()
+        immIdToSeqIds = dict()
+        immIdToMeta = dict()
+        for idSeqDb in seqDb.getIdList():
+            sampLen = seqDb.seqLengthSum(idSeqDb)
+            if sampLen >= min(opt.trainMinLenSamp,opt.trainMinLenSampModel):
+                seqMeta = seqDb.loadMetaDataById(idSeqDb)
+                modMeta = dict(
+                    taxid = seqMeta["taxid"],
+                    name = seqMeta["name"],
+                    is_leaf = 1)
+                idMod = idSeqDb
+                immIdToMeta[idMod] = modMeta
+                immIdToSeqIds[idMod] = [idSeqDb]
+        dumpObj(immIdToSeqIds,opt.immIdToSeqIds)
+        dumpObj(immIdToMeta,opt.immIdToMeta)
+    
+    def setupTrainingSimple(self,**kw):
+        return self.defineImmsSimple(**kw)
+
     def setupTraining(self,**kw):
         opt = self.opt
         if opt.inpTrainSeq:
@@ -1212,6 +1256,8 @@ class ImmClassifierApp(App):
         @param inpSeq Name of the input multi-FASTA file to score
         @param outDir Directory name for output score files
         @param outScoreComb name for output file with combined scores
+        @param outIdScoreMeta name for output file with combined meta
+        data for each idScore (idScore equals idImm in this class)
         """
         opt = self.opt
         immDb = [ (d,None) for d in opt.immDb ]
@@ -1220,6 +1266,7 @@ class ImmClassifierApp(App):
         jobsD = kw.get("depend",list())
         jobs = []
         outSubScores = []
+        idScoreMeta = dict()
         for immD in immDb:
             jobsI = copy(jobsD)
             if immD[1] is not None:
@@ -1241,10 +1288,10 @@ class ImmClassifierApp(App):
                 #immIds = ImmStoreWithTaxids(immD[0]).listImmIdsWithTaxids(
                 #        iterPaths=(item.name for item in app.iterMembers()))
                 app.run(**kwI)
-                immIds = ImmStoreWithTaxids(immD[0]).listImmIdsWithTaxids()
+                immIds = ImmStoreWithTaxids(immD[0]).dictMetaData()
                 assert len(immIds) > 0,"No IMMs found in IMM DB - probably training did not run yet"
             else:
-                immIds = ImmStoreWithTaxids(immD[0]).listImmIdsWithTaxids()
+                immIds = ImmStoreWithTaxids(immD[0]).dictMetaData()
                 assert len(immIds) > 0,"No IMMs found in IMM DB - probably training did not run yet"
                 #we only aply taxid filters to "reference" immDbs, under 
                 #an assumption that archived immDbs are supplied by the user
@@ -1256,8 +1303,8 @@ class ImmClassifierApp(App):
                                 in set(opt.scoreTaxidsExcludeTrees) ]
                     except KeyError,msg:
                         raise ValueError,"Unknown taxid: %s" % (msg,)
-                    immIds = [ (id,taxid) for (id,taxid) in immIds \
-                            if not taxaTree.getNode(taxid).isUnderAny(subTreesExcl) ] 
+                    immIds = dict(( (id,meta) for (id,meta) in immIds.items() \
+                            if not taxaTree.getNode(meta["taxid"]).isUnderAny(subTreesExcl) )) 
                     if len(immIds) <= 0:
                         print "Warning: No IMMs left in IMM DB after applying exclusion filters"
 
@@ -1277,13 +1324,19 @@ class ImmClassifierApp(App):
             #available imms in each collection.
             optI.immIdToSeqIds = None
             optI.immIds = pjoin(optI.outDir,"imm-ids.pkl")
-            dumpObj(immIds,optI.immIds)
+            #define idScore == idImm:
+            dumpObj([(immId,immId) for immId in immIds],optI.immIds)
             optI.outScoreComb = pjoin(optI.outDir,"combined"+ImmApp.scoreSfx)
             outSubScores.append(optI.outScoreComb)
+            #define idScore == idImm:
+            idScoreMeta.update(immIds)
             app = ImmApp(opt=optI)
             jobsI = app.run(**kwI)
             jobs += jobsI
         
+        makeFilePath(opt.outIdScoreMeta)
+        dumpObj(idScoreMeta,opt.outIdScoreMeta)
+
         optI = copy(opt)
         optI.mode = "combine-scores"
         optI.outSubScores = outSubScores
@@ -1424,11 +1477,12 @@ class ImmClassifierApp(App):
                     if rankNode:
                         predTaxid[i] = rankNode.id
 
-    def scoresToPredictions(self,immScores,**kw):
+    def scoresToPredictions(self,immScores,idScoreMeta,**kw):
         """Generate taxonomic predictions from raw IMM scores.
         This handles both classification of bacterial sequences and host assignment 
         for viral sequences.
         @param immScores ImmScores object.
+        @param idScoreMeta dict(idScore->metadata)
         
         Other parameters are taken from self.opt.
         @param rndScoreComb File with ImmScores object for random query sequences
@@ -1438,12 +1492,15 @@ class ImmClassifierApp(App):
         sc = immScores.getData()
         makeFilePath(opt.predOutTaxa)
         pred = TaxaPred(opt.predOutTaxa,mode="w")
-        pred.initFromSamp(idSamp=sc.idSamp,lenSamp=sc.lenSamp)
+        pred.initFromSamp(idSamp=sc.idSamp,lenSamp=sc.lenSamp,idScoreDtype=sc.idScore.dtype)
         pr = pred.getData()
+        _idScoreToTaxid = lambda id_scores: \
+                [ idScoreMeta[id_score]["taxid"] for id_score in id_scores ]
         kind = immScores.getKind()
         if kind == "ImmScoresReduced":
             #implicit conversion into int
-            array_chunked_copy(sc.idScore,pr.predTaxid,chunk=10**6)
+            array_chunked_copy(sc.idScore,pr.predTaxid,chunk=10**6,op=_idScoreToTaxid)
+            array_chunked_copy(sc.idScore,pr.predIdScore,chunk=10**6)
             array_chunked_copy(sc.score,pr.predScore,chunk=10**6)
         elif kind == "ImmScoresDenseMatrix":
             #scRnd = loadObj(opt.rndScoreComb)
@@ -1476,8 +1533,14 @@ class ImmClassifierApp(App):
             argmaxSc = score.argmax(0)
             #maxSc = score.max(0)
             #Implicit conversion to int
-            pr.predTaxid[:] = sc.idScore[argmaxSc]
-            pr.predScore[:] = score[argmaxSc,n.arange(score.shape[1])]
+            predIdScore =  sc.idScore[argmaxSc]
+            array_chunked_copy(predIdScore,
+                    pr.predTaxid,chunk=10**6,op=_idScoreToTaxid)
+            array_chunked_copy(predIdScore,
+                    pr.predIdScore,chunk=10**6)
+            array_chunked_copy(score[argmaxSc,n.arange(score.shape[1])],
+                    pr.predScore,chunk=10**6)
+
         else:
             raise ValueError("Unknown kind of score object: %s" % (kind,))
         return pred
@@ -1533,18 +1596,24 @@ class ImmClassifierApp(App):
         for viral sequences.
         Parameters are taken from self.opt.
         @param outScoreComb File with ImmScores object
+        @param outIdScoreMeta File with meta data for each score ID
         @param rndScoreComb File with ImmScores object for random query sequences
         @param predOutTaxa Output file with predicted taxa
         """
         opt = self.opt
         immScores = openImmScores(opt,fileName=opt.outScoreComb,mode="r")
-        pred = self.scoresToPredictions(immScores=immScores,**kw)
-        self.filterPredictions(immScores=immScores,predTaxid=pred.getData().predTaxid)
+        idScoreMeta = loadObj(opt.outIdScoreMeta)
+        pred = self.scoresToPredictions(immScores=immScores,
+                idScoreMeta=idScoreMeta,
+                **kw)
+        self.filterPredictions(immScores=immScores,
+                predTaxid=pred.getData().predTaxid,
+                **kw)
         pred.close()
-        self.exportPredictions()
+        self.exportPredictions(idScoreMeta=idScoreMeta,**kw)
         #todo: matrix of predhost idlevel's; batch imm.score() jobs; score hist;
 
-    def exportPredictions(self,**kw):
+    def exportPredictions(self,idScoreMeta,**kw):
         """
         Export predictions and summary statistics.
         Parameters are taken from self.opt.
@@ -1556,7 +1625,7 @@ class ImmClassifierApp(App):
         by these weights when aggregate summary tables are generated.
         """
         opt = self.opt
-        self._exportPredictions()
+        self._exportPredictions(idScoreMeta=idScoreMeta)
         #if you need all individual predictions as SQL too, set the option to True
         if opt.writeEachSampleSqlite:
             self._loadPredictionsIntoSql(csvFile=opt.predOutTaxaCsv,isSumm=False)
@@ -1580,7 +1649,7 @@ class ImmClassifierApp(App):
         pred.close()
         return custToRef
 
-    def _exportPredictions(self):
+    def _exportPredictions(self,idScoreMeta):
         opt = self.opt    
         pred = TaxaPred(opt.predOutTaxa,mode="r")
         taxaPred = pred.getData()
@@ -1602,7 +1671,7 @@ class ImmClassifierApp(App):
         resc = ImmScoreRescaler(predScoreRescaleModel=opt.predScoreRescaleModel)
         krona = KronaWriter(taxaTree=taxaTree)
         krona.initCount()
-        flds = ["id","len","taxid","name","rank","weight"]
+        flds = ["id","len","taxid","name","rank","weight","idscore","namescore"]
         for levName in levNames:
             if levName not in skipLevNames:
                 flds += ["taxid_"+levName,"name_"+levName,"score_"+levName]
@@ -1617,9 +1686,11 @@ class ImmClassifierApp(App):
         predPerSample = 1
         if predPerSample > 1:
             predTaxidRows = _row_iter_2d(taxaPred.topTaxid,predPerSample)
+            predIdScoreRows = _row_iter_2d(taxaPred.topIdScore,predPerSample)
             predScoreRows = _row_iter_2d(taxaPred.topScores,predPerSample)
         else:
             predTaxidRows = _row_iter_1d(taxaPred.predTaxid)
+            predIdScoreRows = _row_iter_1d(taxaPred.predIdScore)
             predScoreRows = _row_iter_1d(taxaPred.predScore)
         if opt.sampAttrib:
             sampAttribCsvFileInp = openCompressed(opt.sampAttrib,"r")
@@ -1627,9 +1698,10 @@ class ImmClassifierApp(App):
         else:
             sampAttribCsvFileInp = None
             sampAttribCsv = None
-        taxSumm = {}
+        idScoreSumm = {}
         predIter = it.izip(taxaPred.idSamp,predTaxidRows,
-                                predScoreRows,taxaPred.lenSamp)
+                                predScoreRows,taxaPred.lenSamp,
+                                predIdScoreRows)
         if sampAttribCsv:
             recIter = join_sorted_records_right_check(iter1=predIter,
                     iter2=sampAttribCsv,
@@ -1637,7 +1709,7 @@ class ImmClassifierApp(App):
                     key2=0)
         else:
             recIter = it.izip(predIter,it.repeat(None))
-        for ((idS,taxids,scores,lenS),recAttr) in recIter:
+        for ((idS,taxids,scores,lenS,idscores),recAttr) in recIter:
             if lenS < opt.predMinLenSamp:
                 continue
             if recAttr:
@@ -1646,7 +1718,7 @@ class ImmClassifierApp(App):
                 #if weight attribute is not provided, we use length of each sample
                 #as weight
                 weight = float(lenS)
-            for (taxid,score) in it.izip(taxids,scores):
+            for (taxid,score,idscore) in it.izip(taxids,scores,idscores):
                 row = dict(id=idS,len=lenS)
                 if transTaxaMap:
                     if taxid != self.rejTaxid:
@@ -1675,16 +1747,18 @@ class ImmClassifierApp(App):
                                 scoresResc[levNode.id] = scoreResc
                                 row["score_"+levName] = scoreResc
                 row["taxid"] = taxid
+                row["idscore"] = idscore
+                row["namescore"] = idScoreMeta[idscore]["name"]
                 row["weight"] = weight
                 w.writerow(row)
                 krona.addSample( (idS,taxid,weight,scoresResc) )
                 #aggregate into taxa summary table
-                if not taxid in taxSumm:
+                if not idscore in idScoreSumm:
                     rec = dict(row)
                     rec["cnt"] = 1
-                    taxSumm[taxid] = rec
+                    idScoreSumm[idscore] = rec
                 else:
-                    rec = taxSumm[taxid]
+                    rec = idScoreSumm[idscore]
                     rec["cnt"] += 1
                     rec["weight"] += row["weight"]
                     rec["len"] += row["len"]
@@ -1701,7 +1775,7 @@ class ImmClassifierApp(App):
         flds.append("cnt")
         w = csv.DictWriter(out, fieldnames=flds, restval='null',dialect='excel-tab')
         w.writerow(dict([(fld,fld) for fld in flds]))
-        for taxid,rec in sorted(taxSumm.items()):
+        for idscore,rec in sorted(idScoreSumm.items()):
             for fld_name in rec.keys():
                 if fld_name.startswith("score_"):
                     rec[fld_name] /= rec["cnt"]
@@ -1729,10 +1803,10 @@ class ImmClassifierApp(App):
         fieldsMap={"len":SqlField(type="integer")}
         if isSumm:
             fieldsMap["cnt"] = SqlField(type="integer")
-            indices = {"names":("cnt","taxid","name","len")}
+            indices = {"names":("cnt","taxid","name","len","idscore","namescore")}
             tblName = "scaff_pred_summ"
         else:
-            indices = {"names":("id","taxid","name","len")}
+            indices = {"names":("id","taxid","name","len","idscore","namescore")}
             tblName = "scaff_pred"
         for levName in levNames:
             fieldsMap["score_"+levName] = SqlField(type="real")
@@ -1811,6 +1885,7 @@ class ImmClassifierApp(App):
         outBackend = PdfPages(opt.predOutStatsPdf)
         sqlAsComment = True
         for levName in levNames+[""]: #"" is for lowest clade
+            #TODO: add idscore level report
             dbTableRep = self._sqlReport(db=db,dbTable="scaff_pred_summ",levName=levName,outCsv=outCsv)
             self._graphicsReport(db=db,dbTableRep=dbTableRep,levName=levName,fldRep="sum_weight",
                     outBackend=outBackend,maxClades=20)

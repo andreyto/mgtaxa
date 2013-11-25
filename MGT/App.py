@@ -160,7 +160,7 @@ class App:
             #we can only run as "batch" or "batchDep" if we need to wait for dependency jobs
             #@todo make the current process to poll qstat at this location
             #if runMode is not "inproc".
-            assert runMode in ("batch","batchDep")
+            assert runMode in ("batch","batchDep") or opt.batchBackend == "makeflow"
         if runMode == "batchDep":
             if opt.mode not in self.batchDepModes:
                 runMode = "batch"
@@ -371,7 +371,7 @@ class App:
         prefix = klass.getAppName()+"."
         ret = ph.mkdtemp(suffix=".work",
                 prefix=prefix)
-        print "DEBUG: cwd={}    exists={}".format(ret,os.path.exists(ret))
+        #print "DEBUG: cwd={}    exists={}".format(ret,os.path.exists(ret))
         return ret
                 
     

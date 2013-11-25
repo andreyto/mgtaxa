@@ -336,6 +336,15 @@ class ImmStoreWithTaxids(ImmStore):
     def listTaxidsWithLeafModels(self,iterPaths=None):
         return list(set(meta["taxid"] for (id,meta) in self.iterMetaData(iterPaths=iterPaths) if meta["is_leaf"]))
 
+def loadTrainModelsDescr(inp):
+    with closing(openCompressed(inp,"r")) as inp:
+        #json.load() loads entire file in memory
+        #anyway, but we return it like an iterator
+        #in case we switch to parsing stream of jsob records
+        #in the future
+        for rec in json.load(inp):
+            yield rec
+
 class ImmApp(App):
     """App-derived class for building collections of IMMs/ICMs and scoring against them"""
 
@@ -516,6 +525,8 @@ class ImmApp(App):
 
         for (scoreBatchId,immIdsBatch) in batches:
             immOpt = copy(opt)
+            #stay in the same cwd because self.getScoreBatchPath() depends on it
+            immOpt.cwdHash = 0
             immOpt.mode = "score-batch"
             immOpt.immIds = immIdsBatch #now this is a sequence, not a file name
             immOpt.scoreBatchId = scoreBatchId
@@ -525,6 +536,8 @@ class ImmApp(App):
         coOpt = copy(opt)
         coOpt.mode = "combine-scores"
         coOpt.scoreBatchIds = scoreBatchIds
+        #stay in the same cwd because self.getScoreBatchPath() depends on it
+        coOpt.cwdHash = 0
         coApp = self.factory(opt=coOpt)
         kw = kw.copy()
         kw["depend"] = jobs

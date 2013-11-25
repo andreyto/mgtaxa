@@ -10,10 +10,11 @@
 
 __all__ = [ "FastaReader", "fastaReaderGzip", "FastaWriter", 
         "splitFasta", "fastaLengths", "seqToLines", "shredFasta",
-        "filterFastaByLength" ]
+        "filterFastaByLength","fastaReaderFilterNucDegen" ]
 
 from MGT.Common import *
-from MGT.Util import openGzip, openCompressed
+from MGT.Util import openGzip, openCompressed, SymbolRunsCompressor
+from MGT.SeqUtil import checkSaneAlphaHist
 from MGT.UUID import *
 
 from cStringIO import StringIO
@@ -210,6 +211,14 @@ class FastaWriter:
         for x in range(0,len(s),lineLen):
             out.write(s[x:x+lineLen])
             out.write("\n")
+    
+    def seqLines(self,iterLines):
+        out = self.out
+        line = None
+        for line in iterLines:
+            out.write(line)
+        if line and not line.endswith("\n"):
+            out.write("\n")
 
 
 def splitFasta(inpFasta,outBase,maxChunkSize,sfxSep='_',lineLen=80):
@@ -300,3 +309,24 @@ def filterFastaByLength(inp,out,minLen=None,maxLen=None,lineLen=None,mode="w"):
     rd.close()
     return dict(nSeqOut=nSeqOut)
 
+def fastaReaderFilterNucDegen(fastaReader,extraFilter=None,minNonDegenRatio=0.98):
+    if extraFilter is None:
+        extraFilter = lambda hdr,seq: (hdr,seq)
+    compr = SymbolRunsCompressor(sym="Nn",minLen=1)
+    nonDegenSymb = "ATCGatcg"
+    def line_gen():
+        for rec in fastaReader.records():
+            hdr = rec.header()
+            seq = compr(rec.sequence())
+            if not checkSaneAlphaHist(seq,nonDegenSymb,
+                    minNonDegenRatio=minNonDegenRatio):
+                print "WARNING: ratio of degenerate symbols is too high, "+\
+                        "skipping sequence with id %s" % (rec.getId(),)
+            else:
+                rec = extraFilter(hdr,seq)
+                if rec:
+                    hdr,seq = rec
+                    yield hdr
+                    for line in seqToLines(seq):
+                        yield line
+    return FastaReader(line_gen())
