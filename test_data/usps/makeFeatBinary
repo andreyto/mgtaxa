@@ -1,0 +1,10 @@
+#!/bin/bash
+python $MGT_HOME/bin/svmLightFormat.py -i usps-train.libsvm --out-lab usps-train.libsvm.idlab --split 1
+python $MGT_HOME/bin/svmLightFormat.py -i usps-test.libsvm --out-lab usps-test.libsvm.idlab --split 2
+
+python $MGT_HOME/bin/svmLightFormat.py -i usps-train.libsvm --out-feat usps-train.pkl
+cp usps-train.libsvm.idlab usps-train.pkl.idlab
+
+python $MGT_HOME/bin/svmLightFormat.py -i usps-test.libsvm --out-feat usps-test.pkl
+cp usps-test.libsvm.idlab usps-test.pkl.idlab
+

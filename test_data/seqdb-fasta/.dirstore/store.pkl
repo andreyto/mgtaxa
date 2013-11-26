@@ -1,0 +1,5 @@
+Ä(cMGT.SeqDbFasta
+SeqDbFasta
+qoq}q(UoptqcMGT.Options
+Struct
+q)Åq}qbUpathqU0/home/atovtchi/work/mgtaxa/test_data/seqdb-fastaq	ub.
