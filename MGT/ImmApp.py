@@ -478,12 +478,13 @@ class ImmApp(App):
         """
         opt = self.opt
         immIds = opt.immIds
-        inpFasta = opt.inpSeq
         inpType = "file"
-        if SeqDbFasta.isStore(inpFasta):
-            inpFasta = SeqDbFasta.open(inpFasta,"r")
-            inpFastaDbIds = inpFasta.getIdList()
+        if SeqDbFasta.isStore(opt.inpSeq):
+            inpSeq = SeqDbFasta.open(opt.inpSeq,"r")
+            inpSeqDbIds = load_config_json(opt.inpSeqDbIds)
             inpType = "store"
+        
+        inpSeq = opt.inpSeq
 
         outScoreBatchFile = self.getScoreBatchPath(opt.scoreBatchId)
         outScoreBatchFileWork = makeWorkFile(outScoreBatchFile)
@@ -492,11 +493,11 @@ class ImmApp(App):
         for immId,idScore in immIds:
             imm = Imm(path=self.getImmPath(immId))
             if inpType == "file":
-                scores = imm.score(inp=inpFasta)
+                scores = imm.score(inp=inpSeq)
                 imm.flush()
             elif inpType == "store":
                 inp = imm.score()
-                seqDb.writeFasta(ids=inpFastaDbIds,out=inp)
+                inpSeq.writeFasta(ids=inpSeqDbIds,out=inp)
                 inp.close()
                 imm.flush()
                 scores = imm.parseScores()
@@ -505,7 +506,7 @@ class ImmApp(App):
             immScores.appendScore(idScore=idScore,score=scores)
         immScores.close()
         if inpType == "store":
-            inpFasta.close()
+            inpSeq.close()
         os.rename(outScoreBatchFileWork,outScoreBatchFile)
 
     def scoreMany(self,**kw):
@@ -519,12 +520,19 @@ class ImmApp(App):
         but with a hash function (by building a dict). This is done to make easier 
         concatenation of outputs for separate batches of input sequences by having the 
         order of idScore stable across invocations of this method.
-        @param inpSeq Name of the input multi-FASTA file to score
+        @param inpSeq Name of the input multi-FASTA file or SeqDbFasta store to score
+        @param inpSeqDbIds If inpSeq is SeqDbFasta store, this parameter can be JSON
+        file name with the list if SeqDb IDs to use for scoring. If undefined, it will
+        be set to a file with all SeqDb IDs under cwd.
         @param nImmBatches Number of IMM batches (determines number of batch jobs)
         @param outDir Directory name for output score files
         @param outScoreComb name for output file with combined scores
         """
         opt = self.opt
+        if SeqDbFasta.isStore(opt.inpSeq) and opt.isUndef("inpSeqDbIds"):
+            with closing(SeqDbFasta.open(opt.inpSeq,"r")) as inpSeq:
+                opt.inpSeqDbIds = pjoin(opt.cwd,"inp-seq-db-ids.json")
+                save_config_json(inpSeq.getIdList(),opt.inpSeqDbIds)
         makedir(opt.outDir)
         jobs = []
         immIds = loadObj(opt.immIds)
