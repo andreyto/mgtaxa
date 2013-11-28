@@ -67,8 +67,8 @@ class Imm:
         @param inp Input sequences FASTA file, either an open file object, a file name, or None.
         @param out Output scores file - either an open file object, a file name, or None.
         @return If inp is None, return output stream to which the user should write FASTA text and 
-        close it when done; If out is None, return array of output records. 
-        inp and out cannot both be None.
+        close it when done; If out is None, return array of output records.
+        If output stream is returned, call parseScores(inp=None) afterwards.
         """
         self.flush()
         cmd = [self.glImmScoreExe,"-N",self.path]
@@ -88,17 +88,14 @@ class Imm:
             closeOut = True
         else:
             closeOut = False
-        if out is PIPE and inp is PIPE:
-            raise ValueError("Both inp and out parameters cannot be None at the same time - set one to a real file/stream")
         stderr = open(os.devnull,"w") #incompat with close_fds on Windows
         #There are reports that PIPE can fail or block on large outputs,
         #so we replace it here with a temp file in the current working
         #directory
-        #@todo make arguments consistent with the above - e.g. PIPE
-        #check can be relaxed now
-        outTmpName = None
+        scoreTmpName = None
         if out is PIPE:
-            out,outTmpName = tempfile.mkstemp(suffix=".tmp", prefix="imm.score.", dir=os.getcwd())
+            out,scoreTmpName = tempfile.mkstemp(suffix=".tmp", prefix="imm.score.", dir=os.getcwd())
+        self.scoreTmpName = scoreTmpName
         p = Popen(cmd, stdin=inp, stdout=out, stderr=stderr)
         stderr.close()
         self.p = p
@@ -111,15 +108,18 @@ class Imm:
             strData=p.communicate()[0]
             if self.p.returncode:
                 raise CalledProcessError(self.cmd,self.p.returncode)
-            if outTmpName is not None:
+            if scoreTmpName is not None:
                 out = os.fdopen(out,"r")
                 out.seek(0)
                 ret = self.parseScores(out)
                 #os.close(out)
                 out.close()
-                os.remove(outTmpName)
+                os.remove(scoreTmpName)
+                self.scoreTmpName = None
                 return ret
         else:
+            if scoreTmpName is not None:
+                out.close()
             return p.stdin
 
     def flush(self):
@@ -136,14 +136,20 @@ class Imm:
             self.postFlush()
 
     
-    @classmethod
-    def parseScores(klass,inp=None):
+    def parseScores(self,inp=None,removeInp=True):
         """Parse output from score() method.
         @param inp Can be input stream, a file name string, or a sequence of string lines
+        @param if True and inp is file name, remove inp after reading
         @return record array with scoring results
         """
         closeInp = False
+        if inp is None:
+            inp = self.scoreTmpName
+            inpIsScoreTmpName = True
+        else:
+            inpIsScoreTmpName = False
         if isinstance(inp,str):
+            inpName = inp
             inp = openCompressed(inp,"r")
             closeInp = True
         records = []
@@ -152,5 +158,9 @@ class Imm:
             records.append((words[0],float(words[1])))
         if closeInp:
             inp.close()
+            if removeInp:
+                os.remove(inpName)
+                if inpIsScoreTmpName:
+                    self.scoreTmpName = None
         return n.asarray(records,dtype=[("id",idDtype),("score",klass.scoreDtype)])
 

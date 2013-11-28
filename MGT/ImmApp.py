@@ -324,6 +324,12 @@ class ImmStore(DirKeyStore):
     def listImmIdsWithIdScoreIdent(self,iterPaths=None):
         """Return a default mapping of model IDs to score IDs as (immId,immId) identity"""
         return [ (x,x) for x in self.listImmIds(iterPaths=iterPaths) ]
+    
+    def listSeqDbIds(self,iterPaths=None):
+        seq_db_ids = set()
+        for (id,meta) in self.iterMetaData(iterPaths=iterPaths):
+            seq_db_ids |= set(meta["seq_db_ids"])
+        return seq_db_ids
 
 class ImmStoreWithTaxids(ImmStore):
 
@@ -467,12 +473,17 @@ class ImmApp(App):
         @param immIds Score with these IMMs into these idScores (in-memory list of tuples
         (immId,idScore) - the models will be scored in the order supplied; the scores
         will be saved in the order of unique idScores supplied)
-        @param inpSeq Name of the input multi-FASTA file to score
+        @param inpSeq Name of the input multi-FASTA file or SeqDbFasta store to score
         @param outDir Directory name for output score files
         """
         opt = self.opt
         immIds = opt.immIds
-        inpFastaFile = opt.inpSeq
+        inpFasta = opt.inpSeq
+        inpType = "file"
+        if SeqDbFasta.isStore(inpFasta):
+            inpFasta = SeqDbFasta.open(inpFasta,"r")
+            inpFastaDbIds = inpFasta.getIdList()
+            inpType = "store"
 
         outScoreBatchFile = self.getScoreBatchPath(opt.scoreBatchId)
         outScoreBatchFileWork = makeWorkFile(outScoreBatchFile)
@@ -480,10 +491,21 @@ class ImmApp(App):
                 idScore=unique(([rec[1] for rec in immIds]),stable=True))
         for immId,idScore in immIds:
             imm = Imm(path=self.getImmPath(immId))
-            scores = imm.score(inp=inpFastaFile)
+            if inpType == "file":
+                scores = imm.score(inp=inpFasta)
+                imm.flush()
+            elif inpType == "store":
+                inp = imm.score()
+                seqDb.writeFasta(ids=inpFastaDbIds,out=inp)
+                inp.close()
+                imm.flush()
+                scores = imm.parseScores()
+            else:
+                raise ValueError(inpType)
             immScores.appendScore(idScore=idScore,score=scores)
-            imm.flush()
         immScores.close()
+        if inpType == "store":
+            inpFasta.close()
         os.rename(outScoreBatchFileWork,outScoreBatchFile)
 
     def scoreMany(self,**kw):
