@@ -13,7 +13,7 @@ __all__ = [ "FastaReader", "fastaReaderGzip", "FastaWriter",
         "filterFastaByLength","fastaReaderFilterNucDegen" ]
 
 from MGT.Common import *
-from MGT.Util import openGzip, openCompressed, SymbolRunsCompressor
+from MGT.Util import openGzip, openCompressed, SymbolRunsCompressor, is_string
 from MGT.SeqUtil import checkSaneAlphaHist
 from MGT.UUID import *
 
@@ -37,7 +37,7 @@ class FastaReader(object):
         iterator that returns lines (each line should be terminated with a new line),
         e.g. a file object. An iterator can be a filter that reads another FastaReader
         object, performs transformations on the records and emits them as lines."""
-        if isinstance(infile,str):
+        if is_string(infile):
             infile = openCompressed(infile,'r')
             self.ownInfile = True
         else:

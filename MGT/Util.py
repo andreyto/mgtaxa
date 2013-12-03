@@ -1467,6 +1467,10 @@ class null_file:
     def close(self):
         pass
 
+#will have to become isinstance(x,str) in Python 3
+def is_string(x):
+    return isinstance(x,basestring)
+
 def cmd_self(wrapper=""):
     """Return command line and components of command line that 
     would run current Python script.
