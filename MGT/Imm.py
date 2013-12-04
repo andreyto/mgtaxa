@@ -119,7 +119,7 @@ class Imm:
                 return ret
         else:
             if scoreTmpName is not None:
-                out.close()
+                os.close(out)
             return p.stdin
 
     def flush(self):
@@ -148,7 +148,7 @@ class Imm:
             inpIsScoreTmpName = True
         else:
             inpIsScoreTmpName = False
-        if isinstance(inp,str):
+        if is_string(inp):
             inpName = inp
             inp = openCompressed(inp,"r")
             closeInp = True
@@ -162,5 +162,5 @@ class Imm:
                 os.remove(inpName)
                 if inpIsScoreTmpName:
                     self.scoreTmpName = None
-        return n.asarray(records,dtype=[("id",idDtype),("score",klass.scoreDtype)])
+        return n.asarray(records,dtype=[("id",idDtype),("score",self.scoreDtype)])
 

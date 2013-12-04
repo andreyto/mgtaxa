@@ -301,6 +301,9 @@ class DirKeyStore(DirStore):
     def listIds(self,iterPaths=None,objSfx=None):
         """List object IDs from either this store or from the externally provided iterable"""
         return list(self.iterIds(iterPaths=iterPaths,objSfx=objSfx))
+    
+    def openStreamById(self,id,*l,**kw):
+        return self.openStream(self.getFileBaseById(id),*l,**kw)
 
 class SampStore(DirKeyStore):
 

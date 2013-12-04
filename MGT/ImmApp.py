@@ -71,10 +71,32 @@ class ImmScoresHdf(ImmScores):
     """Base for implementations of ImmScores which use HDF5 as storage.
     """
     
-    def setLenSamp(self,lenSamp):
+    def setLenSamp(self,lenSamp,sourceType="recarray"):
+        """Create and assign sample length dataset.
+        @param lenSamp source of sample length data
+        @param sourceType type of lenSamp: 
+            recarray - Numpy recarray("id","len")
+            iter_recarrays - iterator of recarrays
+        In either case, the order of IDs in the source must match the order of IDs
+        already stored in this object.
+        """
         g = self.getData()
-        assert n.all(g.idSamp[:] == lenSamp["id"]),"Sample IDs do not match for sample length array"
-        self.hdfFile.createArray(g, 'lenSamp', lenSamp["len"],"Sample length")
+        if sourceType == "recarray":
+            assert n.all(g.idSamp[:] == lenSamp["id"]),"Sample IDs do not match for sample length array"
+            self.hdfFile.createArray(g, 'lenSamp', lenSamp["len"],"Sample length")
+        elif sourceType == "iter_recarrays":
+            self.hdfFile.createArray(g, 
+                    'lenSamp', 
+                    n.zeros(len(g.idSamp),dtype="i8"),
+                    "Sample length")
+            block_start = 0
+            for block in lenSamp:
+                block_end = block_start + len(block)
+                assert g.idSamp[block_start:block_end] == block["id"],\
+                        "Sample IDs do not match for sample length block"
+                g.lenSamp[block_start:block_end] = block["len"]
+                block_start = block_end
+
     
     def getKind(self):
         return self.getData()._v_attrs.kind
@@ -440,7 +462,8 @@ class ImmApp(App):
             raise
         #@todo When making models for iterative binning+assembly,
         #immSeqIds can get long. Perhaps not save it here,
-        #or make it a name of a separate file
+        #or make it a name of a separate file. This data is
+        #currently used by benchmark code.
         immMeta.update(dict(seq_db_ids=immSeqIds))
         self.immStore.saveMetaDataById(immId,meta=immMeta)
 
@@ -479,34 +502,37 @@ class ImmApp(App):
         opt = self.opt
         immIds = opt.immIds
         inpType = "file"
-        if SeqDbFasta.isStore(opt.inpSeq):
-            inpSeq = SeqDbFasta.open(opt.inpSeq,"r")
-            inpSeqDbIds = load_config_json(opt.inpSeqDbIds)
-            inpType = "store"
-        
         inpSeq = opt.inpSeq
+        try:
+            if SeqDbFasta.isStore(inpSeq):
+                inpSeq = SeqDbFasta.open(inpSeq,"r")
+                inpType = "store"
+                inpSeqDbIds = load_config_json(opt.inpSeqDbIds)
 
-        outScoreBatchFile = self.getScoreBatchPath(opt.scoreBatchId)
-        outScoreBatchFileWork = makeWorkFile(outScoreBatchFile)
-        immScores = openImmScores(opt,fileName=outScoreBatchFileWork,mode="w",
-                idScore=unique(([rec[1] for rec in immIds]),stable=True))
-        for immId,idScore in immIds:
-            imm = Imm(path=self.getImmPath(immId))
-            if inpType == "file":
-                scores = imm.score(inp=inpSeq)
-                imm.flush()
-            elif inpType == "store":
-                inp = imm.score()
-                inpSeq.writeFasta(ids=inpSeqDbIds,out=inp)
-                inp.close()
-                imm.flush()
-                scores = imm.parseScores()
-            else:
-                raise ValueError(inpType)
-            immScores.appendScore(idScore=idScore,score=scores)
-        immScores.close()
-        if inpType == "store":
-            inpSeq.close()
+            outScoreBatchFile = self.getScoreBatchPath(opt.scoreBatchId)
+            outScoreBatchFileWork = makeWorkFile(outScoreBatchFile)
+            with closing(
+                    openImmScores(
+                        opt,fileName=outScoreBatchFileWork,mode="w",
+                        idScore=unique(([rec[1] for rec in immIds]),stable=True)
+                        )
+                    ) as immScores:
+                for immId,idScore in immIds:
+                    imm = Imm(path=self.getImmPath(immId))
+                    if inpType == "file":
+                        scores = imm.score(inp=inpSeq)
+                        imm.flush()
+                    elif inpType == "store":
+                        with closing(imm.score()) as inp:
+                            inpSeq.writeFasta(ids=inpSeqDbIds,out=inp)
+                        imm.flush()
+                        scores = imm.parseScores()
+                    else:
+                        raise ValueError(inpType)
+                    immScores.appendScore(idScore=idScore,score=scores)
+        finally:
+            if inpType == "store":
+                inpSeq.close()
         os.rename(outScoreBatchFileWork,outScoreBatchFile)
 
     def scoreMany(self,**kw):
@@ -578,7 +604,10 @@ class ImmApp(App):
         """Combine scores as a final stage of scoreMany().
         Parameters are taken from self.opt
         @param immIds List of IMM IDs to score with
-        @param inpSeq Name of the input multi-FASTA file that was scored (to pull seq lengths here)
+        @param inpSeq Name of the input multi-FASTA file or SeqDbFasta store that was 
+        scored (to pull seq lengths from it here)
+        @param inpSeqDbIds If inpSeq is SeqDbFasta store, this parameter must be JSON
+        file name with the list if SeqDb IDs as was used for scoring
         @param outDir Directory name for output score files
         @param outScoreComb name for output file with combined scores
         """
@@ -593,8 +622,19 @@ class ImmApp(App):
         #@todo This will need an overhaul - we have to convert the input FASTA
         #to a semi-random access format first (e.g. SeqDbFasta chunked), and filter by length 
         #at that time, before we score - otherwise we are wasting time scoring short sequences.
-        lenSamp = fastaLengths(opt.inpSeq,exclSymb=self.degenSymb)
-        immScores.setLenSamp(lenSamp)
+        if opt.isDef("inpSeqDbIds"):
+            #input sequences were in SeqDbFasta store
+            inpSeqDbIds = load_config_json(opt.inpSeqDbIds)
+            with closing(SeqDbFasta.open(opt.inpSeq,"r")) as inpSeq:
+                immScores.setLenSamp( 
+                        (
+                            lengths for (idSeq,lengths) in  inpSeq.seqLengthsAll() 
+                        ),
+                        sourceType = "iter_recarrays"
+                    )
+        else:
+            lenSamp = fastaLengths(opt.inpSeq,exclSymb=self.degenSymb)
+            immScores.setLenSamp(lenSamp,sourceType="recarray")
         immScores.close()
         os.rename(outScoreCombWork,opt.outScoreComb)
     

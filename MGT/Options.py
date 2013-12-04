@@ -117,6 +117,10 @@ class Struct(object):
         """Return True if the current value for the key is None or no key exists"""
         return self.get(key,None) is None
     
+    def isDef(self,key):
+        """Return True if the key exists and the value is not None"""
+        return not self.isUndef(key)
+    
     def setIfUndef(self,key,val):
         """Set key to val if the current value is None or no key exists"""
         if self.isUndef(key):

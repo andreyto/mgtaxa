@@ -66,6 +66,10 @@ class SeqDbFasta(DirKeyStore):
     def seqLengthSum(self,id):
         return self.seqLengths(id)["len"].sum()
 
+    def seqLengthsAll(self):
+        for idDb in self.getIdList():
+            yield (idDb,self.seqLengths(idDb))
+
     def fastaWriter(self,id,lineLen=None,mode="w",objSfx=None):
         """Return FastaWriter to write INTO the DB for a given ID.
         @param id ID of the record
