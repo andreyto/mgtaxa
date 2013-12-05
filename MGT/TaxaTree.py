@@ -559,6 +559,10 @@ class TaxaTree(object):
         Node links are created based on getParentId() calls to each node. For the root node, and root node only,
         this method must return a value that evaluates to False in logical expression (e.g. 0 or None)."""
 
+        ##public attribute - used by TaxaLevels to 
+        ##see if it set the levels before in this tree
+        self.levelsAreSet = False
+
         data = storage.load()
         nodes = data["nodes"]
         self.nodes = nodes
@@ -1124,9 +1128,11 @@ class TaxaLevels:
 
     def __init__(self,taxaTree=None):
         """Constructor.
-        @param taxaTree instance of TaxaTree - if not None, will be modified, 
-        so that TaxaLevels.lineage() etc work afterwards; 
-        otherwise TaxaLevels.setLevels(taxaTree) should be called separately.
+        @param taxaTree instance of TaxaTree - if not None, it will be modified, 
+        so that TaxaLevels.lineage() etc work afterwards; This will only be
+        done here if taxaTree was not modified before.
+        TaxaLevels.setLevels(taxaTree) can be called separately to modify the
+        tree unconditionally.
         """
         self.levels = list(linnMainRanksWithRoot)
         self.levelIds = {noRank:0, unclassRank:self.unclassId, "species":20, "genus":30, "family":40,
@@ -1142,7 +1148,8 @@ class TaxaLevels:
         self.levelsPos = {}
         for order in ("ascend","descend"):
             self.levelsPos[order] = self.makeLevelsPos(order=order)
-        if taxaTree is not None:
+        #only set levels if not set before
+        if taxaTree is not None and not taxaTree.levelsAreSet:
             self.setLevels(taxaTree)
 
     def getLevelId(self,name):
@@ -1237,6 +1244,8 @@ class TaxaLevels:
                 node.linn_level = node.getParent().linn_level
         #this assumes the ranks are ordered as they are in the parameter "ranks"
         taxaTree.setMaxSubtreeRank(ranks=self.levels,nameAttr=self.linnLevelMaxAttr)
+        #mark in this tree that this method was used already
+        taxaTree.levelsAreSet = True
 
     def lineage(self,node,withUnclass=True):
         levelSet = self.levelSet
