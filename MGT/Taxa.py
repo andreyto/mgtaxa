@@ -12,12 +12,22 @@ from MGT.TaxaTree import *
 from MGT.TaxaTreeDb import *
 from MGT.TaxaIO import *
 from MGT.TaxaIODb import *
+from MGT.ObjectCache import *
 
-def loadTaxaTree(ncbiDumpFile=options.taxaNodesFile,
+_taxaTreeCache = ObjectCache()
+
+def loadTaxaTree(cacheKey="shared",*l,**kw):
+    produce = lambda key: loadTaxaTreeUncached(*l,**kw)
+    if cacheKey is None:
+        cacheKey = _taxaTreeCache.gen_key()
+    return _taxaTreeCache.get_produce(key=cacheKey,produce=produce)
+
+def loadTaxaTreeUncached(ncbiDumpFile=options.taxaNodesFile,
         ncbiNamesDumpFile=options.taxaNamesFile,
         ncbiMergedDumpFile=options.taxaMergedFile,
         ncbiTaxaDumpDir=None,
         allNames=False,pklFile=None,jsonFile=None):
+    print "DEBUG: loadTaxaTreeUncached()"
     if pklFile is None and jsonFile is None:
         name_trans = {
                 'ncbiDumpFile':'taxaNodesFile',
