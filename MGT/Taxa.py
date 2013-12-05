@@ -27,7 +27,6 @@ def loadTaxaTreeUncached(ncbiDumpFile=options.taxaNodesFile,
         ncbiMergedDumpFile=options.taxaMergedFile,
         ncbiTaxaDumpDir=None,
         allNames=False,pklFile=None,jsonFile=None):
-    print "DEBUG: loadTaxaTreeUncached()"
     if pklFile is None and jsonFile is None:
         name_trans = {
                 'ncbiDumpFile':'taxaNodesFile',
