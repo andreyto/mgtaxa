@@ -1,10 +1,15 @@
 """Benchmark support for ImmClassifierApp"""
 
 from MGT.DirStore import *
+from MGT.SeqDbFasta import *
 from MGT.FastaIO import *
 from Taxa import *
 
-class ImmClassifierBenchmark(DirStore):
+class ImmClassifierBenchmark(SeqDbFasta):
+    """Class that creates shredded benchmarking fragments from SeqDbFasta object.
+    The fragment store will use the same SeqDbIds as the source store.
+    Provides a method to map fragment IDs to score IDs based on score 
+    meta-data"""
 
     fastaSfx = ".fna"
     
@@ -12,39 +17,47 @@ class ImmClassifierBenchmark(DirStore):
         DirStore.__init__(self,*l,**kw)
         self.seqDb = None
     
-    def getFastaPath(self,idDb):
-        return self.getFilePath("%s%s" % (idDb,self.fastaSfx))
-
-    def listDbIds(self,iterPaths=None):
-        """List DB IDs either from this store or from the externally provided iterable"""
-        return list(self.fileNames(pattern="*"+self.fastaSfx,sfxStrip=self.fastaSfx,iterPaths=iterPaths))
-
     def getSeqDbIds(self):
-        return set((str(x) for x in self.seqDb.getIdList()))
+        return self.seqDb.dictMetaData()
     
-    def getImmIds(self,immDbs):
+    def getSeqDbIdsImm(self,immDbs):
         immIds = set()
         for immDb in immDbs:
-            immIds |= set((str(x) for x in immDb.listTaxids()))
+            immIds |= set(immDb.listSeqDbIds())
         return immIds
 
-    def selectIdsDb(self,immDbs=None):
+    def selectIdsDb(self,
+            immDbs=None,
+            dbBenchTaxidsExcludeTrees=None,
+            dbBenchTaxidsInclude=None,
+            taxaTree=None):
         """Pick those IDs from SeqDb that will be used to build the benchmark.
         @param immDbs sequence of ImmDb instances - this is used to pick only those entries
-        in SeqDb that also have models built against them. The self-models will
-        still be excluded during testing - using ImmDb is just an easy way to
-        filter out from SeqDb viruses as it was done for ImmDb. If None, no
+        in SeqDb that also have models built against them. If None, no
         filtering by model IDs will be done."""
-        ids = self.getSeqDbIds()
-        if immDbs: 
-            ids &= self.getImmIds(immDbs)
+        idsMeta = self.getSeqDbIds()
+        ids = set(idsMeta)
+        if immDbs:
+            ids &= self.getSeqDbIdsImm(immDbs)
+        if dbBenchTaxidsExcludeTrees is not None:
+            subTreesExcl = [ taxaTree.getNode(taxid) for taxid \
+                    in set(opt.dbBenchTaxidsExcludeTrees) ]
+            ids = [ id for id in ids \
+                    if not taxaTree.getNode(idsMeta[id]["taxid"]).isUnderAny(subTreesExcl) ] 
+        if dbBenchTaxidsInclude is not None:
+            with closing(openCompressed(opt.dbBenchTaxidsInclude,'r')) as inp:
+                taxidsIncl = set([ int(line.strip()) for line in inp if len(line.strip())>0 ])
+            ids = [ id for id in ids if idsMeta[id]["taxid"] in taxidsIncl ]
         return ids
 
     def makeSample(self,idDb,fragLen,fragCountMax):
-        """Make a sample FASTA file for a given SeqDb ID"""
-        outFasta = self.getFastaPath(idDb)
-        self.shredFasta(idDb=idDb,outFasta=outFasta,fragLen=fragLen,
+        """Make a sample FASTA file for a given SeqDb ID.
+        @param idDb Sequences with this SeqDbId will be pulled from
+        seqDb attribute, shredded and saved in this object under
+        the same SeqDbId"""
+        self.shredFasta(idDb=idDb,fragLen=fragLen,
                 fragCountMax=fragCountMax)
+        self.finById(idDb)
 
     def catSamples(self,outFile,idsDb=None):
         """Concatenate all sample files for a list of IDs into a single file.
@@ -61,15 +74,16 @@ class ImmClassifierBenchmark(DirStore):
         else:
             outClose = False
         for idDb in idsDb:
-            inpFile = openCompressed(self.getFastaPath(idDb),"r")
+            inpFile = self.openStreamById(idDb)
             shutil.copyfileobj(inpFile,outFile,1024*1024)
             inpFile.close()
         if outClose:
             outFile.close()
 
-    def shredFasta(self,idDb,outFasta,fragLen,
+    def shredFasta(self,idDb,fragLen,
             fragCountMax,lineLen=80,outMode="w"):
         """Shred each record in multi-FASTA file into multiple records of fixed size"""
+        ##@todo See if we can avoid saving empty files (for very short input records)
         from MGT.FeatIO import LoadSeqPreprocShred
         seqDb = self.seqDb
         seqLenTot = seqDb.seqLengths(idDb)["len"].sum()
@@ -82,7 +96,7 @@ class ImmClassifierBenchmark(DirStore):
         else:
             sampNum = -1 #all samples
         inpSeq = seqDb.fastaReader(idDb)
-        outSeq = FastaWriter(out=outFasta,lineLen=lineLen,mode=outMode)
+        outSeq = self.fastaWriterUncompr(idDb,lineLen=lineLen,mode=outMode)
         shredder = LoadSeqPreprocShred(sampLen=fragLen,
                 sampNum=sampNum,
                 makeUniqueId=False,
@@ -100,7 +114,7 @@ class ImmClassifierBenchmark(DirStore):
             startsFr = shredder.getLastSampStarts()
             for iF,sF in enumerate(seqFr):
                 stF = startsFr[iF]
-                idF = "%s_%s pos=%s nincat=%s len=%s" % (idDb,ind+iF,seqCatStart+stF,iF,len(sF))
+                idF = "%s %s %s pos=%s nincat=%s len=%s" % (genId(),idDb,ind+iF,seqCatStart+stF,iF,len(sF))
                 outSeq.record(header=idF,sequence=sF)
             return ind+len(seqFr)
         
@@ -121,6 +135,45 @@ class ImmClassifierBenchmark(DirStore):
 
         inpSeq.close()
         outSeq.close()
+        return indFrag
+
+    def mapIdFragToIdScore(self,idScoreMeta,idSeqDbToIdScoreRemapping=None):
+        """Return a mapping from fragment IDs to correct model (score) ID.
+        This is used by benchmarking code to get the expected correct prediction
+        for each testing fragment.
+        @param idScoreMeta mapping of meta data for each model that was used in
+        making predictions for the fragments
+        @param idSeqDbToIdScoreRemapping optional map to convert each idSeqDb to idScore
+        @return dict(idFrag -> idScore)
+        """
+        if idSeqDbToIdScoreRemapping is None:
+            idSeqDbToIdScoreRemapping = dict()
+        idSeqDbToIdScore = dict()
+        #Map IdSeqDb from score meta-data to score ID
+        #We expcect that the self object has benchmarking fragments
+        #grouped under the same IdSeqDbs due to the way
+        #it was constructed unless idSeqDbToIdScoreRemapping
+        #is not None
+        for (idScore,scoreMeta) in idScoreMeta.items():
+            for idSeqDb in scoreMeta["seq_db_ids"]:
+                idSeqDbToIdScore[idSeqDb] = idScore
+        
+        idFragToIdScore = dict()
+        for (idSeqDb,lengths) in self.seqLengthsAll():
+            #Map IdSeqDbs from self to score ID either 
+            #through remapping argument or through mapping
+            #extracted from score meta-data argument
+            if idSeqDb in idSeqDbToIdScoreRemapping:
+                idScore = idSeqDbToIdScoreRemapping[idSeqDb]
+            else:
+                idScore = idSeqDbToIdScore[idSeqDb]
+            #Map fragment ID through IdSeqDb mapping to score ID
+            idFragToIdScore.update( 
+                    dict(
+                        ( (rec["id"],idScore) for rec in lengths )
+                        )
+                    )
+        return idFragToIdScore
 
 
 class ImmClassifierBenchMetricsSql(object):
@@ -134,6 +187,8 @@ class ImmClassifierBenchMetricsSql(object):
     confTbl = "conf"
     ##bottom-level taxa confusion table name
     confBotTbl = "conf_bot"
+    ##model confusion table name
+    confModTbl = "conf_mod"
     ##test count table name
     testCntTbl = "test_cnt"
     ##max test count table name
@@ -168,6 +223,7 @@ class ImmClassifierBenchMetricsSql(object):
         self.preFilter(nLevTestModelsMin=nLevTestModelsMin)
         self.makeConfusion()
         self.makeConfusionBottomTaxa()
+        self.makeConfusionModel()
         self.makeSampleCounts()
         self.makeSampleCountsWeight()
         self.makeConfusionWeighted()
@@ -188,52 +244,71 @@ class ImmClassifierBenchMetricsSql(object):
                 where 
                     n_lev_test_models >= %(nLevTestModelsMin)s
                     or
-                    i_lev_exc = 0
+                    i_lev_exc = %(iLevNoExc)s
                 """ % dict(preFilterView=self.preFilterView,
                     nLevTestModelsMin=nLevTestModelsMin,
-                    sampTbl=self.sampTbl))
+                    sampTbl=self.sampTbl,
+                    iLevNoExc=self.iLevNoExc))
 
-    def makeConfusionGeneric(self,sampTbl,confTbl,taxidLevTestFld,taxidLevPredFld):
+    def makeConfusionGeneric(self,sampTbl,confTbl,levTestFld,levPredFld,where=None):
         """Create a table with a confusion matrix in a sparse row_ind,col_ind,count format"""
         db = self.db
+        if where is None:
+            where = ""
+        else:
+            where = "where "+where
         db.createTableAs(confTbl,
                 """select i_lev_exc,
                 i_lev_per,
-                %(taxidLevTestFld)s as taxid_lev_test,
-                %(taxidLevPredFld)s as taxid_lev_pred,
+                %(levTestFld)s as id_lev_test,
+                %(levPredFld)s as id_lev_pred,
                 taxid_superking,
                 count(*) as cnt
                 from %(sampTbl)s 
+                %(where)s
                 group by  
                     i_lev_exc,
                     i_lev_per, 
-                    %(taxidLevTestFld)s,
-                    %(taxidLevPredFld)s,
+                    %(levTestFld)s,
+                    %(levPredFld)s,
                     taxid_superking
                 """ % dict(sampTbl=sampTbl,
-                    taxidLevTestFld=taxidLevTestFld,
-                    taxidLevPredFld=taxidLevPredFld),
+                    levTestFld=levTestFld,
+                    levPredFld=levPredFld,
+                    where=where),
                 indices={"names":
                     ["i_lev_exc",
                     "i_lev_per",
-                    "taxid_lev_test",
-                    "taxid_lev_pred",
+                    "id_lev_test",
+                    "id_lev_pred",
                     "taxid_superking"]})
     
     def makeConfusion(self):
         """Create a table with a confusion matrix in a sparse row_ind,col_ind,count format"""
         self.makeConfusionGeneric(sampTbl=self.preFilterView,
                 confTbl=self.confTbl,
-                taxidLevTestFld="taxid_lev_test",
-                taxidLevPredFld="taxid_lev_pred")
+                levTestFld="taxid_lev_test",
+                levPredFld="taxid_lev_pred")
 
     def makeConfusionBottomTaxa(self):
         """Create a table with a confusion matrix for a bottom-most test and prediction taxa
         in a sparse row_ind,col_ind,count format"""
         self.makeConfusionGeneric(sampTbl=self.sampTbl,
                 confTbl=self.confBotTbl,
-                taxidLevTestFld="taxid_lev_test_bot",
-                taxidLevPredFld="taxid_lev_pred_bot")
+                levTestFld="taxid_lev_test_bot",
+                levPredFld="taxid_lev_pred_bot",
+                where="i_lev_exc={i_lev} and i_lev_per={i_lev}".\
+                        format(i_lev=self.iLevNoExc))
+
+    def makeConfusionModel(self):
+        """Create a table with a confusion matrix for a bottom-most test and prediction taxa
+        in a sparse row_ind,col_ind,count format"""
+        self.makeConfusionGeneric(sampTbl=self.sampTbl,
+                confTbl=self.confModTbl,
+                levTestFld="id_mod_test",
+                levPredFld="id_mod_pred",
+                where="i_lev_exc={i_lev} and i_lev_per={i_lev}".\
+                        format(i_lev=self.iLevNoExc))
 
     def makeSampleCounts(self):
         """Create a table with sample counts per class"""
@@ -241,18 +316,18 @@ class ImmClassifierBenchMetricsSql(object):
         db.createTableAs(self.testCntTbl,
                 """select i_lev_exc,
                 i_lev_per,
-                taxid_lev_test,
+                id_lev_test,
                 sum(cnt) as sum_cnt
                 from %(confTbl)s 
                 group by  
                     i_lev_exc,
                     i_lev_per, 
-                    taxid_lev_test
+                    id_lev_test
                 """ % dict(confTbl=self.confTbl),
                 indices={"names":
                     ["i_lev_exc",
                     "i_lev_per",
-                    "taxid_lev_test"]})
+                    "id_lev_test"]})
     
     def makeSampleCountsWeight(self):
         """Create a table with weight that normalizes sample count by the max count in each group"""
@@ -277,7 +352,7 @@ class ImmClassifierBenchMetricsSql(object):
                 """select 
                 a.i_lev_exc as i_lev_exc,
                 a.i_lev_per as i_lev_per,
-                a.taxid_lev_test as taxid_lev_test,
+                a.id_lev_test as id_lev_test,
                 cast(b.max_sum_cnt as REAL)/a.sum_cnt as weight_cnt
                 from 
                     %(testCntTbl)s a,
@@ -291,7 +366,7 @@ class ImmClassifierBenchMetricsSql(object):
                 indices={"names":
                     ["i_lev_exc",
                     "i_lev_per",
-                    "taxid_lev_test"]})
+                    "id_lev_test"]})
     
     def makeConfusionWeighted(self):
         """Create a weighted confusion table.
@@ -308,8 +383,8 @@ class ImmClassifierBenchMetricsSql(object):
         db.createTableAs(self.confWeightedTbl,
                 """select a.i_lev_exc as i_lev_exc,
                 a.i_lev_per as i_lev_per,
-                a.taxid_lev_test as taxid_lev_test,
-                a.taxid_lev_pred as taxid_lev_pred,
+                a.id_lev_test as id_lev_test,
+                a.id_lev_pred as id_lev_pred,
                 a.taxid_superking as taxid_superking,
                 a.cnt*b.weight_cnt as cnt
                 from 
@@ -320,14 +395,14 @@ class ImmClassifierBenchMetricsSql(object):
                     and
                     a.i_lev_per = b.i_lev_per
                     and
-                    a.taxid_lev_test = b.taxid_lev_test
+                    a.id_lev_test = b.id_lev_test
                 """ % dict(confTbl=self.confTbl,
                     testCntWeightTbl=self.testCntWeightTbl),
                 indices={"names":
                     ["i_lev_exc",
                     "i_lev_per",
-                    "taxid_lev_test",
-                    "taxid_lev_pred"]})
+                    "id_lev_test",
+                    "id_lev_pred"]})
     
     def makeSensitivity(self):
         """Create a table with sensitivity metrics"""
@@ -335,43 +410,43 @@ class ImmClassifierBenchMetricsSql(object):
         db.createTableAs(self.sensTbl,
                 """select i_lev_exc,
                 i_lev_per,
-                taxid_lev_test as taxid,
+                id_lev_test as id_lev,
                 taxid_superking,
-                sum((taxid_lev_test==taxid_lev_pred)*cnt)/cast(sum(cnt) as REAL) as metr_clade
+                sum((id_lev_test==id_lev_pred)*cnt)/cast(sum(cnt) as REAL) as metr_clade
                 from %(confTbl)s 
                 group by  
                     i_lev_exc,
                     i_lev_per, 
-                    taxid_lev_test,
+                    id_lev_test,
                     taxid_superking
                 """ % dict(confTbl=self.confWeightedTbl),
                 indices={"names":
                     ["i_lev_exc",
                     "i_lev_per",
-                    "taxid",
+                    "id_lev",
                     "taxid_superking"]})
 
     def makeSpecificity(self):
         """Create a table with specificity metrics"""
         db = self.db
-        #"where taxid_lev_pred > 0" excludes the reject group
-        #"where taxid_lev_pred in (select ...)" only computes specificity
+        #"where id_lev_pred > 0" excludes the reject group
+        #"where id_lev_pred in (select ...)" only computes specificity
         #for clades that have positive testing samples, because otherwise we have
         #no chance at all to observe a specificity above zero.
         db.createTableAs(self.specTbl,
                 """select i_lev_exc,
                 i_lev_per,
-                taxid_lev_pred as taxid, 
-                sum((taxid_lev_test=taxid_lev_pred)*cnt)/cast(sum(cnt) as REAL) as metr_clade
+                id_lev_pred as id_lev, 
+                sum((id_lev_test=id_lev_pred)*cnt)/cast(sum(cnt) as REAL) as metr_clade
                 from %(confTbl)s a 
                 group by  
                     i_lev_exc,
                     i_lev_per, 
-                    taxid_lev_pred
+                    id_lev_pred
                 having 
-                    taxid_lev_pred in 
+                    id_lev_pred in 
                         (select 
-                            taxid_lev_test 
+                            id_lev_test 
                             from %(testCntTbl)s b
                             where 
                                 a.i_lev_exc = b.i_lev_exc
@@ -379,12 +454,12 @@ class ImmClassifierBenchMetricsSql(object):
                                 a.i_lev_per = b.i_lev_per
                         )
                     and 
-                    taxid_lev_pred > 0
+                    id_lev_pred > 0
                 """ % dict(confTbl=self.confWeightedTbl,testCntTbl=self.testCntTbl),
                 indices={"names":
                     ["i_lev_exc",
                     "i_lev_per",
-                    "taxid"]})
+                    "id_lev"]})
 
     def makeAccuracy(self):
         """Create a table with accuracy metrics (over all samples).
@@ -394,7 +469,7 @@ class ImmClassifierBenchMetricsSql(object):
         db.createTableAs(self.accuAggrTbl,
                 """select i_lev_exc,
                 i_lev_per,
-                sum((taxid_lev_test==taxid_lev_pred)*cnt)/cast(sum(cnt) as REAL) as metr_lev
+                sum((id_lev_test==id_lev_pred)*cnt)/cast(sum(cnt) as REAL) as metr_lev
                 from %(confTbl)s 
                 group by  
                     i_lev_exc,

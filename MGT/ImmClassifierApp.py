@@ -193,7 +193,7 @@ class ImmClassifierApp(App):
             
             optParseMakeOption_Path(None, "--inp-seq",
             dest="inpSeq",
-            help="File with input FASTA sequence for prediction"),
+            help="File or SeqDbFasta store with input FASTA sequences for prediction"),
             
             optParseMakeOption_Path(None, "--inp-seq-attrib",
             dest="sampAttrib",
@@ -421,11 +421,6 @@ class ImmClassifierApp(App):
             help="BenchDb path, used either to create a new BenchDb from SeqDb "+\
                 "or to use an existing BenchDb for benchmarking the models [-cwd/dbBench]"),
             
-            optParseMakeOption_Path(None, "--db-bench-frag",
-            dest="dbBenchFrag",
-            help="Path of a single FASTA file that contains samples extracted from "+\
-                "the BenchDb [--cwd/dbBenchFrag]"),
-            
             optParseMakeOption_Path(None, "--db-bench-taxids-include",
             dest="dbBenchTaxidsInclude",
             help="File with taxonomy IDs, one per line, to "+\
@@ -441,10 +436,13 @@ class ImmClassifierApp(App):
             make_option(None, "--db-bench-filter-by-models",
             action="store",
             type="int",
-            default=0,
+            default=1,
             dest="dbBenchFilterByModels",
-            help="If 1, benchmark will only include samples "+\
-                    "for taxa that have models in --db-imm [0]"),
+            help="If 1 [default], benchmark will only include samples "+\
+                    "for taxa that have models in any of --db-imm. "+\
+                    "Typically, this has to be set to 1 if you "+\
+                    "are not using --bench-id-seq-db-to-id-score-remapping "+\
+                    "option during processing of scoring results."),
             
             make_option(None, "--db-bench-frag-len",
             action="store",
@@ -471,9 +469,15 @@ class ImmClassifierApp(App):
             
             optParseMakeOption_Path(None, "--bench-taxids-map",
             dest="benchTaxidsMap",
-            help="Tab-delimited file with pairs input taxid, output taxid "+\
+            help="Depricated. Tab-delimited file with pairs input taxid, output taxid "+\
                     "that will be used to re-map taxonomy of the testing samples "+\
                     "before computing performance metrics. Used for phage-host benchmarking."),
+            
+            optParseMakeOption_Path(None, "--bench-id-seq-db-to-id-score-remapping",
+            dest="benchIdSeqDbToIdScoreRemapping",
+            help="JSON file that maps benchmark SeqDbIds to the known truth score IDs "+\
+            "of the testing samples before computing performance metrics. "+\
+            "Used for phage-host benchmarking."),
             
             optParseMakeOption_Path(None, "--bench-out-dir",
             dest="benchOutDir",
@@ -529,7 +533,6 @@ class ImmClassifierApp(App):
         opt.setIfUndef("predOutDir",pjoin(opt.cwd,"results"))
         opt.setIfUndef("seqDb",pjoin(opt.cwd,"seqDb"))
         opt.setIfUndef("dbBench",pjoin(opt.cwd,"dbBench"))
-        opt.setIfUndef("dbBenchFrag",pjoin(opt.cwd,"dbBenchFrag.fna"))
         opt.setIfUndef("immIds",opt.immIdToSeqIds)
         opt.setIfUndef("outScoreComb",pjoin(opt.outDir,"combined"+ImmApp.scoreSfx))
         opt.setIfUndef("outIdScoreMeta",opt.outScoreComb+".id_score.meta.pkl")
@@ -798,18 +801,9 @@ class ImmClassifierApp(App):
             immDbs = [ ImmStoreWithTaxids(immDb) for immDb in opt.immDb ]
         else:
             immDbs = None
-        ids = bench.selectIdsDb(immDbs=immDbs)
-        if opt.dbBenchTaxidsExcludeTrees is not None:
-            taxaTree = self.getTaxaTree()
-            subTreesExcl = [ taxaTree.getNode(taxid) for taxid \
-                    in set(opt.dbBenchTaxidsExcludeTrees) ]
-            ids = [ taxid for taxid in ids \
-                    if not taxaTree.getNode(int(taxid)).isUnderAny(subTreesExcl) ] 
-        if opt.dbBenchTaxidsInclude is not None:
-            inp = openCompressed(opt.dbBenchTaxidsInclude,'r')
-            taxidsIncl = set([ int(line.strip()) for line in inp if len(line.strip())>0 ])
-            inp.close()
-            ids = [ taxid for taxid in ids if int(taxid) in taxidsIncl ]
+        ids = bench.selectIdsDb(immDbs=immDbs,
+                dbBenchTaxidsExcludeTrees=opt.dbBenchTaxidsExcludeTrees,
+                dbBenchTaxidsInclude=opt.dbBenchTaxidsInclude)
         ids = n.asarray(list(ids),dtype="O")
         nrnd.shuffle(ids)
         jobs = []
@@ -834,9 +828,7 @@ class ImmClassifierApp(App):
         opt = self.opt
         seqDb = self.getSeqDb()
         ids = opt.benchIds
-        bench = ImmClassifierBenchmark.open(path=opt.dbBench,mode="r")
-        #bench.save() should not be called with seqDb attribute assigned
-        #or it will try to dump it as well
+        bench = ImmClassifierBenchmark.open(path=opt.dbBench,mode="r+")
         bench.seqDb = seqDb
         for id in ids:
             bench.makeSample(idDb=id,
@@ -845,10 +837,7 @@ class ImmClassifierApp(App):
         
     def makeBenchFromSeqDbFin(self,**kw):
         """Final task of benchmark generation"""
-        opt = self.opt
-        ids = opt.benchIds
-        bench = ImmClassifierBenchmark.open(path=opt.dbBench,mode="r")
-        bench.catSamples(outFile=opt.dbBenchFrag,idsDb=ids)
+        return kw.get("depend",None)
 
     ## Methods that integrate all steps of benchmark generation and evaluation
 
@@ -877,8 +866,11 @@ class ImmClassifierApp(App):
             optI.scoreTaxidsExcludeTrees = opt.scoreTaxidsExcludeTrees
             optI.benchNLevTestModelsMin = opt.benchNLevTestModelsMin
             optI.benchTaxidsMap = opt.benchTaxidsMap
+            optI.benchIdSeqDbToIdScoreRemapping = opt.benchIdSeqDbToIdScoreRemapping
             optI.benchProcSubtrees = opt.benchProcSubtrees
             optI.cwd = pjoin(opt.benchWorkDir,str(fragLen))
+            optI.benchOutDir = pjoin(opt.benchOutDir,str(fragLen))
+            optI.dbBench = pjoin(opt.dbBench,str(fragLen))
             #this sets default and derived options
             #@todo we need to create two kinds of properties in Struct():
             #fixed values and lazy-evaluated values (similar to variables
@@ -917,7 +909,7 @@ class ImmClassifierApp(App):
         
         optI = copy(opt)
         optI.mode = "predict"
-        optI.inpSeq = opt.dbBenchFrag
+        optI.inpSeq = opt.dbBench
         optI.predMinLenSamp = 1
         optI.reduceScoresEarly = 0
         app = self.factory(opt=optI)
@@ -1253,7 +1245,7 @@ class ImmClassifierApp(App):
     def score(self,**kw):
         """Score with all IMMs.
         Parameters are taken from self.opt
-        @param inpSeq Name of the input multi-FASTA file to score
+        @param inpSeq Name of the input multi-FASTA file or SeqDbFasta store to score
         @param outDir Directory name for output score files
         @param outScoreComb name for output file with combined scores
         @param outIdScoreMeta name for output file with combined meta
@@ -1896,7 +1888,10 @@ class ImmClassifierApp(App):
     def procBenchScores(self,**kw):
         """Process benchmark IMM scores and generate performance metrics.
         Parameters are taken from self.opt.
+        @param dbBench path of ImmClassifierBenchmark instance that was used
+        in scoring. Metadata from this instance will be used here.
         @param outScoreComb File with ImmScores object
+        @param outIdScoreMeta Metadata map for each score ID in outScoreComb
         @param benchOutCsv Output file with per clade metrics in CSV format
         @param benchOutAggrCsv Output file with aggregated metrics in CSV format
         @param benchOutDbSqlite Output file with metrics in SQLite format
@@ -1905,12 +1900,14 @@ class ImmClassifierApp(App):
         makeFilePath(opt.benchOutCsv)
         makeFilePath(opt.benchOutDbSqlite)
         db = DbSqlLite(dbpath=opt.benchOutDbSqlite,strategy="exclusive_unsafe")
-        #TMP:
-        #storesDb = self.prepBenchSql(db=db)
-        #tblLevels = storesDb.storeDbLev.tblLevels
-        #tblNames = storesDb.storeDbNode.tblNames
-        tblLevels = "txlv"
-        tblNames = "taxa_names"
+        debugShortcut = False
+        if not debugShortcut:
+            storesDb = self.prepBenchSql(db=db)
+            tblLevels = storesDb.storeDbLev.tblLevels
+            tblNames = storesDb.storeDbNode.tblNames
+        else:
+            tblLevels = "txlv"
+            tblNames = "taxa_names"
         self.procBenchScoreMatr(db=db)
         sqlBenchMetr = ImmClassifierBenchMetricsSql(db=db,
                 taxaLevelsTbl=tblLevels,
@@ -1927,7 +1924,7 @@ class ImmClassifierApp(App):
         opt = self.opt
         taxaTree = self.getTaxaTree()
         taxaLevels = self.getTaxaLevels()
-        print "DEBUG: Loaded taxa tree and level"
+        print "DEBUG: Loaded taxa tree and levels"
         tableSfx = ""
         storeDbNode = NodeStorageDb(db=db,tableSfx=tableSfx)
         storeDbNode.saveName(taxaTree)
@@ -1935,21 +1932,15 @@ class ImmClassifierApp(App):
         storeDbLev.save(taxaLevels)
         return Struct(storeDbLev=storeDbLev,storeDbNode=storeDbNode)
 
-    def listImmTaxidsWithLeafModels(self):
-        opt = self.opt
-        taxids = set()
-        for immDbPath in opt.immDb:
-            immDb = ImmStoreWithTaxids(immDbPath)
-            taxids |= set(immDb.listTaxidsWithLeafModels())
-            immDb.close()
-        return list(taxids)
-    
     def procBenchScoreMatr(self,db,**kw):
         """Process benchmark IMM scores and generate (test,pred) pairs in SQL.
         @param db Sql object
 
         Other parameters are taken from self.opt.
+        @param dbBench path of ImmClassifierBenchmark instance that was used
+        in scoring. Metadata from this instance will be used here.
         @param outScoreComb File with ImmScores object
+        @param outIdScoreMeta Metadata map for each score ID in outScoreComb
         @param benchOutCsv Output file with metrics in CSV format
         @param benchOutDbSqlite Output file with metrics in SQLite format
         @param benchProcSubtrees Filter samples by taxonomy IDs in this file
@@ -1957,17 +1948,16 @@ class ImmClassifierApp(App):
         opt = self.opt
         immScores = openImmScores(opt,fileName=opt.outScoreComb,mode="r")
         sc = immScores.getData()
-        #assume idScore are taxids:
-        idImm = n.asarray(sc.idScore[:],dtype=int)
-        #idImm = n.asarray(sc.idImm[:],dtype=int)
-        assert opt.immDb,"I need a model database in order to extract leaf IDs"
-        idLeafImm = self.listImmTaxidsWithLeafModels()
-        assert idLeafImm,"Did not find any taxonomic nodes with leaf IMMs in the model database"
+        idScoreMeta = loadObj(opt.outIdScoreMeta)
+        #assume idScore are idImm:
+        idImm = sc.idScore[:]
         kind = immScores.getKind()
         assert kind == "ImmScoresDenseMatrix","Matrix Score dataset is required for benchmark"
         taxaTree = self.getTaxaTree()
         taxaLevels = self.getTaxaLevels()
-        print "DEBUG: Loaded taxa tree and level"
+        print "DEBUG: Loaded taxa tree and levels"
+        #set i_lev_excl to this value when no exclusion was done
+        iLevNoExc = 0
         eukRoot = taxaTree.getNode(eukTaxid)
         levNames = taxaLevels.getLevelNames("ascend")
         levIdNames = taxaLevels.getLevelIdForNames(levNames)
@@ -1979,22 +1969,25 @@ class ImmClassifierApp(App):
         #this value as prediction result should be treated as
         #always incorrect when computing performance metrics
         wrongTaxid = self.rejTaxid - 1
-        #set i_lev_excl to this value when no exclusion was done
-        iLevNoExc = 0
         sampTaxidsMap = None
         if opt.benchTaxidsMap is not None:
-            inp = openCompressed(opt.benchTaxidsMap,'r')
-            sampTaxidsMap = dict(( (int(taxidin.strip()),int(taxidout.strip())) \
-                    for (taxidin,taxidout) in \
-                    (line.strip().split("\t") for line in inp if len(line.strip())>0 )))
-            inp.close()
+            raise ValueError("Depricated option --bench-taxids-map. "+\
+                    "Define --bench-id-seq-db-to-id-score-remapping instead")
+        if opt.benchIdSeqDbToIdScoreRemapping is not None:
+            idSeqDbToIdScoreRemapping = \
+                    load_config_json(opt.benchIdSeqDbToIdScoreRemapping)
+        else:
+            idSeqDbToIdScoreRemapping = None
+        benchDb = ImmClassifierBenchmark.open(opt.dbBench,"r") 
+        idSampToIdScore = benchDb.mapIdFragToIdScore(idScoreMeta=idScoreMeta,
+                idSeqDbToIdScoreRemapping=idSeqDbToIdScoreRemapping)
         #sampTaxids = set()
         #for iS,idS in enumerate(sc.idSamp[:]):
         #    taxid,itS = idS.strip().split('_')
         #    taxid,itS = int(taxid),int(itS)
         #    sampTaxids.add(taxid)
 
-        def _mapModelIds(taxaTree,idImm,idLeafImm):
+        def _mapModelIds(taxaTree,idImm,idScoreMeta):
             """Map model ids to the taxonomy tree and store for each node the
             number of immediate children that have models in their subtrees.
             This will be used to include into the performance counters only
@@ -2002,20 +1995,19 @@ class ImmClassifierApp(App):
             level"""
             root = taxaTree.getRootNode()
             root.setAttribute("tmpHasMod",0)
-            for taxid in idImm:
-                node = taxaTree.getNode(taxid)
-                node.tmpHasMod = 1
-            root.setTotal("tmpHasMod","tmpCntMod")
-            root.setReduction(extractor=lambda n: 0,
-                    dstAttr="tmpChWMod",
-                    childExtractor=lambda n: n.tmpCntMod > 0)
             root.setAttribute("tmpHasLeafMod",0)
-            for taxid in idLeafImm:
-                node = taxaTree.getNode(taxid)
-                node.tmpHasLeafMod = 1
+            for id_imm in idImm:
+                meta = idScoreMeta[id_imm]
+                node = taxaTree.getNode(meta["taxid"])
+                node.tmpHasMod = 1
+                node.tmpHasLeafMod = int(meta["is_leaf"]==True)
+            root.setTotal("tmpHasMod","tmpCntMod")
+            #root.setReduction(extractor=lambda n: 0,
+            #        dstAttr="tmpChWMod",
+            #        childExtractor=lambda n: n.tmpCntMod > 0)
             root.setTotal("tmpHasLeafMod","tmpCntLeafMod")
 
-        _mapModelIds(taxaTree=taxaTree,idImm=idImm,idLeafImm=idLeafImm)
+        _mapModelIds(taxaTree=taxaTree,idImm=idImm,idScoreMeta=idScoreMeta)
         print "DEBUG: mapped models to tree"
         
         def _mapBenchProcSubtreesToTree(taxaTree,benchProcSubtreesFiles):
@@ -2039,9 +2031,11 @@ class ImmClassifierApp(App):
         db.ddl("""
         create table bench_samp 
         ( 
-        i_samp integer NOT NULL, 
+        i_samp integer NOT NULL,
         i_lev_exc integer NOT NULL,
         i_lev_per integer NOT NULL,
+        id_mod_test character({id_mod_len}),
+        id_mod_pred character({id_mod_len}),
         taxid_lev_test_bot integer,
         taxid_lev_pred_bot integer,
         taxid_lev_test integer,
@@ -2050,10 +2044,19 @@ class ImmClassifierApp(App):
         n_lev_test_models integer,
         score real
         )
-        """,dropList=["table bench_samp"])
+        """.format(id_mod_len=maxIdLen),
+        dropList=["table bench_samp"])
         inserter = db.makeBulkInserter(table="bench_samp")
-        def _outTestRec(iS,iLevFS,iLevFP,nodS,nodP,nodLinFS_FP,
-                nodLinFS,nodLinFP,
+        def _outTestRec(iS,
+                levIdFS,
+                levIdFP,
+                idModS,
+                idModP,
+                nodS,
+                nodP,
+                nodLinFS_FP,
+                nodLinFS,
+                nodLinFP,
                 nodSuperkingS,
                 scoP,
                 withExcl,
@@ -2062,8 +2065,10 @@ class ImmClassifierApp(App):
                 wrongTaxid=wrongTaxid,
                 iLevNoExc=iLevNoExc):
             rec = (iS,
-                    levIdNames[iLevFS] if withExcl else iLevNoExc,
-                    levIdNames[iLevFP],
+                    levIdFS,
+                    levIdFP,
+                    idModS,
+                    idModP,
                     nodS.id,
                     nodP.id,
                     nodLinFS_FP.id,
@@ -2080,15 +2085,18 @@ class ImmClassifierApp(App):
         score = sc.score[:]
         print "DEBUG: Loaded score matrix of total elements %i" % (score.shape[0]*score.shape[1],)
         #rows are models, columns are samples
-        #samples ID was generate by bench generator and is "$taxid_$sampIndInTaxid"
+        #samples ID is UUID; samples were organized into SampDbFasta indexed by idSeqDb
+        #that is in turn listed in idScoreMeta["idScore"]["seq_db_id"]
         #we cache variables that depend only on true sample taxid or predicted sample
         #taxid because the former go in series, and the later often too (when predictions
         #are correct, for instance)
+        midS = None #model id sample (true value)
         tidS = None #taxid sample (true value)
         nodS = None #node(taxid sample)
         linS = None #lineage sample
         linSetS = None #lineage sample as set
         linFS = None #lineage fixed list for sample
+        midP = None #model id predicted
         tidP = None #taxid predicted
         nodP = None #node(taxid predicted)
         linP = None #lineage predicted
@@ -2097,15 +2105,14 @@ class ImmClassifierApp(App):
         cntRej = defdict(int)
         cntPass = defdict(int)
         iSel = sorted(sampleRatioWOR(n.arange(len(sc.idSamp)).tolist(),0.1))
-        #for iS,idS in it.izip(iSel,sc.idSamp[iSel]):
-        for iS,idS in enumerate(sc.idSamp):
-            taxid,itS = idS.strip().split('_')
-            taxid,itS = int(taxid),int(itS)
-            if sampTaxidsMap is not None:
-                taxidOrig = taxid
-                taxid = sampTaxidsMap[taxid]
-            if tidS is None or tidS != taxid:
-                tidS = taxid
+        #DEBUG:
+        for iS,idS in it.izip(iSel,sc.idSamp[iSel]):
+        #for iS,idS in enumerate(sc.idSamp):
+            idMod = idSampToIdScore[idS]
+            if midS is None or midS != idMod:
+                midS = idMod
+                modMeta = idScoreMeta[midS]
+                tidS = modMeta["taxid"]
                 nodS = taxaTree.getNode(tidS)
                 linS = nodS.lineage()
                 linSetS = set(linS)
@@ -2128,10 +2135,13 @@ class ImmClassifierApp(App):
                 #iLevFS is exclusion level
                 #we additionally prepend the first defined node in lineage to process w/o exclusion
                 levTasks = [ (True,iLevFS,nodLinFS) for iLevFS,nodLinFS in enumerate(linFS[:-1]) ]
-                for iLevFS,nodLinFS in enumerate(linFS[:-1]):
-                    if nodLinFS is not None:
-                        levTasks = [ (False,iLevFS,nodLinFS) ] + levTasks
-                        break
+                levTasks = [ (False,iLevNoExc,nodS) ] + levTasks
+                    
+                #for iLevFS,nodLinFS in enumerate(linFS[:-1]):
+                #    if nodLinFS is not None:
+                #        levTasks = [ (False,iLevFS,nodLinFS) ] + levTasks
+                #        break
+                
                 for withExcl,iLevFS,nodLinFS in levTasks:
                     outputMetrForLineage = False
                     if nodLinFS is not None: 
@@ -2142,12 +2152,14 @@ class ImmClassifierApp(App):
                         #predicted taxa.
                         for iOrdP,vOrdP in enumerate(ordP,startOrdP):
                             scoP = float(scoreP[vOrdP])
-                            tidP = idImm[vOrdP]
+                            midP = idImm[vOrdP]
+                            tidP = idScoreMeta[midP]["taxid"]
                             nodP = taxaTree.getNode(tidP)
-                            if not taxaLevels.isNodeInLinnLevelRange(nodP,\
+                            #TMP:
+                            if False and not taxaLevels.isNodeInLinnLevelRange(nodP,\
                                     min_linn_levid,max_linn_levid):
                                 break
-                            if True or nodP.tmpHasLeafMod: #excludes mixed models
+                            if nodP.tmpHasLeafMod: #excludes mixed models
                                 if withExcl:
                                     if \
                                         ((nodP not in linSetS \
@@ -2209,14 +2221,39 @@ class ImmClassifierApp(App):
 
                                         #if nodLinFS_FP.id == 1081:
                                         #    pdb.set_trace()
-                                        _outTestRec(iS,iLevFS,iLevFP,nodS,nodP,
+                                        _outTestRec(iS,
+                                                levIdNames[iLevFS] if withExcl else iLevNoExc,
+                                                levIdNames[iLevFP],
+                                                midS,
+                                                midP,
+                                                nodS,
+                                                nodP,
                                                 nodLinFS_FP,
-                                                nodLinFS,nodLinFP,
+                                                nodLinFS,
+                                                nodLinFP,
                                                 nodSuperkingS,
                                                 scoP,
                                                 withExcl,
                                                 n_lev_test_models)
                                     
+                                if not withExcl:
+                                    #insert also the record for the test with the predicted
+                                    #nodes itself when no exclusion is done
+                                    _outTestRec(iS,
+                                            iLevNoExc,
+                                            iLevNoExc,
+                                            midS,
+                                            midP,
+                                            nodS,
+                                            nodP,
+                                            nodS,
+                                            nodS,
+                                            nodP,
+                                            nodSuperkingS,
+                                            scoP,
+                                            withExcl,
+                                            n_lev_test_models)
+
                         #next exclusion level is above current, its exclusion zone contains 
                         #the current zone,
                         #so it can ignore already scanned and rejected model indices
@@ -2234,6 +2271,8 @@ class ImmClassifierApp(App):
         "i_samp",
         "i_lev_exc",
         "i_lev_per",
+        "id_mod_test",
+        "id_mod_pred",
         "taxid_lev_test",
         "taxid_lev_pred",
         "taxid_lev_test_bot",

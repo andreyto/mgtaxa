@@ -14,7 +14,7 @@ def run_makeflow_if(opt):
             ])
 
 optTpl = Struct()
-optTpl.runMode = "batchDep" #"inproc" #"batchDep"
+optTpl.runMode = "inproc" #"inproc" #"batchDep"
 optTpl.batchBackend = "makeflow"
 optTpl.lrmUserOptions = r"'-P 0413'"
 optTpl.cwd = pabs("opt_work")
@@ -81,7 +81,7 @@ def makeBenchCmd():
     help="""Create benchmark dataset for a given fragment length based on a sequence DB built by make-ref-seqdb step.
     It also uses information from the model database built by train step."""
     cmd = "--mode make-bench  --db-seq tmp.db-seq --db-imm tmp.imm "+\
-            "--db-bench tmp.db-bench --db-bench-frag tmp.bench.fna "+\
+            "--db-bench tmp.db-bench "+\
             "--db-bench-frag-len 400 --db-bench-frag-count-max 100"
     runAndLog(cmd,help)
 
@@ -90,7 +90,8 @@ def benchOneFragLenCmd():
     sequence DB built by make-ref-seqdb step and evaluate the benchmark performance.
     It also uses information from the model database built by train step."""
     cmd = "--mode bench-one-frag-len  --db-seq tmp.db-seq --db-imm tmp.imm "+\
-            "--db-bench tmp.db-bench --db-bench-frag tmp.bench.fna "+\
+            "--bench-out-dir tmp.bench_results "+\
+            "--db-bench tmp.db-bench "+\
             "--db-bench-frag-len 400 --db-bench-frag-count-max 100"
     runAndLog(cmd,help)
 
@@ -99,8 +100,9 @@ def benchCmd():
     sequence DB built by make-ref-seqdb step and evaluate the benchmark performance.
     It also uses information from the model database built by train step."""
     cmd = "--mode bench  --db-seq tmp.db-seq --db-imm tmp.imm "+\
-            "--db-bench tmp.db-bench --db-bench-frag tmp.bench.fna "+\
-            "--bench-frag-len-list 100,400 --db-bench-frag-count-max 100"
+            "--bench-out-dir tmp.bench_results "+\
+            "--db-bench tmp.db-bench "+\
+            "--bench-frag-len-list 50,400 --db-bench-frag-count-max 100"
     runAndLog(cmd,help)
 
 def makeSeqDbRef(jobs):
@@ -199,12 +201,15 @@ def trainCustomWithParent(jobs):
     run_makeflow_if(opt)
     return jobs
 
-def scoreRefAgainstCustom(jobs):
+def scoreRefAgainstCustom(jobs,inpIsSeqDb=False):
 
     opt = optTpl.copy()
     opt.mode = "score"
     opt.immDb = [pjoin(opt.cwd,"92830.immdb")]
-    opt.inpSeq = pjoin(seqDbPath1,"195.fasta.gz")
+    if inpIsSeqDb:
+        opt.inpSeq = pjoin(opt.cwd,"92830.seqdb")
+    else:
+        opt.inpSeq = pjoin(seqDbPath1,"195.fasta.gz")
     opt.outScoreComb = pjoin(opt.cwd,"92830.combined.score")
 
     ImmClassifierApp.fillWithDefaultOptions(opt)
@@ -283,13 +288,16 @@ def procScoresCustomWithParentAgainstJoint(jobs):
     run_makeflow_if(opt)
     return jobs
 
-def procScoresRefAgainstCustom(jobs):
+def procScoresRefAgainstCustom(jobs,inpIsSeqDb=False):
 
     opt = optTpl.copy()
     opt.mode = "proc-scores"
     opt.outScoreComb = pjoin(opt.cwd,"92830.combined.score")
     opt.predOutDir = pjoin(opt.cwd,"92830.results")
-    opt.sampAttrib = pjoin(seqDbPath1,"195.immClassifier.attrib.csv")
+    if inpIsSeqDb:
+        opt.sampAttrib = None
+    else:
+        opt.sampAttrib = pjoin(seqDbPath1,"195.immClassifier.attrib.csv")
 
     ImmClassifierApp.fillWithDefaultOptions(opt)
 
@@ -342,9 +350,10 @@ def runAllTests():
 
     jobs = trainCustom(jobs)
     print jobs
-    jobs = scoreRefAgainstCustom(jobs)
+    inpIsSeqDb=True
+    jobs = scoreRefAgainstCustom(jobs,inpIsSeqDb=inpIsSeqDb)
     print jobs
-    jobs = procScoresRefAgainstCustom(jobs)
+    jobs = procScoresRefAgainstCustom(jobs,inpIsSeqDb=inpIsSeqDb)
     print jobs
     jobs = scoreCustomAgainstJoint(jobs)
     jobs = procScoresCustomAgainstJoint(jobs)
@@ -356,32 +365,36 @@ def runAllTests():
 
 def runSomeTests():
     jobs = []
-    buildRefSeqDbCmd()
-    trainRefCmd()
-    #makeBenchCmd()
-    #benchOneFragLenCmd()
-    #benchCmd()
-    #predictAgainstRefCmd(reduceScoresEarly=0,predMode="host")
-    predictAgainstRefCmd(reduceScoresEarly=1,predMode="taxa")
-    
-    jobs = makeSeqDbRef(jobs)
-    jobs = trainRef(jobs)
-    jobs = scoreRefAgainstRef(jobs)
-    jobs = procScoresRefAgainstRef(jobs)
-    jobs = makeSeqDbCustom(jobs)
-    jobs = trainCustom(jobs)
-    #print jobs
-    jobs = scoreRefAgainstCustom(jobs)
-    #print jobs
-    jobs = procScoresRefAgainstCustom(jobs)
-    #print jobs
-    jobs = scoreCustomAgainstJoint(jobs)
-    jobs = procScoresCustomAgainstJoint(jobs)
+    if False:
+        buildRefSeqDbCmd()
+        trainRefCmd()
+    if True:
+        #makeBenchCmd()
+        benchOneFragLenCmd()
+        #benchCmd()
+    if False:
+        #predictAgainstRefCmd(reduceScoresEarly=0,predMode="host")
+        predictAgainstRefCmd(reduceScoresEarly=1,predMode="taxa")
+        
+        jobs = makeSeqDbRef(jobs)
+        jobs = trainRef(jobs)
+        jobs = scoreRefAgainstRef(jobs)
+        jobs = procScoresRefAgainstRef(jobs)
+        jobs = makeSeqDbCustom(jobs)
+        jobs = trainCustom(jobs)
+        #print jobs
+        inpIsSeqDb=True
+        jobs = scoreRefAgainstCustom(jobs,inpIsSeqDb=inpIsSeqDb)
+        #print jobs
+        jobs = procScoresRefAgainstCustom(jobs,inpIsSeqDb=inpIsSeqDb)
+        #print jobs
+        jobs = scoreCustomAgainstJoint(jobs)
+        jobs = procScoresCustomAgainstJoint(jobs)
 
-    #jobs = trainCustomWithParent(jobs)
-    #print jobs
-    #jobs = scoreCustomWithParentAgainstJoint(jobs)
-    #jobs = procScoresCustomWithParentAgainstJoint(jobs)
+        #jobs = trainCustomWithParent(jobs)
+        #print jobs
+        #jobs = scoreCustomWithParentAgainstJoint(jobs)
+        #jobs = procScoresCustomWithParentAgainstJoint(jobs)
 
 runSomeTests()
 
