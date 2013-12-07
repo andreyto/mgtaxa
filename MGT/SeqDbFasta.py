@@ -34,7 +34,7 @@ class SeqDbFasta(DirKeyStore):
         return self.idList
 
     def updateMetaDataById(self,id):
-        meta = self.loadMetaDataById(id)
+        meta = self.loadMetaDataById(id,{})
         meta["seqLengths"] = self.computeSeqLengths(id)
         self.saveMetaDataById(id,meta)
 
