@@ -119,7 +119,7 @@ class DirStore:
     
     def hasFileMetaData(self,name):
         p = self.getFileMetaPath(name)
-        return os.exists(p)
+        return os.path.exists(p)
     
     def loadFileMetaData(self,name):
         p = self.getFileMetaPath(name)
@@ -266,8 +266,14 @@ class DirKeyStore(DirStore):
     def getFilePathById(self,id,objSfx=None):
         return self.getFilePath(self.getFileBaseById(id,objSfx=objSfx))
     
-    def loadMetaDataById(self,id):
-        return self.loadFileMetaData(self.getFileBaseById(id))
+    def loadMetaDataById(self,id,default=None):
+        if self.hasMetaDataById(id):
+            return self.loadFileMetaData(self.getFileBaseById(id))
+        elif default is not None:
+            return default
+        else:
+            raise KeyError(id)
+
     
     def saveMetaDataById(self,id,meta):
         self.saveFileMetaData(meta,self.getFileBaseById(id))
