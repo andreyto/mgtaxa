@@ -92,7 +92,7 @@ class ImmScoresHdf(ImmScores):
             block_start = 0
             for block in lenSamp:
                 block_end = block_start + len(block)
-                assert g.idSamp[block_start:block_end] == block["id"],\
+                assert (g.idSamp[block_start:block_end] == block["id"]).all(),\
                         "Sample IDs do not match for sample length block"
                 g.lenSamp[block_start:block_end] = block["len"]
                 block_start = block_end
