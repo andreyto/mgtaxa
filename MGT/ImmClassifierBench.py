@@ -189,51 +189,36 @@ class ImmClassifierBenchMetricsSql(object):
     confBotTbl = "conf_bot"
     ##model confusion table name
     confModTbl = "conf_mod"
-    ##test count table name
-    testCntTbl = "test_cnt"
-    ##max test count table name
-    testCntMaxTbl = "test_cnt_max"
-    ##weight for the test count table name
-    testCntWeightTbl = "test_cnt_wgt"
-    ##weighted confusion table name
-    confWeightedTbl = "conf_wgt"
-    ##sensitivity table name with a group (i_lev_exc,i_lev_per,taxid_clade)
-    sensTbl = "sens"
-    ##specificity table name with a group (i_lev_exc,i_lev_per,taxid_clade)
-    specTbl = "spec"
-    ##sensitivity aggregate table name with a group (i_lev_exc,i_lev_per)
-    sensAggrTbl = sensTbl+"_aggr"
-    ##specificity aggregate table name with a group (i_lev_exc,i_lev_per)
-    specAggrTbl = specTbl+"_aggr"
-    ##accuracy aggregate table name with a group (i_lev_exc,i_lev_per)
-    accuAggrTbl = "accu_aggr"
-    ##suffix for euk tables
-    eukSfx = "_euk"
-    ##suffix for mic tables
-    micSfx = "_mic"
 
-    iLevNoExc = 0
-
-    def __init__(self,db,taxaLevelsTbl,taxaNamesTbl):
+    def __init__(self,db,taxaLevelsTbl,taxaNamesTbl,modelNamesTbl,iLevNoExc):
         self.db = db
         self.taxaLevelsTbl = taxaLevelsTbl
         self.taxaNamesTbl = taxaNamesTbl
+        self.modelNamesTbl = modelNamesTbl
+        self.iLevNoExc = iLevNoExc
 
-    def makeMetrics(self,nLevTestModelsMin=2,csvAggrOut="bench.csv",comment=None):
+    def makeMetrics(self,nLevTestModelsMin=2,outDir=None,comment=None):
+        if outDir is None:
+            outDir = os.getcwd()
+        makedir(outDir)
         self.preFilter(nLevTestModelsMin=nLevTestModelsMin)
         self.makeConfusion()
         self.makeConfusionBottomTaxa()
         self.makeConfusionModel()
-        self.makeSampleCounts()
-        self.makeSampleCountsWeight()
-        self.makeConfusionWeighted()
-        self.makeSensitivity()
-        print "DEBUG: making specificity"
-        self.makeSpecificity()
-        print "DEBUG: making accuracy"
-        self.makeAccuracy()
-        self.makeAggrMetrics()
-        self.repAggrMetrics(csvOut=csvAggrOut,comment=comment)
+        for (confTbl,name,descr,idNamesTbl) in (
+                (self.confTbl,"lin","taxonomic lineage levels",self.taxaNamesTbl),
+                (self.confBotTbl,"bot","bottommost taxa level",self.taxaNamesTbl),
+                (self.confModTbl,"mod","model level",self.modelNamesTbl)
+                ):
+            metr = ImmClassifierBenchMetricsFromConfusionSql(db=self.db,
+                    taxaLevelsTbl=self.taxaLevelsTbl,
+                    idNamesTbl=idNamesTbl,
+                    confTbl=confTbl,
+                    tblSfx=name,
+                    iLevNoExc=self.iLevNoExc)
+            outFileRoot = pjoin(outDir,name)
+            metr.makeMetrics(outFileRoot=outFileRoot,
+                comment="{}; {}".format(comment,descr))
 
     def preFilter(self,nLevTestModelsMin):
         """Pre-filter data by creating a temporary view"""
@@ -309,6 +294,57 @@ class ImmClassifierBenchMetricsSql(object):
                 levPredFld="id_mod_pred",
                 where="i_lev_exc={i_lev} and i_lev_per={i_lev}".\
                         format(i_lev=self.iLevNoExc))
+
+
+class ImmClassifierBenchMetricsFromConfusionSql(object):
+    """Class that computes metrics for the taxonomic classifier from confusion matrix in SQL table"""
+
+    def __init__(self,db,taxaLevelsTbl,idNamesTbl,confTbl,tblSfx,iLevNoExc):
+        self.db = db
+        self.taxaLevelsTbl = taxaLevelsTbl
+        self.idNamesTbl = idNamesTbl
+        ##confusion table name
+        self.confTbl = confTbl
+        ##suffix for table names created here
+        self.tblSfx = tblSfx
+        ##test count table name
+        self.testCntTbl = "test_cnt"+tblSfx
+        ##max test count table name
+        self.testCntMaxTbl = "test_cnt_max"+tblSfx
+        ##weight for the test count table name
+        self.testCntWeightTbl = "test_cnt_wgt"+tblSfx
+        ##weighted confusion table name
+        self.confWeightedTbl = "conf_wgt"+tblSfx
+        ##sensitivity table name with a group (i_lev_exc,i_lev_per,taxid_clade)
+        self.sensTbl = "sens"+tblSfx
+        ##specificity table name with a group (i_lev_exc,i_lev_per,taxid_clade)
+        self.specTbl = "spec"+tblSfx
+        ##sensitivity aggregate table name with a group (i_lev_exc,i_lev_per)
+        self.sensAggrTbl = self.sensTbl+"_aggr"+tblSfx
+        ##specificity aggregate table name with a group (i_lev_exc,i_lev_per)
+        self.specAggrTbl = self.specTbl+"_aggr"+tblSfx
+        ##accuracy aggregate table name with a group (i_lev_exc,i_lev_per)
+        self.accuAggrTbl = "accu_aggr"+tblSfx
+        ##suffix for euk tables
+        eukSfx = "_euk"
+        ##suffix for mic tables
+        micSfx = "_mic"
+
+        self.iLevNoExc = iLevNoExc
+
+
+    def makeMetrics(self,outFileRoot,comment=None):
+        self.makeSampleCounts()
+        self.makeSampleCountsWeight()
+        self.makeConfusionWeighted()
+        self.makeSensitivity()
+        print "DEBUG: making specificity"
+        self.makeSpecificity()
+        print "DEBUG: making accuracy"
+        self.makeAccuracy()
+        self.makeAggrMetrics()
+        csvAggrOut = outFileRoot + ".aggr.csv"
+        self.repAggrMetrics(csvOut=csvAggrOut,comment=comment)
 
     def makeSampleCounts(self):
         """Create a table with sample counts per class"""

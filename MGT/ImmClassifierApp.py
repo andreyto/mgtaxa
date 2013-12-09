@@ -483,14 +483,6 @@ class ImmClassifierApp(App):
             dest="benchOutDir",
             help="Output directory for benchmarking results [-cwd/benchResults]"),
             
-            optParseMakeOption_Path(None, "--bench-out-csv",
-            dest="benchOutCsv",
-            help="Output CSV file with per-clade benchmarking results [--bench-out-dir/bench.csv]"),
-            
-            optParseMakeOption_Path(None, "--bench-out-aggr-csv",
-            dest="benchOutAggrCsv",
-            help="Output CSV file with aggregated benchmarking results [--bench-out-dir/bench.csv]"),
-            
             optParseMakeOption_Path(None, "--bench-out-db-sqlite",
             dest="benchOutDbSqlite",
             help="Output SQLite database file with benchmarking results [--bench-out-dir/bench.sqlite]"),
@@ -550,8 +542,6 @@ class ImmClassifierApp(App):
         opt.setIfUndef("scoreWorkDir",pjoin(opt.cwd,"scoreWorkDir"))
         opt.setIfUndef("benchWorkDir",pjoin(opt.cwd,"benchWorkDir"))
         opt.setIfUndef("benchOutDir",pjoin(opt.cwd,"benchResults"))
-        opt.setIfUndef("benchOutCsv",pjoin(opt.benchOutDir,"bench.csv"))
-        opt.setIfUndef("benchOutAggrCsv",pjoin(opt.benchOutDir,"bench.aggr.csv"))
         opt.setIfUndef("benchOutDbSqlite",pjoin(opt.benchOutDir,"bench.sqlite"))
         optPathMultiOptToAbs(opt,"benchProcSubtrees")
 
@@ -1892,28 +1882,33 @@ class ImmClassifierApp(App):
         in scoring. Metadata from this instance will be used here.
         @param outScoreComb File with ImmScores object
         @param outIdScoreMeta Metadata map for each score ID in outScoreComb
-        @param benchOutCsv Output file with per clade metrics in CSV format
-        @param benchOutAggrCsv Output file with aggregated metrics in CSV format
+        @param benchOutDir Output directory for benchmarking results
         @param benchOutDbSqlite Output file with metrics in SQLite format
         """
         opt = self.opt
-        makeFilePath(opt.benchOutCsv)
+        makedir(opt.benchOutDir)
         makeFilePath(opt.benchOutDbSqlite)
+        #set i_lev_excl to this value when no exclusion was done
+        iLevNoExc = 0
         db = DbSqlLite(dbpath=opt.benchOutDbSqlite,strategy="exclusive_unsafe")
         debugShortcut = False
         if not debugShortcut:
             storesDb = self.prepBenchSql(db=db)
             tblLevels = storesDb.storeDbLev.tblLevels
             tblNames = storesDb.storeDbNode.tblNames
+            tblModNames = storesDb.tblModNames
         else:
             tblLevels = "txlv"
             tblNames = "taxa_names"
-        self.procBenchScoreMatr(db=db)
+            tblModNames = "model_names"
+        self.procBenchScoreMatr(db=db,iLevNoExc=iLevNoExc)
         sqlBenchMetr = ImmClassifierBenchMetricsSql(db=db,
                 taxaLevelsTbl=tblLevels,
-                taxaNamesTbl=tblNames)
+                taxaNamesTbl=tblNames,
+                modelNamesTbl=tblModNames,
+                iLevNoExc=iLevNoExc)
         sqlBenchMetr.makeMetrics(nLevTestModelsMin=opt.benchNLevTestModelsMin,
-                csvAggrOut=opt.benchOutAggrCsv,
+                outDir=opt.benchOutDir,
                 comment=("fragment length %s" % (opt.dbBenchFragLen,)) \
                         if opt.dbBenchFragLen \
                         else None)
@@ -1922,6 +1917,17 @@ class ImmClassifierApp(App):
         """Prepare lookup tables in benchmark SQL database.
         @param db Sql object"""
         opt = self.opt
+        idScoreMeta = loadObj(opt.outIdScoreMeta)
+        tblModNames="model_names"
+        db.createTableFromKeyVal(tblModNames,
+                records=(
+                    (key,val["name"]) for (key,val) in idScoreMeta.items()
+                    ),
+                keyName="id",
+                keyType="char({})".format(maxIdLen),
+                valName="name",
+                valType="text"
+                )
         taxaTree = self.getTaxaTree()
         taxaLevels = self.getTaxaLevels()
         print "DEBUG: Loaded taxa tree and levels"
@@ -1930,9 +1936,11 @@ class ImmClassifierApp(App):
         storeDbNode.saveName(taxaTree)
         storeDbLev = LevelsStorageDb(db=db,tableSfx=tableSfx)
         storeDbLev.save(taxaLevels)
-        return Struct(storeDbLev=storeDbLev,storeDbNode=storeDbNode)
+        return Struct(storeDbLev=storeDbLev,
+                storeDbNode=storeDbNode,
+                tblModNames=tblModNames)
 
-    def procBenchScoreMatr(self,db,**kw):
+    def procBenchScoreMatr(self,db,iLevNoExc,**kw):
         """Process benchmark IMM scores and generate (test,pred) pairs in SQL.
         @param db Sql object
 
@@ -1956,8 +1964,6 @@ class ImmClassifierApp(App):
         taxaTree = self.getTaxaTree()
         taxaLevels = self.getTaxaLevels()
         print "DEBUG: Loaded taxa tree and levels"
-        #set i_lev_excl to this value when no exclusion was done
-        iLevNoExc = 0
         eukRoot = taxaTree.getNode(eukTaxid)
         levNames = taxaLevels.getLevelNames("ascend")
         levIdNames = taxaLevels.getLevelIdForNames(levNames)
