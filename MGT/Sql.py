@@ -7,7 +7,7 @@
 
 
 from MGT.Common import *
-import time, csv
+import time, csv, collections
 
 def dbClose(dbObj):
     #print "Running 'atexit()' handler"
@@ -355,7 +355,7 @@ class DbSql(MGTOptions):
     def makeBulkReader(self,*l,**kw):
         return BulkReader(db=self,*l,**kw)
 
-    def saveRecords(self,records,table):
+    def saveRecords(self,records,table,indices=None):
         """Create a new table and save records into it.
         @param records - iterable with each element been a sequence of field values itself
         @param table - instance of SqlTable description class"""
@@ -364,6 +364,47 @@ class DbSql(MGTOptions):
         for rec in records:
             inserter(rec)
         inserter.flush()
+        if indices is not None and len(indices) > 0:
+            self.createIndices(table=table.name,**indices)
+            self.ddl("analyze table %s" % (table.name,),ifDialect="mysql")
+
+    def createTableFromKeyVal(self,name,records,
+            keyName,keyType,
+            valName,valType,valNull=False,
+            indices=None):
+        """Create a table from in-memory key-value records.
+        @param name The name of the new table
+        @param records Either mapping type or iterable of pair sequences
+        @param keyName name of key field to create
+        @param keyType SQL type of key field
+        @param valName name of value field to create
+        @param valType SQL type of value field
+        @param valNull Logical flag to allow or not NULL in value field. Only
+        important if updates to the table are expected afterwards
+        @param indices, if not None, should be a dictionary with arguments to createIndices, 
+        except the 'table' argument, which will be taken from 'name'. "primary" argument
+        will be set to keyName.
+        """
+        
+        table = SqlTable(
+                name,
+                fields = [
+                    SqlField(
+                        keyName,type=keyType,null=False
+                        ),
+                    SqlField(
+                        valName,type=valType,null=valNull
+                        )
+                    ]
+                )
+        if isinstance(records,collections.Mapping):
+            records = records.items()
+        if indices is None:
+            indices = dict()
+        else:
+            indices = indices.copy()
+        indices.setdefault("primary",keyName)
+        self.saveRecords(records,table,indices=indices)
 
     def createTableFromArray(self,name,arr,withData=True,returnInserter=False,indices=None):
         """Create a table that reflects the fields of Numpy record array.
