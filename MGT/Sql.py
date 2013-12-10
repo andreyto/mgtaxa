@@ -147,6 +147,7 @@ class DbSql(MGTOptions):
         try:
             curs.execute(*l,**kw)
         except StandardError, msg:
+            print l, kw
             print msg
             pass
         curs.close()
@@ -172,8 +173,10 @@ class DbSql(MGTOptions):
                 curs.execute(sql,**kw)
             except StandardError, msg:
                 if ignoreError:
+                    print sql, kw
                     print msg
                 else:
+                    print >> sys.stderr, sql, kw
                     raise
             watch()
             curs.close()
@@ -184,7 +187,11 @@ class DbSql(MGTOptions):
         if self.dialectMatch(ifDialect):
             curs = self.cursor()
             watch = SqlWatch(sql,self.debug)
-            curs.execute(sql,**kw)
+            try:
+                curs.execute(sql,**kw)
+            except StandardError,msg:
+                print >> sys.stderr, sql, kw
+                raise
             watch()
             return curs
         else:
@@ -194,7 +201,11 @@ class DbSql(MGTOptions):
         if self.dialectMatch(ifDialect):
             curs = self.cursor()
             watch = SqlWatch(sql,self.debug)
-            curs.executemany(sql,data,**kw)
+            try:
+                curs.executemany(sql,data,**kw)
+            except StandardError:
+                print >> sys.stderr, sql, kw
+                raise
             watch()
             curs.close()
 
