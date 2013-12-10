@@ -508,7 +508,7 @@ class ImmClassifierApp(App):
         opt.setIfUndef("cwd",os.getcwd())
         if ( not opt.immDbArchive and not opt.immDb ):
             if opt.mode in ("predict","make-bench","bench","proc-bench-scores"):
-                opt.immDb = [ globOpt.icm.icmDb ]
+                opt.immDb = globOpt.icm.icmDbs
         if isinstance(opt.benchFragLenList,str):
             opt.benchFragLenList = [ int(x) for x in opt.benchFragLenList.split(",") ]
         #This options is accepted from the Web as a command line string, parsing should be done securily:

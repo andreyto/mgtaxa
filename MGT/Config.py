@@ -161,7 +161,7 @@ class MGTOptions(Options):
         self.glimmer3.immBuildExe=pjoin(self.glimmer3.topDir,"bin","mgt-glm-build-icm")
         self.glimmer3.immScoreExe=pjoin(self.glimmer3.topDir,"bin","mgt-glm-simple-score")
         self.icm = Options(
-                icmDb = pjoin(self.dataDir,"icm-refseq"),
+                icmDbs = [ pjoin(self.dataDir,d) for d in ("refseq-icm","ref-extra-icm") ],
                 predScoreRescaleModel = {
                     "lreg" : {
                         "coef" : {
