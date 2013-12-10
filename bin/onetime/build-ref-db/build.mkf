@@ -1,0 +1,66 @@
+export BATCH_OPTIONS
+export MAKEFLOW_BATCH_QUEUE_TYPE
+export MAKEFLOW_MAX_REMOTE_JOBS
+
+REF_SCRIPTS=$MGT_HOME/bin/onetime/build-ref-db
+
+REF_EXTRA_MODEL_DATA=$MGT_DATA/ref-extra
+REF_EXTRA_SEQ_DB=$MGT_DATA/ref-extra-seqdb
+REF_EXTRA_ICM_DB=$MGT_DATA/ref-extra-icm
+
+REF_NCBI_MODEL_DATA=$MGT_DATA/refseq
+REF_NCBI_SEQ_DB=$MGT_DATA/refseq-seqdb
+REF_NCBI_ICM_DB=$MGT_DATA/refseq-icm
+
+REF_EXTRA_SEQ_DB.mkf: $REF_EXTRA_MODEL_DATA/648174.fasta.gz $REF_EXTRA_MODEL_DATA/mod.json 
+    mgt-icm-classifier --mode make-ref-seqdb \
+    --inp-train-seq $REF_EXTRA_MODEL_DATA/648174.fasta.gz \
+    --inp-train-model-descr $REF_EXTRA_MODEL_DATA/mod.json \
+    --inp-train-seq-format generic \
+    --db-seq  $REF_EXTRA_SEQ_DB \
+    --run-mode batchDep \
+    --batch-backend makeflow \
+    --workflow-file REF_EXTRA_SEQ_DB.mkf
+
+$REF_EXTRA_SEQ_DB: REF_EXTRA_SEQ_DB.mkf
+    LOCAL MAKEFLOW REF_EXTRA_SEQ_DB.mkf
+
+REF_EXTRA_ICM_DB.mkf: $REF_EXTRA_SEQ_DB 
+    mgt-icm-classifier --mode train \
+    --db-seq $REF_EXTRA_SEQ_DB \
+    --db-imm $REF_EXTRA_ICM_DB \
+    --run-mode batchDep \
+    --batch-backend makeflow \
+    --workflow-file REF_EXTRA_ICM_DB.mkf
+
+$REF_EXTRA_ICM_DB: REF_EXTRA_ICM_DB.mkf
+    LOCAL MAKEFLOW REF_EXTRA_ICM_DB.mkf
+
+ref_ncbi_inp_train_seq_list.tab: $REF_NCBI_MODEL_DATA
+    echo "$REF_NCBI_MODEL_DATA\t*.fna.gz" > ref_ncbi_inp_train_seq_list.tab
+
+REF_NCBI_SEQ_DB.mkf: $REF_NCBI_MODEL_DATA ref_ncbi_inp_train_seq_list.tab
+    mgt-icm-classifier --mode make-ref-seqdb \
+    --inp-train-seq $REF_NCBI_MODEL_DATA \
+    --inp-train-seq-list ref_ncbi_inp_train_seq_list.tab \
+    --inp-train-seq-format ncbi \
+    --db-seq  $REF_NCBI_SEQ_DB \
+    --run-mode batchDep \
+    --batch-backend makeflow \
+    --workflow-file REF_NCBI_SEQ_DB.mkf
+
+$REF_NCBI_SEQ_DB: REF_NCBI_SEQ_DB.mkf
+    LOCAL MAKEFLOW REF_NCBI_SEQ_DB.mkf
+
+REF_NCBI_ICM_DB.mkf: $REF_NCBI_SEQ_DB 
+    mgt-icm-classifier --mode train \
+    --db-seq $REF_NCBI_SEQ_DB \
+    --db-imm $REF_NCBI_ICM_DB \
+    --run-mode batchDep \
+    --batch-backend makeflow \
+    --workflow-file REF_NCBI_ICM_DB.mkf
+
+$REF_NCBI_ICM_DB: REF_NCBI_ICM_DB.mkf
+    LOCAL MAKEFLOW REF_NCBI_ICM_DB.mkf
+
+
