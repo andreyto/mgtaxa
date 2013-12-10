@@ -209,7 +209,10 @@ class ImmClassifierApp(App):
             optParseMakeOption_Path(None, "--inp-train-seq-list",
             dest="inpTrainSeqList",
             help="File that contains a list of file names (one per line) of the "+\
-                    "input FASTA sequences for training models"),
+                    "input FASTA sequences for training models. It can also contain "+\
+                    "a second tab-separated field with a shell glob pattern. "+\
+                    "In that case, the first field can be either PathHasher directory "+\
+                    "(see MGT/Util.py) or part of a file name preceding the glob."),
             
             make_option(None, "--inp-train-seq-format",
             action="store",
@@ -720,12 +723,31 @@ class ImmClassifierApp(App):
         seqDb.setTaxaTree(taxaTree)
         inpTrainSeqFiles = []
         if not opt.isUndef("inpTrainSeq"):
-            inpTrainSeqFiles += list(glob.glob(opt.inpTrainSeq))
+            #these can be only regular files or patterns by not PathHasher
+            #because we would know the glob (e.g. extension) inside PathHasher
+            inpTrainSeqFiles += list(glob.glob(os.path.abspath(opt.inpTrainSeq)))
         if not opt.isUndef("inpTrainSeqList"):
             with closing(openCompressed(opt.inpTrainSeqList,"r")) as inp:
                 for line in inp:
-                    inpTrainSeqFiles += [os.path.abspath(f) for f in glob.glob(line.strip())]
-        
+                    line = line.strip()
+                    if line:
+                        words = line.split("\t")
+                        rootPath = os.path.abspath(words[0])
+                        if len(words) == 1:
+                            #just a file name
+                            inpTrainSeqFiles += rootPath
+                        else:
+                            #root path\tpattern
+                            patt = words[1]
+                            if PathHasher.is_instance_dir(rootPath):
+                                #root path is PathHasher
+                                ph = PathHasher(rootPath,mode="r")
+                                inpTrainSeqFiles += [ f for f in ph.glob(patt) ]
+                            else:
+                                #root path with pattern is just a pattern
+                                fullPatt = pjoin(rootPath,patt)
+                                inpTrainSeqFiles += list(glob.glob(fullPatt))
+       
         if opt.inpTrainSeqFormat == "ncbi":
             policyFilter=FastaTrainingSeqFilter(policy=opt.inpNcbiSeqSelPolicy)
             filt = functools.partial(fastaReaderFilterNucDegen,
