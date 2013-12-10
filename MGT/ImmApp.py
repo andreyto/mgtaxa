@@ -416,6 +416,8 @@ class ImmApp(App):
             return self.trainOne(**kw)
         elif opt.mode == "score":
             return self.scoreMany(**kw)
+        elif opt.mode == "score-prep":
+            return self.scorePrepare(**kw)
         elif opt.mode == "score-batch":
             return self.scoreBatch(**kw)
         elif opt.mode == "combine-scores":
@@ -508,6 +510,8 @@ class ImmApp(App):
                 inpSeq = SeqDbFasta.open(inpSeq,"r")
                 inpType = "store"
                 inpSeqDbIds = load_config_json(opt.inpSeqDbIds)
+                assert inpSeqDbIds, "List of SeqDbFasta IDs for scoring is empty: {}".\
+                        format(opt.inpSeqDbIds)
 
             outScoreBatchFile = self.getScoreBatchPath(opt.scoreBatchId)
             outScoreBatchFileWork = makeWorkFile(outScoreBatchFile)
@@ -524,7 +528,7 @@ class ImmApp(App):
                         imm.flush()
                     elif inpType == "store":
                         with closing(imm.score()) as inp:
-                            inpSeq.writeFasta(ids=inpSeqDbIds,out=inp)
+                            inpSeq.writeToStreamByIds(ids=inpSeqDbIds,out=inp)
                         imm.flush()
                         scores = imm.parseScores()
                     else:
@@ -535,6 +539,20 @@ class ImmApp(App):
                 inpSeq.close()
         os.rename(outScoreBatchFileWork,outScoreBatchFile)
 
+    def scorePrepare(self,**kw):
+        """Prepare data once before all batches are scored.
+        Parameters are taken from self.opt
+        @param inpSeq Name of the input multi-FASTA file or SeqDbFasta store to score
+        @param inpSeqDbIds If inpSeq is SeqDbFasta store, this parameter will be a JSON
+        file that will be populated here with all SeqDb IDs in inpSeq.
+        """
+        opt = self.opt
+        if SeqDbFasta.isStore(opt.inpSeq):
+            with closing(SeqDbFasta.open(opt.inpSeq,"r")) as inpSeq:
+                seqDbIds = inpSeq.getIdList()
+                assert seqDbIds, "Input sequence store is empty: {}".format(opt.inpSeq)
+                save_config_json(seqDbIds,opt.inpSeqDbIds)
+    
     def scoreMany(self,**kw):
         """Score with many IMMs.
         Parameters are taken from self.opt
@@ -556,9 +574,15 @@ class ImmApp(App):
         """
         opt = self.opt
         if SeqDbFasta.isStore(opt.inpSeq) and opt.isUndef("inpSeqDbIds"):
-            with closing(SeqDbFasta.open(opt.inpSeq,"r")) as inpSeq:
-                opt.inpSeqDbIds = pjoin(opt.cwd,"inp-seq-db-ids.json")
-                save_config_json(inpSeq.getIdList(),opt.inpSeqDbIds)
+            opt.inpSeqDbIds = pjoin(opt.cwd,"inp-seq-db-ids.json")
+            prepOpt = copy(opt)
+            #stay in the same cwd
+            prepOpt.cwdHash = 0
+            prepOpt.mode = "score-prep"
+            immApp = self.factory(opt=prepOpt)
+            jobs = immApp.run(**kw)
+            kw = kw.copy()
+            kw["depend"] = jobs
         makedir(opt.outDir)
         jobs = []
         immIds = loadObj(opt.immIds)
