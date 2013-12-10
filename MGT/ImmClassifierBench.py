@@ -64,7 +64,6 @@ class ImmClassifierBenchmark(SeqDbFasta):
         @note This cats entire files, and thus relies on the newline symbol
         being present at the end of every file. The FastaIO module that is
         used to create individual files always terminates with a newline. """
-        import shutil
         
         if idsDb is None:
             idsDb = self.listDbIds()
@@ -73,12 +72,11 @@ class ImmClassifierBenchmark(SeqDbFasta):
             outClose = True
         else:
             outClose = False
-        for idDb in idsDb:
-            inpFile = self.openStreamById(idDb)
-            shutil.copyfileobj(inpFile,outFile,1024*1024)
-            inpFile.close()
-        if outClose:
-            outFile.close()
+        try:
+            self.writeToStreamByIds(ids=idsDb,out=outFile)
+        finally:
+            if outClose:
+                outFile.close()
 
     def shredFasta(self,idDb,fragLen,
             fragCountMax,lineLen=80,outMode="w"):
