@@ -214,7 +214,7 @@ class ImmClassifierBenchMetricsSql(object):
                     taxaLevelsTbl=self.taxaLevelsTbl,
                     idNamesTbl=idNamesTbl,
                     confTbl=confTbl,
-                    tblSfx=name,
+                    tblSfx="_"+name,
                     iLevNoExc=self.iLevNoExc)
             outFileRoot = pjoin(outDir,name)
             metr.makeMetrics(outFileRoot=outFileRoot,
@@ -345,6 +345,10 @@ class ImmClassifierBenchMetricsFromConfusionSql(object):
         self.makeAggrMetrics()
         csvAggrOut = outFileRoot + ".aggr.csv"
         self.repAggrMetrics(csvOut=csvAggrOut,comment=comment)
+        csvMetrOut = outFileRoot + ".metr.csv"
+        self.repMetrics(csvOut=csvMetrOut,comment=comment)
+        csvConfOutRoot = outFileRoot + ".conf"
+        self.repConf(csvOutRoot=csvConfOutRoot,comment=comment)
 
     def makeSampleCounts(self):
         """Create a table with sample counts per class"""
@@ -591,6 +595,105 @@ class ImmClassifierBenchMetricsFromConfusionSql(object):
                     restval="X",
                     valFormatStr="%.2f",
                     rowFieldOut="Exclude")
+
+    def repMetrics(self,csvOut,comment=None):
+        db = self.db
+        for (iTbl,(metrTbl,hdr)) in enumerate(
+                (
+                (self.sensTbl,"Per-clade sensitivity"),
+                (self.specTbl,"Per-clade specificity"),
+                )
+                ):
+            sql = """
+            select 
+            b.level as lev_exc,
+            c.level as lev_per,
+            d.name as name,
+            a.metr_clade as metr_clade,
+            i_lev_exc,
+            i_lev_per,
+            id_lev
+            from 
+                %(metrTbl)s a,
+                %(taxaLevelsTbl)s b,
+                %(taxaLevelsTbl)s c,
+                %(idNamesTbl)s d
+            where
+                a.i_lev_exc = b.id
+                and
+                a.i_lev_per = c.id
+                and
+                a.id_lev = d.id
+            order by i_lev_exc,i_lev_per,name
+            """ % dict(metrTbl=metrTbl,
+                    taxaLevelsTbl=self.taxaLevelsTbl,
+                    idNamesTbl=self.idNamesTbl
+                    )
+            if iTbl == 0:
+                mode = "w"
+            else:
+                mode = "a"
+            if comment:
+                fullComment = "%s (%s)" % (hdr,comment)
+            else:
+                fullComment = hdr
+            db.exportAsCsv(sql=sql,
+                    out=csvOut,
+                    mode=mode,
+                    comment=fullComment,
+                    sqlAsComment=False,
+                    epilog="\n")
+
+    def repConf(self,csvOutRoot,comment=None):
+        db = self.db
+        for (iTbl,(confTbl,hdr,sfx)) in enumerate(
+                (
+                (self.confTbl,"Confusion table",".raw"),
+                (self.confWeightedTbl,"Confusion table weightd by test counts",".wgt"),
+                )
+                ):
+            sql = """
+            select 
+            b.level as lev_exc,
+            c.level as lev_per,
+            d.name as name_test,
+            e.name as name_pred,
+            a.cnt as cnt,
+            i_lev_exc,
+            i_lev_per,
+            id_lev_test,
+            id_lev_pred
+            from 
+                %(confTbl)s a,
+                %(taxaLevelsTbl)s b,
+                %(taxaLevelsTbl)s c,
+                %(idNamesTbl)s d,
+                %(idNamesTbl)s e
+            where
+                a.i_lev_exc = b.id
+                and
+                a.i_lev_per = c.id
+                and
+                a.id_lev_test = d.id
+                and
+                a.id_lev_pred = e.id
+            order by i_lev_exc,i_lev_per,name_test,name_pred
+            """ % dict(confTbl=confTbl,
+                    taxaLevelsTbl=self.taxaLevelsTbl,
+                    idNamesTbl=self.idNamesTbl
+                    )
+            mode = "w"
+            if comment:
+                fullComment = "%s (%s)" % (hdr,comment)
+            else:
+                fullComment = hdr
+            csvOut = csvOutRoot + sfx + ".csv"
+            db.exportAsCsv(sql=sql,
+                    out=csvOut,
+                    mode=mode,
+                    comment=fullComment,
+                    sqlAsComment=False,
+                    epilog="\n")
 
 class ImmClassifierBenchToScore(object):
     
