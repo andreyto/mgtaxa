@@ -247,7 +247,6 @@ class ImmClassifierBenchMetricsSql(object):
                 i_lev_per,
                 %(levTestFld)s as id_lev_test,
                 %(levPredFld)s as id_lev_pred,
-                taxid_superking,
                 count(*) as cnt
                 from %(sampTbl)s 
                 %(where)s
@@ -255,8 +254,7 @@ class ImmClassifierBenchMetricsSql(object):
                     i_lev_exc,
                     i_lev_per, 
                     %(levTestFld)s,
-                    %(levPredFld)s,
-                    taxid_superking
+                    %(levPredFld)s
                 """ % dict(sampTbl=sampTbl,
                     levTestFld=levTestFld,
                     levPredFld=levPredFld,
@@ -265,8 +263,7 @@ class ImmClassifierBenchMetricsSql(object):
                     ["i_lev_exc",
                     "i_lev_per",
                     "id_lev_test",
-                    "id_lev_pred",
-                    "taxid_superking"]})
+                    "id_lev_pred"]})
     
     def makeConfusion(self):
         """Create a table with a confusion matrix in a sparse row_ind,col_ind,count format"""
@@ -425,7 +422,6 @@ class ImmClassifierBenchMetricsFromConfusionSql(object):
                 a.i_lev_per as i_lev_per,
                 a.id_lev_test as id_lev_test,
                 a.id_lev_pred as id_lev_pred,
-                a.taxid_superking as taxid_superking,
                 a.cnt*b.weight_cnt as cnt
                 from 
                     %(confTbl)s a,
@@ -451,20 +447,17 @@ class ImmClassifierBenchMetricsFromConfusionSql(object):
                 """select i_lev_exc,
                 i_lev_per,
                 id_lev_test as id_lev,
-                taxid_superking,
                 sum((id_lev_test==id_lev_pred)*cnt)/cast(sum(cnt) as REAL) as metr_clade
                 from %(confTbl)s 
                 group by  
                     i_lev_exc,
                     i_lev_per, 
-                    id_lev_test,
-                    taxid_superking
+                    id_lev_test
                 """ % dict(confTbl=self.confWeightedTbl),
                 indices={"names":
                     ["i_lev_exc",
                     "i_lev_per",
-                    "id_lev",
-                    "taxid_superking"]})
+                    "id_lev"]})
 
     def makeSpecificity(self):
         """Create a table with specificity metrics"""
