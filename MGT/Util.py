@@ -1516,6 +1516,10 @@ class PathHasher:
 
     param_file = ".path_hasher.json"
 
+    @classmethod
+    def is_instance_dir(klass,root):
+        return os.path.isfile(os.path.join(root,klass.param_file))
+
     def __init__(self,root,n_subdirs=2**10,mode="w"):
         """Ctor.
         @param root Top level directory of the hierarchy.
