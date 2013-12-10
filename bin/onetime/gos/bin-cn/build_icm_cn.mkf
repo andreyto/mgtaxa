@@ -2,6 +2,9 @@ export BATCH_OPTIONS
 export MAKEFLOW_BATCH_QUEUE_TYPE
 export MAKEFLOW_MAX_REMOTE_JOBS
 
+MGT_WRAPPER=$MGT_HOME/bin/mgt-wrapper
+MGT_ICM_CLASSIFIER=$MGT_HOME/bin/mgt-icm-classifier
+
 CN_SCRIPTS=$MGT_HOME/bin/onetime/gos/bin-cn
 CN_MODEL_DATA=$MGT_DATA/gos-cn-model-data
 CN_GENOME_SEQ_DB=$MGT_DATA/gos-cn-genome-seqdb
@@ -13,19 +16,19 @@ $CN_MODEL_DATA:
     mkdir -p $CN_MODEL_DATA
 
 $CN_MODEL_DATA/genome.mod.fasta $CN_MODEL_DATA/genome.mod.json: $CN_MODEL_DATA
-    python $CN_SCRIPTS/convert_shibu_fasta.py \
+    $MGT_WRAPPER python $CN_SCRIPTS/convert_shibu_fasta.py \
     '/usr/local/depot/projects/GOS/analysis/syooseph/gos3asm_2012/annotation/sequenced_genomes/fasta/*.fasta' \
     $CN_MODEL_DATA/genome.mod.fasta \
     $CN_MODEL_DATA/genome.mod.json
 
 $CN_MODEL_DATA/scaff.mod.fasta $CN_MODEL_DATA/scaff.mod.json: $CN_MODEL_DATA
-    python $CN_SCRIPTS/convert_shibu_fasta.py \
+    $MGT_WRAPPER python $CN_SCRIPTS/convert_shibu_fasta.py \
     '/usr/local/depot/projects/GOS/analysis/syooseph/gos3asm_2012/annotation/taxonomy/fasta/*.fasta' \
     $CN_MODEL_DATA/scaff.mod.fasta \
     $CN_MODEL_DATA/scaff.mod.json
 
 CN_GENOME_SEQ_DB.mkf: $CN_MODEL_DATA/genome.mod.fasta $CN_MODEL_DATA/genome.mod.json 
-    mgt-icm-classifier --mode make-ref-seqdb \
+    $MGT_ICM_CLASSIFIER --mode make-ref-seqdb \
     --inp-train-seq $CN_MODEL_DATA/genome.mod.fasta \
     --inp-train-model-descr $CN_MODEL_DATA/genome.mod.json \
     --inp-train-seq-format generic \
@@ -38,7 +41,7 @@ $CN_GENOME_SEQ_DB: CN_GENOME_SEQ_DB.mkf
     LOCAL MAKEFLOW CN_GENOME_SEQ_DB.mkf
 
 CN_SCAFF_SEQ_DB.mkf: $CN_MODEL_DATA/scaff.mod.fasta $CN_MODEL_DATA/scaff.mod.json 
-    mgt-icm-classifier --mode make-ref-seqdb \
+    $MGT_ICM_CLASSIFIER --mode make-ref-seqdb \
     --inp-train-seq $CN_MODEL_DATA/scaff.mod.fasta \
     --inp-train-model-descr $CN_MODEL_DATA/scaff.mod.json \
     --inp-train-seq-format generic \
@@ -51,7 +54,7 @@ $CN_SCAFF_SEQ_DB: CN_SCAFF_SEQ_DB.mkf
     LOCAL MAKEFLOW CN_SCAFF_SEQ_DB.mkf
 
 CN_GENOME_ICM_DB.mkf: $CN_GENOME_SEQ_DB 
-    mgt-icm-classifier --mode train \
+    $MGT_ICM_CLASSIFIER --mode train \
     --db-seq $CN_GENOME_SEQ_DB \
     --db-imm $CN_GENOME_ICM_DB \
     --run-mode batchDep \
@@ -62,7 +65,7 @@ $CN_GENOME_ICM_DB: CN_GENOME_ICM_DB.mkf
     LOCAL MAKEFLOW CN_GENOME_ICM_DB.mkf
 
 CN_SCAFF_ICM_DB.mkf: $CN_SCAFF_SEQ_DB 
-    mgt-icm-classifier --mode train \
+    $MGT_ICM_CLASSIFIER --mode train \
     --db-seq $CN_SCAFF_SEQ_DB \
     --db-imm $CN_SCAFF_ICM_DB \
     --run-mode batchDep \

@@ -2,6 +2,9 @@ export BATCH_OPTIONS
 export MAKEFLOW_BATCH_QUEUE_TYPE
 export MAKEFLOW_MAX_REMOTE_JOBS
 
+MGT_WRAPPER=$MGT_HOME/bin/mgt-wrapper
+MGT_ICM_CLASSIFIER=$MGT_HOME/bin/mgt-icm-classifier
+
 REF_SCRIPTS=$MGT_HOME/bin/onetime/build-ref-db
 
 REF_EXTRA_MODEL_DATA=$MGT_DATA/ref-extra
@@ -13,7 +16,7 @@ REF_NCBI_SEQ_DB=$MGT_DATA/refseq-seqdb
 REF_NCBI_ICM_DB=$MGT_DATA/refseq-icm
 
 REF_EXTRA_SEQ_DB.mkf: $REF_EXTRA_MODEL_DATA/648174.fasta.gz $REF_EXTRA_MODEL_DATA/mod.json 
-    mgt-icm-classifier --mode make-ref-seqdb \
+    $MGT_ICM_CLASSIFIER --mode make-ref-seqdb \
     --inp-train-seq $REF_EXTRA_MODEL_DATA/648174.fasta.gz \
     --inp-train-model-descr $REF_EXTRA_MODEL_DATA/mod.json \
     --inp-train-seq-format generic \
@@ -26,7 +29,7 @@ $REF_EXTRA_SEQ_DB: REF_EXTRA_SEQ_DB.mkf
     LOCAL MAKEFLOW REF_EXTRA_SEQ_DB.mkf
 
 REF_EXTRA_ICM_DB.mkf: $REF_EXTRA_SEQ_DB 
-    mgt-icm-classifier --mode train \
+    $MGT_ICM_CLASSIFIER --mode train \
     --db-seq $REF_EXTRA_SEQ_DB \
     --db-imm $REF_EXTRA_ICM_DB \
     --run-mode batchDep \
@@ -40,7 +43,7 @@ ref_ncbi_inp_train_seq_list.tab: $REF_NCBI_MODEL_DATA
     echo "$REF_NCBI_MODEL_DATA\t*.fna.gz" > ref_ncbi_inp_train_seq_list.tab
 
 REF_NCBI_SEQ_DB.mkf: $REF_NCBI_MODEL_DATA ref_ncbi_inp_train_seq_list.tab
-    mgt-icm-classifier --mode make-ref-seqdb \
+    $MGT_ICM_CLASSIFIER --mode make-ref-seqdb \
     --inp-train-seq $REF_NCBI_MODEL_DATA \
     --inp-train-seq-list ref_ncbi_inp_train_seq_list.tab \
     --inp-train-seq-format ncbi \
@@ -53,7 +56,7 @@ $REF_NCBI_SEQ_DB: REF_NCBI_SEQ_DB.mkf
     LOCAL MAKEFLOW REF_NCBI_SEQ_DB.mkf
 
 REF_NCBI_ICM_DB.mkf: $REF_NCBI_SEQ_DB 
-    mgt-icm-classifier --mode train \
+    $MGT_ICM_CLASSIFIER --mode train \
     --db-seq $REF_NCBI_SEQ_DB \
     --db-imm $REF_NCBI_ICM_DB \
     --run-mode batchDep \

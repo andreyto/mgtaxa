@@ -1,0 +1,29 @@
+export BATCH_OPTIONS
+export MAKEFLOW_BATCH_QUEUE_TYPE
+export MAKEFLOW_MAX_REMOTE_JOBS
+
+CN_SCRIPTS=$MGT_HOME/bin/onetime/gos/bin-cn
+CN_MODEL_DATA=$MGT_DATA/gos-cn-model-data
+CN_GENOME_SEQ_DB=$MGT_DATA/gos-cn-genome-seqdb
+CN_SCAFF_SEQ_DB=$MGT_DATA/gos-cn-scaff-seqdb
+CN_GENOME_ICM_DB=$MGT_DATA/gos-cn-genome-icm
+CN_SCAFF_ICM_DB=$MGT_DATA/gos-cn-scaff-icm
+
+CN_SCAFF_BENCH_DB=$MGT_DATA/gos-cn-scaff-bench
+CN_SCAFF_BENCH_RES=$MGT_DATA/gos-cn-scaff-bench-res
+
+CN_SCAFF_BENCH.mkf: $CN_SCAFF_ICM_DB 
+    $MGT_HOME/bin/mgt-icm-classifier --mode bench \
+    --bench-out-dir $CN_SCAFF_BENCH_RES \
+    --db-bench $CN_SCAFF_BENCH_DB \
+    --bench-frag-len-list 400,800,2000,5000 \
+    --db-bench-frag-count-max 20 \
+    --db-seq $CN_SCAFF_SEQ_DB \
+    --db-imm $CN_SCAFF_ICM_DB \
+    --run-mode batchDep \
+    --batch-backend makeflow \
+    --workflow-file CN_SCAFF_BENCH.mkf
+
+$CN_SCAFF_BENCH_RES: CN_SCAFF_BENCH.mkf
+    LOCAL MAKEFLOW CN_SCAFF_BENCH.mkf
+
