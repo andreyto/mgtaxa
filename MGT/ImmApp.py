@@ -599,7 +599,10 @@ class ImmApp(App):
         #object will still merge them into one record at the end
         immIds = n.asarray(immIdsShf,dtype="O")
         scoreBatchIds = [] # accumulate batch ids to pass to combiner
-        batches = [ x for x in enumerate(n.array_split(immIds,min(opt.nImmBatches,len(immIds)))) ]
+        nImmBatches = opt.nImmBatches
+        if nImmBatches < 0:
+            nImmBatches = len(immIds)
+        batches = [ x for x in enumerate(n.array_split(immIds,min(nImmBatches,len(immIds)))) ]
         
         rmfMany([ self.getScoreBatchPath(scoreBatchId) for (scoreBatchId,immIdsBatch) in batches ])
 

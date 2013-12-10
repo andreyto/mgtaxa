@@ -20,6 +20,7 @@ CN_SCAFF_BENCH.mkf: $CN_SCAFF_ICM_DB
     --db-bench-frag-count-max 20 \
     --db-seq $CN_SCAFF_SEQ_DB \
     --db-imm $CN_SCAFF_ICM_DB \
+    --n-imm-batches 1000 \
     --run-mode batchDep \
     --batch-backend makeflow \
     --workflow-file CN_SCAFF_BENCH.mkf

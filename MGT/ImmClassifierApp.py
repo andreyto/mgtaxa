@@ -883,6 +883,7 @@ class ImmClassifierApp(App):
             optI.cwd = pjoin(opt.benchWorkDir,str(fragLen))
             optI.benchOutDir = pjoin(opt.benchOutDir,str(fragLen))
             optI.dbBench = pjoin(opt.dbBench,str(fragLen))
+            optI.nImmBatches = opt.nImmBatches
             #this sets default and derived options
             #@todo we need to create two kinds of properties in Struct():
             #fixed values and lazy-evaluated values (similar to variables
