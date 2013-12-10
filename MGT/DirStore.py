@@ -12,7 +12,7 @@ from MGT.Svm import *
 from MGT.App import *
 from MGT.ParamScanApp import *
 from MGT.SeqFeaturesApp import *
-import glob
+import glob, shutil
 
 class DirStore:
 
@@ -310,6 +310,11 @@ class DirKeyStore(DirStore):
     
     def openStreamById(self,id,*l,**kw):
         return self.openStream(self.getFileBaseById(id),*l,**kw)
+
+    def writeToStreamByIds(self,ids,out):
+        for id in ids:
+            with closing(self.openStreamById(id,"r")) as inp:
+                shutil.copyfileobj(inp,out,1024**2)
 
 class SampStore(DirKeyStore):
 
