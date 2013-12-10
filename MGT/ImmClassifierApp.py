@@ -2133,9 +2133,8 @@ class ImmClassifierApp(App):
         cntRej = defdict(int)
         cntPass = defdict(int)
         iSel = sorted(sampleRatioWOR(n.arange(len(sc.idSamp)).tolist(),0.1))
-        #DEBUG:
-        for iS,idS in it.izip(iSel,sc.idSamp[iSel]):
-        #for iS,idS in enumerate(sc.idSamp):
+        #for iS,idS in it.izip(iSel,sc.idSamp[iSel]):
+        for iS,idS in enumerate(sc.idSamp):
             idMod = idSampToIdScore[idS]
             if midS is None or midS != idMod:
                 midS = idMod
@@ -2145,7 +2144,9 @@ class ImmClassifierApp(App):
                 linS = nodS.lineage()
                 linSetS = set(linS)
                 linFS = taxaLevels.lineageFixedList(nodS,null=None,format="node",fill=fill)
-            if nodS.tmpHasLeafMod and linFS[levPosSpecies] and (not opt.benchProcSubtrees or hasattr(nodS,"tmpProcSamp")):
+            #model can be attached to any level in the taxonomic hierarchy
+            if nodS.tmpHasLeafMod and (not opt.benchProcSubtrees or hasattr(nodS,"tmpProcSamp")):
+            #if nodS.tmpHasLeafMod and linFS[levPosSpecies] and (not opt.benchProcSubtrees or hasattr(nodS,"tmpProcSamp")):
             #if linFS[levPosSpecies] and (not opt.benchProcSubtrees or hasattr(nodS,"tmpProcSamp")):
             #if nodS.tmpHasLeafMod and taxidOrig not in [83129,484896,693582,490912,490913] and linFS[levPosSpecies] and (not opt.benchProcSubtrees or hasattr(nodS,"tmpProcSamp")):
             #lytic
@@ -2161,7 +2162,7 @@ class ImmClassifierApp(App):
                 nodSuperkingS = linFS[levPosSuperking]
                 #nodLinFS_Prev = None
                 #iLevFS is exclusion level
-                #we additionally prepend the first defined node in lineage to process w/o exclusion
+                #we additionally prepend the node itself to process w/o exclusion
                 levTasks = [ (True,iLevFS,nodLinFS) for iLevFS,nodLinFS in enumerate(linFS[:-1]) ]
                 levTasks = [ (False,iLevNoExc,nodS) ] + levTasks
                     
