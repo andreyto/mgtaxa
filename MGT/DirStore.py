@@ -92,6 +92,12 @@ class DirStore:
     def close(self):
         pass
 
+    def setAttr(self,key,val):
+        self.opt["key"] = val
+
+    def getAttr(self,key,default):
+        return self.opt.get(key,default)
+
     @classmethod
     def _metaPath(klass,path):
         return pjoin(path,klass.metaDirName)
