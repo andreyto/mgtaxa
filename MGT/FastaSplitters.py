@@ -150,4 +150,66 @@ def splitFastaFilesByModel(inSeqs,modelsMeta,outStore,
                     yield rec
     splitFastaFilesByGroupId(iterFastaWithMeta=_multi_iter(),outStore=outStore)
 
+def splitFastaReaderIntoChunks(reader,outStore,maxChunkSize,filt=None,compresslevel=6):
+    from MGT.FastaIO import splitFasta
+    from MGT.UUID import genId, idDtype
+    if filt is None:
+        filt = lambda x: x
+
+    class _writerOpener:
+
+        def __init__(self,outStore):
+            self.outStore = outStore
+            self.idDb = None
+
+        def flushMeta(self):
+            if self.idDb is not None:
+                idDb = self.idDb
+                seqLengths = n.asarray(self.seqLengths,dtype=[("id",idDtype),("len","i8")])
+                meta = outStore.loadMetaDataById(idDb,{})
+                meta["seqLengths"] = seqLengths
+                outStore.saveMetaDataById(idDb,meta)
+        
+        def openWriter(self,iChunk):
+            self.flushMeta()
+            self.idDb = genId()
+            self.seqLengths = list()
+            return self.outStore.fastaWriter(self.idDb,compresslevel=compresslevel)
+
+
+    wo = _writerOpener(outStore)
+
+
+    for (idRec,lenRec) in splitFasta(
+            filt(reader).records(),
+            maxChunkSize=maxChunkSize,
+            openWriter=wo.openWriter,
+            verbose=False
+            ):
+        wo.seqLengths.append((idRec,lenRec))
+
+    wo.flushMeta()
+
+def splitFastaReaderIntoChunksLengthDegen(
+        reader,
+        outStore,
+        maxChunkSize,
+        minSeqLen,
+        compresslevel=6,
+        minNonDegenRatio=0.50):
+    from MGT.FastaIO import fastaReaderFilterNucDegen
+    _extraFilter = lambda hdr,seq,minSeqLen=minSeqLen: \
+            (hdr,seq) if len(seq) >= minSeqLen else None
+    reader_filt = fastaReaderFilterNucDegen(
+            reader,
+            extraFilter=_extraFilter,
+            minNonDegenRatio=minNonDegenRatio,
+            doWarn=False
+            )
+    return splitFastaReaderIntoChunks(
+            reader=reader_filt,
+            outStore=outStore,
+            maxChunkSize=maxChunkSize,
+            filt=None,
+            compresslevel=compresslevel)
 

@@ -2,7 +2,7 @@
 set -ex
 
 export BATCH_OPTIONS='-P 9223 -b n -l medium'
-export MAKEFLOW_BATCH_QUEUE_TYPE=sge
+export MAKEFLOW_BATCH_QUEUE_TYPE=local
 export MAKEFLOW_MAX_REMOTE_JOBS=500
 
 this_dir=$(dirname $0)

@@ -33,9 +33,10 @@ class SeqDbFasta(DirKeyStore):
             self.loadIdList(objSfx=objSfx)
         return self.idList
 
-    def updateMetaDataById(self,id):
+    def updateMetaDataById(self,id,force=False):
         meta = self.loadMetaDataById(id,{})
-        meta["seqLengths"] = self.computeSeqLengths(id)
+        if "seqLengths" not in meta or force:
+            meta["seqLengths"] = self.computeSeqLengths(id)
         self.saveMetaDataById(id,meta)
 
     def finById(self,id):
@@ -48,9 +49,20 @@ class SeqDbFasta(DirKeyStore):
         self.updateMetaDataById(id)
 
     def fastaReader(self,id):
-        """Return FastaReader to read from the DB for a given ID"""
+        """Return FastaReader to read from the DB for a given ID.
+        Caller is responsible for closing the reader."""
         return FastaReader(self.getFilePathById(id))
 
+    def fastaReaders(self,ids):
+        """Return iterator of FastaReader objects to read from the DB for a given set of IDs.
+        Caller is responsible for closing the readers"""
+        for id in ids:
+            yield self.fastaReader(id)
+
+    def fastaReaderChain(self,ids):
+        """Return FastaReaderChain to read from the DB for a given set of IDs"""
+        return FastaReaderChain(self.fastaReaders(ids))
+    
     def computeSeqLengths(self,id):
         """Compute a numpy recarray with fields ("id","len") for a given DB ID
         directly from sequence data.
@@ -66,11 +78,13 @@ class SeqDbFasta(DirKeyStore):
     def seqLengthSum(self,id):
         return self.seqLengths(id)["len"].sum()
 
-    def seqLengthsAll(self):
-        for idDb in self.getIdList():
-            yield (idDb,self.seqLengths(idDb))
+    def seqLengthsMany(self,ids=None):
+        if ids is None:
+            ids = self.iterIds()
+        for id in ids:
+            yield (id,self.seqLengths(id))
 
-    def fastaWriter(self,id,lineLen=None,mode="w",objSfx=None):
+    def fastaWriter(self,id,lineLen=None,mode="w",objSfx=None,compresslevel=6):
         """Return FastaWriter to write INTO the DB for a given ID.
         @param id ID of the record
         @param lineLen Length of FASTA lines
@@ -78,10 +92,12 @@ class SeqDbFasta(DirKeyStore):
         @param objSfx set to self.objUncomprSfx to write into uncompressed object during initial
         serial DB construction
         """
-        return FastaWriter(out=self.getFilePathById(id,objSfx=objSfx),lineLen=lineLen,mode=mode)
+        return FastaWriter(out=self.getFilePathById(id,objSfx=objSfx),
+                lineLen=lineLen,mode=mode,compresslevel=compresslevel)
     
-    def fastaWriterUncompr(self,id,lineLen=None,mode="w"):
-        return self.fastaWriter(id,lineLen=lineLen,mode=mode,objSfx=self.objUncomprSfx)
+    def fastaWriterUncompr(self,id,lineLen=None,mode="w",compresslevel=6):
+        return self.fastaWriter(id,lineLen=lineLen,
+                mode=mode,objSfx=self.objUncomprSfx,compresslevel=compresslevel)
 
     def writeFasta(self,ids,out):
         """Write FASTA stream for given sequence of IDs from DB into output file-like object"""

@@ -157,7 +157,7 @@ class ImmClassifierBenchmark(SeqDbFasta):
                 idSeqDbToIdScore[idSeqDb] = idScore
         
         idFragToIdScore = dict()
-        for (idSeqDb,lengths) in self.seqLengthsAll():
+        for (idSeqDb,lengths) in self.seqLengthsMany():
             #Map IdSeqDbs from self to score ID either 
             #through remapping argument or through mapping
             #extracted from score meta-data argument

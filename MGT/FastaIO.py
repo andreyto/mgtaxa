@@ -8,7 +8,7 @@
 
 """I/O of FASTA formatted sequence files"""
 
-__all__ = [ "FastaReader", "fastaReaderGzip", "FastaWriter", 
+__all__ = [ "FastaReader", "FastaReaderChain", "fastaReaderGzip", "FastaWriter", 
         "splitFasta", "fastaLengths", "seqToLines", "shredFasta",
         "filterFastaByLength","fastaReaderFilterNucDegen" ]
 
@@ -63,11 +63,15 @@ class FastaReader(object):
     
     def header(self):
         assert self.hdr.startswith('>')
+        assert not self.freshHdr, "Detected invalid sequence of calls. Header "+\
+                "already points to next record, but you did not advance your "+\
+                "record iterator to it. You probably called "+\
+                "rec.header(); rec.sequence(); rec.getId()."
         return self.hdr
 
     def getNCBI_Id(self):
         """Assume that header starts with '>gi|1234567|' and return the string id from second field."""
-        return self.hdr.split('|',2)[1]
+        return self.header().split('|',2)[1]
     
     def getNCBI_GI(self):
         return int(self.getNCBI_Id())
@@ -79,7 +83,8 @@ class FastaReader(object):
     def getId(self):
         """Attempt to extract and return an ID substring from the header.
         If the idExtractor method was set previously, use it.
-        Otherwise, use getSimpleId()."""
+        Otherwise, use getSimpleId().
+        Note that this will work on whatever """
         if hasattr(self,"idExtractor"):
             return self.idExtractor(self.header())
         else:
@@ -147,6 +152,34 @@ class FastaReader(object):
         if self.ownInfile:
             self.infile.close()
 
+class FastaReaderChain(object):
+    """Class that chains multiple FastaReaders similar to itertools.chain().
+    It emulates the interface of FastaReader to provide a drop-in replacement.
+    """
+
+    def __init__(self,fastaReaders):
+        """Ctor.
+        @param fastaReaders iterable of objects implementing FastaReader
+        interface (could be FastaReaderChain objects too)
+        """
+        self.fastaReaders = fastaReaders
+
+    def records(self):
+        #all other methods are provided by the returned record objects
+        for reader in self.fastaReaders:
+            try:
+                for rec in reader.records():
+                    yield rec
+            finally:
+                reader.close()
+
+    def close(self):
+        #we already closed all readers through which we iterated
+        #we should not try to close the remaining readers that the 
+        #input iterator might yield - otherwise it would not be
+        #possible for the client to stop iteration without
+        #still generating all reader objects
+        pass
 
 def fastaReaderGzip(fileName):
     return FastaReader(openGzip(fileName,'r'))
@@ -171,11 +204,11 @@ def seqToLines(seq,lineLen=80):
 
 class FastaWriter:
     
-    def __init__(self,out,lineLen=None,mode="w"):
+    def __init__(self,out,lineLen=None,mode="w",compresslevel=6):
         if lineLen is None:
             lineLen = 1000
         if not hasattr(out,'write'):
-            out = openCompressed(out,mode)
+            out = openCompressed(out,mode,compresslevel=compresslevel)
             self.outClose = True
         else:
             self.outClose = False
@@ -221,36 +254,66 @@ class FastaWriter:
             out.write("\n")
 
 
-def splitFasta(inpFasta,outBase,maxChunkSize,sfxSep='_',lineLen=80):
+def splitFasta(inpFasta,
+        maxChunkSize,
+        outBase=None,
+        sfxSep=None,
+        openWriter=None,
+        lineLen=80,
+        verbose=True):
     """Split input multi-FASTA file into multiple files of fixed size"""
-    inpSeq = FastaReader(inpFasta)
-    iChunk = 0
-    chunkSize = 0
-    def _open_new_out(iChunk):
-        return openCompressed(outBase+'%s%04d'%(sfxSep,iChunk,),"w")
-    out = _open_new_out(iChunk)
-    print "Writing chunk %i of target size %i" % (iChunk,maxChunkSize)
-    for rec in inpSeq.records():
-        hdr = rec.header()
-        out.write(hdr)
-        lenSeq = 0
-        #size rec.seqChunks() argument should be multiple of lineLen
-        for chunk in rec.seqChunks(lineLen*1024):
-            for x in range(0,len(chunk),lineLen):
-                out.write(chunk[x:x+lineLen])
-                out.write("\n")
-            lenSeq += len(chunk)
-            chunkSize += len(chunk)
-        # we approximate the next seq length by the last one
-        if chunkSize + lenSeq >= maxChunkSize:
-            out.close()
-            iChunk += 1
-            chunkSize = 0
-            out = _open_new_out(iChunk)
-            print "Writing chunk %i of target size %i" % (iChunk,maxChunkSize)
-    out.close()
-    inpSeq.close()
-    return iChunk
+    assert (outBase is None and sfxSep is None) or openWriter is None,\
+            "Incompatible argument combination"
+    if outBase is None:
+        outBase = ""
+    if sfxSep is None:
+        sfxSep = '_'
+    inpClose = False
+    if hasattr(inpFasta,"records"):
+        records = inpFasta.records()
+    elif hasattr(inpFasta,"read") or is_string(inpFasta):
+        inpFasta = FastaReader(inpFasta)
+        inpClose = True
+        records = inpFasta.records()
+    else:
+        records = inpFasta
+    try:
+        iChunk = 0
+        chunkSize = 0
+        out = None
+        if openWriter is None:
+            def _open_new_out(iChunk):
+                return FastaWriter(outBase+'%s%04d'%(sfxSep,iChunk,),
+                        lineLen=lineLen,mode="w")
+        else:
+            _open_new_out = openWriter
+        out = _open_new_out(iChunk)
+        try:
+            if verbose:
+                print "Writing chunk %i of target size %i" % (iChunk,maxChunkSize)
+            for rec in records:
+                hdr = rec.header()
+                idSeq = rec.getId()
+                seq = rec.sequence()
+                out.record(hdr,seq)
+                lenSeq = len(seq)
+                yield (idSeq,lenSeq)
+                chunkSize += lenSeq
+                # we approximate the next seq length by the last one
+                if chunkSize + lenSeq >= maxChunkSize:
+                    out.close()
+                    out = None
+                    iChunk += 1
+                    chunkSize = 0
+                    out = _open_new_out(iChunk)
+                    if verbose:
+                        print "Writing chunk %i of target size %i" % (iChunk,maxChunkSize)
+        finally:
+            if out is not None:
+                out.close()
+    finally:
+        if inpClose:
+            inpFasta.close()
 
 def shredFasta(inpFasta,outFasta,fragSize,fragCountRatio=1.,lineLen=80,outMode="w"):
     """Shred each record in multi-FASTA file into multiple records of fixed size"""
@@ -295,21 +358,33 @@ def filterFastaByLength(inp,out,minLen=None,maxLen=None,lineLen=None,mode="w"):
         minLen = 0
     if maxLen is None:
         maxLen = sys.maxint
-    rd = FastaReader(inp)
-    wr = FastaWriter(out=out,lineLen=lineLen,mode=mode)
-    nSeqOut = 0
-    for rec in rd.records():
-        hdr = rec.header()
-        seq = rec.sequence()
-        lenSeq = len(seq)
-        if lenSeq >= minLen and lenSeq < maxLen:
-            wr.record(hdr,seq)
-            nSeqOut += 1
-    wr.close()
-    rd.close()
-    return dict(nSeqOut=nSeqOut)
+    rdClose = False
+    rd = inp
+    wrClose = False
+    wr = out
+    try:
+        if not hasattr(inp,"records"):
+            rd = FastaReader(inp)
+            rdClose = True
+        try:
+            if not hasattr(out,"record"):
+                wr = FastaWriter(out=out,lineLen=lineLen,mode=mode)
+                wrClose = True
+            for rec in rd.records():
+                hdr = rec.header()
+                seq = rec.sequence()
+                lenSeq = len(seq)
+                if lenSeq >= minLen and lenSeq < maxLen:
+                    wr.record(hdr,seq)
+                    yield dict(rec=rec,length=lenSeq)
+        finally:
+            if wrClose:
+                wr.close()
+    finally:
+        if rdClose:
+            rd.close()
 
-def fastaReaderFilterNucDegen(fastaReader,extraFilter=None,minNonDegenRatio=0.98):
+def fastaReaderFilterNucDegen(fastaReader,extraFilter=None,minNonDegenRatio=0.98,doWarn=True):
     if extraFilter is None:
         extraFilter = lambda hdr,seq: (hdr,seq)
     compr = SymbolRunsCompressor(sym="Nn",minLen=1)
@@ -320,7 +395,8 @@ def fastaReaderFilterNucDegen(fastaReader,extraFilter=None,minNonDegenRatio=0.98
             seq = compr(rec.sequence())
             if not checkSaneAlphaHist(seq,nonDegenSymb,
                     minNonDegenRatio=minNonDegenRatio):
-                print "WARNING: ratio of degenerate symbols is too high, "+\
+                if doWarn:
+                    print "WARNING: ratio of degenerate symbols is too high, "+\
                         "skipping sequence with id %s" % (rec.getId(),)
             else:
                 rec = extraFilter(hdr,seq)
