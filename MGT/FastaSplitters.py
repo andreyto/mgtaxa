@@ -179,7 +179,7 @@ def splitFastaReaderIntoChunks(reader,outStore,maxChunkSize,filt=None,compressle
 
     wo = _writerOpener(outStore)
 
-
+    nRec = 0
     for (idRec,lenRec) in splitFasta(
             filt(reader).records(),
             maxChunkSize=maxChunkSize,
@@ -187,8 +187,10 @@ def splitFastaReaderIntoChunks(reader,outStore,maxChunkSize,filt=None,compressle
             verbose=False
             ):
         wo.seqLengths.append((idRec,lenRec))
+        nRec += 1
 
     wo.flushMeta()
+    return nRec
 
 def splitFastaReaderIntoChunksLengthDegen(
         reader,
