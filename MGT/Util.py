@@ -295,7 +295,12 @@ def editSymlink(source,link_name):
     os.symlink(source,link_name)
 
 
-def openCompressed(filename,mode,compressFormat=None,**kw):
+def openCompressed(filename,
+        mode,
+        compressFormat=None,
+        buffering=1024**2,
+        compresslevel=6,
+        **kw):
     """Open a filename which can be either compressed or plain file.
     @param compressFormat if None, an attempt will be made to autodetect format 
     (currently by extension, only '.gz' and '.bz2' are recognized); if "none" - open as plain
@@ -311,16 +316,22 @@ def openCompressed(filename,mode,compressFormat=None,**kw):
     k = kw.copy()
     ret = None
     if cform == "gzip":
-        if "buffering" in k:
-            k["bufsize"] = k["buffering"]
-            del k["buffering"]
-        ret = openGzip(filename,mode,**kw)
+        ret = openGzip(filename,
+                mode,
+                compresslevel=compresslevel,
+                buffering=buffering,
+                **k)
     elif cform == "bz2":
-        k.setdefault("buffering",2**20)
-        ret = bz2.BZ2File(filename,mode,**kw)
+        ret = bz2.BZ2File(filename,
+                mode,
+                compresslevel=compresslevel,
+                buffering=buffering,
+                **k)
     elif cform == "none":
-        k.setdefault("buffering",2**20)
-        ret = open(filename,mode,**kw)
+        ret = open(filename,
+                mode,
+                buffering=buffering,
+                **k)
     else:
         raise ValueError(compressFormat)
     return ret
@@ -367,7 +378,7 @@ class PopenStdinProxy(object):
     def __del__(self):
         self.close()
 
-def openGzip(filename,mode,compresslevel=6):
+def openGzip(filename,mode,buffering=1024**2,compresslevel=6):
     compresslevel = int(compresslevel)
 
     if mode in ("w","wb","a","ab"):
@@ -377,7 +388,13 @@ def openGzip(filename,mode,compresslevel=6):
             redir = ">>"
         #p = Popen("gzip -%s %s %s" % (compresslevel,redir,filename), shell=True, env=os.environ, bufsize=2**16, stdin=PIPE, close_fds=True)
         stdout = open(filename,mode)
-        p = Popen(["gzip","-%s" % compresslevel,"-c"], shell=False, env=os.environ, bufsize=2**16, stdin=PIPE, stdout=stdout, close_fds=True)
+        p = Popen(["gzip","-%s" % compresslevel,"-c"], 
+                shell=False, 
+                env=os.environ, 
+                stdin=PIPE, 
+                stdout=stdout, 
+                close_fds=True, 
+                bufsize=buffering)
         stdout.close()
         return PopenStdinProxy(p)
 
@@ -385,7 +402,11 @@ def openGzip(filename,mode,compresslevel=6):
         cmd = ["gzip","-cd",filename]
         if not os.path.isfile(filename):
             raise OSError("Input file does not exist: %s", filename)
-        p = Popen(cmd,env=os.environ, bufsize=2**16, stdout=PIPE, close_fds=True)
+        p = Popen(cmd,
+                env=os.environ, 
+                stdout=PIPE, 
+                close_fds=True, 
+                bufsize=buffering)
         if p.returncode:
             raise CalledProcessError(str(cmd),p.returncode)
         return p.stdout
