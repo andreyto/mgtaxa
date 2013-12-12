@@ -121,6 +121,8 @@ class ImmScoresReducedHdf(ImmScoresHdf):
     
     """
     
+    #TODO: switch to using chunks with interface
+    # iNextStart appendScore(self,idScore,score=iter of rec arrays,iStart,nScoresTotal)
     def appendScore(self,idScore,score):
         """Append to the dataset a score vector for one Imm.
         @param idScore Id of the score from a set of Imms. 
@@ -531,6 +533,7 @@ class ImmApp(App):
                         with closing(imm.score()) as inp:
                             inpSeq.writeToStreamByIds(ids=inpSeqDbIds,out=inp)
                         imm.flush()
+                        #TODO: have parseScore return iter of recarrays
                         scores = imm.parseScores()
                     else:
                         raise ValueError(inpType)
@@ -562,7 +565,7 @@ class ImmApp(App):
                 reader = FastaReader(opt.inpSeq)
                 to_close.append(reader)
             with closing(SeqDbFasta.open(opt.inpSeqDbFilt,"c")) as inpSeqDbFilt:
-                splitFastaReaderIntoChunksLengthDegen(
+                nRec = splitFastaReaderIntoChunksLengthDegen(
                         reader=reader,
                         outStore=inpSeqDbFilt,
                         maxChunkSize=100*1024**2,
@@ -583,6 +586,8 @@ class ImmApp(App):
                             "of sequences in: {}".format(opt.inpSeq))
                 save_config_json(seqDbIds,opt.inpSeqDbIds)
                 print "DEBUG: scorePrepare: inpSeqDbFilt={}".format(opt.inpSeqDbFilt)
+                inpSeqDbFilt.setAttr("seq_count",nRec)
+                inpSeqDbFilt.save()
         finally:
             #if one close() raises, remaining are not called
             while to_close:
