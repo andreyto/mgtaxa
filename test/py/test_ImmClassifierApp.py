@@ -25,7 +25,7 @@ makedir(optTpl.cwd)
 
 dryRun = False
 
-debugger = True
+debugger = False
 
 cmdPref = "python %s $MGT_HOME/MGT/ImmClassifierApp.py" % ("-m pdb" if debugger else "",)
 cmdSfx = "--run-mode %s --lrm-user-options %s --batch-backend %s" %\
