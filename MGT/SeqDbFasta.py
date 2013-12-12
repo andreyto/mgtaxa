@@ -77,6 +77,9 @@ class SeqDbFasta(DirKeyStore):
     
     def seqLengthSum(self,id):
         return self.seqLengths(id)["len"].sum()
+    
+    def seqCount(self,id):
+        return len(self.seqLengths(id))
 
     def seqLengthsMany(self,ids=None):
         if ids is None:
@@ -84,6 +87,14 @@ class SeqDbFasta(DirKeyStore):
         for id in ids:
             yield (id,self.seqLengths(id))
 
+    def seqCountMany(self,ids=None):
+        if ids is None:
+            ids = self.iterIds()
+        return sum((self.seqCount(id) for id in ids))
+
+    def cacheSeqCount(self):
+        self.setAttr("seq_count",self.seqCountTotal())
+    
     def fastaWriter(self,id,lineLen=None,mode="w",objSfx=None,compresslevel=6):
         """Return FastaWriter to write INTO the DB for a given ID.
         @param id ID of the record
