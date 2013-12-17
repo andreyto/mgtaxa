@@ -294,6 +294,15 @@ def editSymlink(source,link_name):
         os.remove(link_name)
     os.symlink(source,link_name)
 
+def getCompressionFormat(filename):
+    cform = "none"
+    if filename.endswith('.gz'):
+        cform = "gzip"
+    elif filename.endswith('.bz2'):
+        cform = "bz2"
+    elif filename.endswith('.zip'):
+        cform = "zip"
+    return cform
 
 def openCompressed(filename,
         mode,
@@ -307,11 +316,7 @@ def openCompressed(filename,
     file, if "gzip" - open as gzip file."""
     cform = compressFormat
     if cform is None:
-        cform = "none"
-        if filename.endswith('.gz'):
-            cform = "gzip"
-        elif filename.endswith('.bz2'):
-            cform = "bz2"
+        cform = getCompressionFormat(filename)
     #print "DEBUG: openCompressed(%s,%s,%s)" % (filename,mode,cform)
     k = kw.copy()
     ret = None
