@@ -87,7 +87,16 @@ class SeqDbFasta(DirKeyStore):
         for id in ids:
             yield (id,self.seqLengths(id))
 
-    def seqCountMany(self,ids=None):
+    def seqLengthsSumMany(self,ids=None):
+        if ids is None:
+            ids = self.iterIds()
+        for id in ids:
+            yield (id,self.seqLengthSum(id))
+    
+    def seqLengthsSumTotal(self,ids=None):
+        return sum(self.seqLengthsSumMany(ids))
+    
+    def seqCountTotal(self,ids=None):
         if ids is None:
             ids = self.iterIds()
         return sum((self.seqCount(id) for id in ids))
