@@ -218,7 +218,7 @@ class ImmScoresDenseMatrixHdf(ImmScoresHdf):
         idScorePos = self.idScoreInd[idScore]
         if g.idScoreSeen[idScorePos]:
             whereNewIsLarger = n.where(score > g.score[idScorePos,:])
-            g.score[idScorePos,whereNewIsLarger] = score[whereNewIsLarger] #Do I really need rhs selection?
+            g.score[idScorePos,whereNewIsLarger[0]] = score[whereNewIsLarger] #Do I really need rhs selection?
         else:
             g.score[idScorePos,:] = score
             g.idScoreSeen[idScorePos] = True
@@ -375,6 +375,41 @@ def loadTrainModelsDescr(inp):
         for rec in json.load(inp):
             yield rec
 
+def estimateNBatchesForScoring(
+        nModels,
+        inpSeq,
+        inpSeqDbIds=None,
+        totalSeqScanPerBatch=1024**3,
+        maxDiskUse=128*1024**3,
+        reduceScoresEarly=True):
+    """Return the best estimated number of model batches"""
+    if SeqDbFasta.isStore(inpSeq):
+        inpSeq = SeqDbFasta.open(inpSeq,"r")
+        if inpSeqDbIds is not None:
+            if is_string(inpSeqDbIds):
+                inpSeqDbIds = load_config_json(inpSeqDbIds)
+        totalSeqLen = inpSeq.seqLengthsSumTotal(inpSeqDbIds)
+        totalSeqCount = inpSeq.seqCountTotal(inpSeqDbIds)
+    else:
+        (totalSeqLen,totalSeqCount) = estimateFastaLengthAndCountTotal(inpSeq)
+    if not (totalSeqLen and totalSeqCount):
+        return 1
+    maxDiskPerSeq = maxDiskUse / totalSeqCount
+    targetBatches = max(totalSeqLen*nModels/totalSeqScanPerBatch,1)
+    if reduceScoresEarly:
+        diskPerSeqPerBatch = 2*maxIdLen + 4
+        maxBatches = max(maxDiskPerSeq / diskPerSeqPerBatch,1)
+    else:
+        #intermediate datasets together is the final matrix split
+        #into nBatches along columns, so the space is only wasted
+        #on extra seqid per row in each batch
+        maxBatches = max((maxDiskPerSeq - 4*nModels)/maxIdLen,1)
+    nBatches = min(targetBatches,maxBatches)
+    return nBatches
+
+
+
+
 class ImmApp(App):
     """App-derived class for building collections of IMMs/ICMs and scoring against them"""
 
@@ -398,6 +433,7 @@ class ImmApp(App):
             opt.setIfUndef("immIds",opt.immIdToSeqIds)
         if not opt.isUndef("outDir"):
             opt.setIfUndef("outScoreComb",pjoin(opt.outDir,"combined"+klass.scoreSfx))
+        opt.setIfUndef("inpSeqDbIds",pjoin(opt.cwd,"inp-seq-db-ids.json"))
 
     def initWork(self,**kw):
         opt = self.opt
@@ -548,50 +584,26 @@ class ImmApp(App):
         Parameters are taken from self.opt
         @param inpSeq Name of the input multi-FASTA file or SeqDbFasta store to score
         @param inpSeqDbIds This parameter will be a JSON
-        file that will be populated here with all SeqDb IDs in inpSeqDbFilt.
-        @param inpSeqDbFilt Create this store with input sequences filtered
-        for length and degenerate symbols and organized into blocks
-        of efficient size
+        file that will be populated here with all SeqDb IDs in inpSeqDbFilt
+        unless that file already exists.
         """
         opt = self.opt
-        to_close = []
-        try:
-            if SeqDbFasta.isStore(opt.inpSeq):
-                inpSeq = SeqDbFasta.open(opt.inpSeq,"r")
-                to_close.append(inpSeq)
-                reader = inpSeq.fastaReaderChain(inpSeq.iterIds())
-                to_close.append(reader)
-            else:
-                reader = FastaReader(opt.inpSeq)
-                to_close.append(reader)
-            with closing(SeqDbFasta.open(opt.inpSeqDbFilt,"c")) as inpSeqDbFilt:
-                nRec = splitFastaReaderIntoChunksLengthDegen(
-                        reader=reader,
-                        outStore=inpSeqDbFilt,
-                        maxChunkSize=100*1024**2,
-                        minSeqLen=opt.predMinLenSamp,
-                        compresslevel=1,
-                        minNonDegenRatio=0.50)
-                seqDbIds = inpSeqDbFilt.getIdList()
+        if SeqDbFasta.isStore(opt.inpSeq):
+            with closing(SeqDbFasta.open(opt.inpSeq,"r")) as inpSeq:
+                if not os.path.exists(opt.inpSeqDbIds):
+                    seqDbIds = inpSeq.getIdList()
+                    save_config_json(seqDbIds,opt.inpSeqDbIds)
+                else:
+                    seqDbIds = load_config_json(opt.inpSeqDbIds)
                 assert seqDbIds, \
-                        "Sequence store with sequences to score has no "+\
-                        "partitions after filtering for length and "+\
-                        "degenerate symbols the sequences in: {}".format(opt.inpSeq)
-                for (idSeqDb,lengths) in  inpSeqDbFilt.seqLengthsMany(seqDbIds):
+                        "Input sequence store with sequences to score has no "+\
+                        "partitions {}".format(opt.inpSeq)
+                for (idSeqDb,lengths) in  inpSeq.seqLengthsMany(seqDbIds):
                     if len(lengths) > 0:
                         break
                 else:
-                    raise AssertionError("No scoring fragments remain "+\
-                            "after filtering for length and degenerate symbols "+\
-                            "of sequences in: {}".format(opt.inpSeq))
-                save_config_json(seqDbIds,opt.inpSeqDbIds)
-                print "DEBUG: scorePrepare: inpSeqDbFilt={}".format(opt.inpSeqDbFilt)
-                inpSeqDbFilt.setAttr("seq_count",nRec)
-                inpSeqDbFilt.save()
-        finally:
-            #if one close() raises, remaining are not called
-            while to_close:
-                to_close.pop().close()
+                    raise AssertionError("No scoring fragments in: {}"\
+                            .format(opt.inpSeq))
     
     def scoreMany(self,**kw):
         """Score with many IMMs.
@@ -613,13 +625,8 @@ class ImmApp(App):
         @param outScoreComb name for output file with combined scores
         """
         opt = self.opt
-
         #create Prepare task
-        opt.inpSeqDbIds = pjoin(opt.cwd,"inp-seq-db-filt-ids.json")
         prepOpt = copy(opt)
-        prepOpt.inpSeqDbFilt = pjoin(opt.cwd,"inp-seq-db-filt")
-        #replace inpSeq option with 
-        opt.inpSeq = prepOpt.inpSeqDbFilt
         #stay in the same cwd
         prepOpt.cwdHash = 0
         prepOpt.mode = "score-prep"
@@ -647,7 +654,11 @@ class ImmApp(App):
         scoreBatchIds = [] # accumulate batch ids to pass to combiner
         nImmBatches = opt.nImmBatches
         if nImmBatches < 0:
-            nImmBatches = len(immIds)
+            nImmBatches = estimateNBatchesForScoring(
+                    nModels = len(immIds),
+                    inpSeq = opt.inpSeq,
+                    inpSeqDbIds = opt.inpSeqDbIds
+                    )
         batches = [ x for x in enumerate(n.array_split(immIds,min(nImmBatches,len(immIds)))) ]
         
         rmfMany([ self.getScoreBatchPath(scoreBatchId) for (scoreBatchId,immIdsBatch) in batches ])
