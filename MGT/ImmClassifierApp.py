@@ -21,6 +21,7 @@ from MGT.GraphicsKrona import *
 from MGT.ImmScoreRescaler import *
 from MGT.TaxaPred import TaxaPred
 from MGT.FastaSplitters import *
+from MGT.SeqDbFastaApp import *
 
 import functools
 
@@ -1265,13 +1266,27 @@ class ImmClassifierApp(App):
         data for each idScore (idScore equals idImm in this class)
         """
         opt = self.opt
+
+        optI = copy(opt)
+        optI.mode = "split"
+        optI.chunkSize = 100*1024**2
+        scoreSeqRoot = pjoin(opt.cwd,"inp-seq-scoring.db")
+        optI.outSeq = scoreSeqRoot
+        optI.outSeqDbIds = scoreSeqRoot+".ids"
+        optI.assertOutSeq = 1
+        app = SeqDbFastaApp(opt=optI)
+        kwI = kw.copy()
+        jobsD = app.run(**kwI)
+
+        opt.inpSeq = optI.outSeq
+        opt.inpSeqDbIds = optI.outSeqDbIds
+
         immDb = [ (d,None) for d in opt.immDb ]
         immDbArch = self._archiveNamesToDirNames(opt.immDbArchive,opt.immDbWorkDir,"imm")
         immDb += immDbArch
-        jobsD = kw.get("depend",list())
-        jobs = []
         outSubScores = []
         idScoreMeta = dict()
+        jobs = []
         for immD in immDb:
             jobsI = copy(jobsD)
             if immD[1] is not None:

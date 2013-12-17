@@ -48,9 +48,9 @@ def buildRefSeqDbCmd():
     cmd += " --db-seq tmp.db-seq"
     runAndLog(cmd,help)
 
-def trainRefCmd():
+def trainRefCmd(immDbSfx):
     help="Train models based on a sequence DB built by make-ref-seqdb step."
-    cmd = "--mode train --db-seq tmp.db-seq --db-imm tmp.imm "+\
+    cmd = "--mode train --db-seq tmp.db-seq --db-imm tmp.imm{} ".format(immDbSfx)+\
             "--train-max-len-samp-model 1000000"
     runAndLog(cmd,help)
 
@@ -70,7 +70,10 @@ def predictAgainstRefCmd(reduceScoresEarly,predMode):
     #runAndLog(cmd,help)
     #return
     #cmd = " --mode predict --inp-seq tmp.pred.fasta --db-imm $MGT_DATA/icm-refseq --pred-min-len-samp 1000"
-    cmd = " --mode predict --inp-seq tmp.pred.fasta --db-imm tmp.imm --pred-min-len-samp 1000"
+    #score against two identical model DBs to see how valid duplicate model entries are handled
+    cmd = " --mode predict --inp-seq tmp.pred.fasta" 
+    cmd += " --db-imm tmp.imm.1 --db-imm tmp.imm.2 "
+    cmd += " --pred-min-len-samp 1000"
     cmd += (" --pred-mode %s" % (predMode,))
     cmd += " --score-taxids-exclude-trees 100226"
     cmd += (" --reduce-scores-early %s" % (reduceScoresEarly,))
@@ -80,7 +83,9 @@ def predictAgainstRefCmd(reduceScoresEarly,predMode):
 def makeBenchCmd():
     help="""Create benchmark dataset for a given fragment length based on a sequence DB built by make-ref-seqdb step.
     It also uses information from the model database built by train step."""
-    cmd = "--mode make-bench  --db-seq tmp.db-seq --db-imm tmp.imm "+\
+    #score against two identical model DBs to see how valid duplicate model entries are handled
+    cmd = "--mode make-bench  --db-seq tmp.db-seq "
+    cmd += " --db-imm tmp.imm.1 --db-imm tmp.imm.2 "+\
             "--db-bench tmp.db-bench "+\
             "--db-bench-frag-len 400 --db-bench-frag-count-max 100"
     runAndLog(cmd,help)
@@ -89,7 +94,9 @@ def benchOneFragLenCmd():
     help="""Create benchmark dataset for a given fragment length based on a 
     sequence DB built by make-ref-seqdb step and evaluate the benchmark performance.
     It also uses information from the model database built by train step."""
-    cmd = "--mode bench-one-frag-len  --db-seq tmp.db-seq --db-imm tmp.imm "+\
+    #score against two identical model DBs to see how valid duplicate model entries are handled
+    cmd = "--mode bench-one-frag-len  --db-seq tmp.db-seq "
+    cmd += "--db-imm tmp.imm.1 --db-imm tmp.imm.2 "+\
             "--bench-out-dir tmp.bench_results "+\
             "--db-bench tmp.db-bench "+\
             "--db-bench-frag-len 400 --db-bench-frag-count-max 100"
@@ -367,7 +374,8 @@ def runSomeTests():
     jobs = []
     if False:
         buildRefSeqDbCmd()
-        trainRefCmd()
+        trainRefCmd(".1")
+        trainRefCmd(".2")
     if True:
         #makeBenchCmd()
         benchOneFragLenCmd()
