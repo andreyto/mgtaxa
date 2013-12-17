@@ -45,6 +45,8 @@ class FastaReader(object):
         self.infile = infile
         self.freshHdr = False
         self.maxLineLen = 0
+        self.seqTotal = 0
+        self.symbolsTotal = 0
         
     def records(self):
         infile = self.infile
@@ -54,12 +56,19 @@ class FastaReader(object):
                 yield self
                 continue
             line = infile.next()
+            self.symbolsTotal += len(line)
             # skip blank lines
             if line.isspace():
                 continue
             elif line.startswith(">"):
                 self.hdr = line
                 yield self
+            else:
+                #line can never be ""
+                self.seqTotal += \
+                        len(line) - 1 if line[-1].isspace() \
+                        else len(line)
+
     
     def header(self):
         assert self.hdr.startswith('>')
@@ -100,13 +109,17 @@ class FastaReader(object):
         infile = self.infile
         while True:
             line = infile.next()
+            self.symbolsTotal += len(line)
             if line.isspace():
                 continue
             elif line.startswith(">"):
                 self.hdr = line
                 self.freshHdr = True
                 return
-            self.maxLineLen = max(self.maxLineLen,len(line)-1)
+            lineLen = len(line) - 1 if line[-1].isspace() \
+                    else len(line)
+            self.maxLineLen = max(self.maxLineLen,lineLen)
+            self.seqTotal += lineLen
             yield line
 
     def seqChunks(self,chunkSize):
@@ -148,6 +161,15 @@ class FastaReader(object):
     def lineLen(self):
         return self.maxLineLen
 
+    def seqLenLoaded(self):
+        """Total number of sequence symbols loaded so far"""
+        return self.seqTotal
+
+    def symbolsLenLoaded(self):
+        """Total number of symbols loaded so far.
+        This includes headers, sequences and new lines"""
+        return self.symbolsTotal
+
     def close(self):
         if self.ownInfile:
             self.infile.close()
@@ -160,18 +182,29 @@ class FastaReaderChain(object):
     def __init__(self,fastaReaders):
         """Ctor.
         @param fastaReaders iterable of objects implementing FastaReader
-        interface (could be FastaReaderChain objects too)
+        interface (could be FastaReaderChain objects too) or objects
+        that can be passed to FastaReader constructor (file names or
+        file objects).
         """
         self.fastaReaders = fastaReaders
+        self.seqTotal = 0
+        self.symbolsTotal = 0
+        self.reader = None
 
     def records(self):
         #all other methods are provided by the returned record objects
         for reader in self.fastaReaders:
+            if not hasattr(reader,"records"):
+                reader = FastaReader(reader)
+            self.reader = reader
             try:
                 for rec in reader.records():
                     yield rec
             finally:
+                self.seqTotal += reader.seqLenLoaded()
+                self.symbolsTotal += reader.symbolsLenLoaded()
                 reader.close()
+                self.reader = None
 
     def close(self):
         #we already closed all readers through which we iterated
@@ -180,6 +213,22 @@ class FastaReaderChain(object):
         #possible for the client to stop iteration without
         #still generating all reader objects
         pass
+    
+    def seqLenLoaded(self):
+        """Total number of sequence symbols loaded so far"""
+        x = self.seqTotal
+        if self.reader:
+            x += self.reader.seqLenLoaded()
+        return x
+
+    def symbolsLenLoaded(self):
+        """Total number of symbols loaded so far.
+        This includes headers, sequences and new lines"""
+        x = self.symbolsTotal
+        if self.reader:
+            x += self.reader.symbolsLenLoaded()
+        return x
+
 
 def fastaReaderGzip(fileName):
     return FastaReader(openGzip(fileName,'r'))
@@ -193,6 +242,35 @@ def fastaLengths(inp,exclSymb=''):
         res.append((id,ln))
     reader.close()
     return n.asarray(res,dtype=[("id",idDtype),("len","i8")])
+
+def estimateFastaLengthAndCountTotal(inpFileName):
+    """Crude method to estimate the number of bases without reading the entire file.
+    In a patholgical case (one file is one record) this will read the entire file."""
+    symbolsToRead = 1024*1024
+    with closing(FastaReader(inpFileName)) as inp:
+        symb = 0
+        nrec = 0
+        for record in inp.records():
+            nrec += 1
+            symb = inp.symbolsLenLoaded()
+            if symb >= symbolsToRead:
+                break
+        seq = inp.seqLenLoaded()
+        fileSize = os.path.getsize(inpFileName)
+        if getCompressionFormat(inpFileName):
+            fileSize *= 3 #very crude
+        if symb != 0:
+            seqByTot = seq/float(symb)
+        else:
+            seqByTot = 1.
+        if fileSize == 0:
+            nSeqs = 0
+        else:
+            nSeqs = nrec * symb / fileSize
+        #assumes that file in one byte encoded
+        seqSize = fileSize * seqByTot
+        return (seqSize,nSeqs)
+
 
 def seqToLines(seq,lineLen=80):
     """Utility method that converts a string into line iterator.
