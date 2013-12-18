@@ -1268,7 +1268,7 @@ class ImmClassifierApp(App):
         opt = self.opt
 
         optI = copy(opt)
-        optI.mode = "split"
+        optI.mode = "chunk"
         optI.chunkSize = 100*1024**2
         scoreSeqRoot = pjoin(opt.cwd,"inp-seq-scoring.db")
         optI.outSeq = scoreSeqRoot
@@ -2022,7 +2022,7 @@ class ImmClassifierApp(App):
                     load_config_json(opt.benchIdSeqDbToIdScoreRemapping)
         else:
             idSeqDbToIdScoreRemapping = None
-        benchDb = ImmClassifierBenchmark.open(opt.dbBench,"r") 
+        benchDb = ImmClassifierBenchmark.open(opt.dbBench,"r")
         idSampToIdScore = benchDb.mapIdFragToIdScore(idScoreMeta=idScoreMeta,
                 idSeqDbToIdScoreRemapping=idSeqDbToIdScoreRemapping)
         #sampTaxids = set()

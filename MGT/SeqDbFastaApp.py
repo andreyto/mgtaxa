@@ -25,9 +25,9 @@ class SeqDbFastaApp(App):
             make_option("-m", "--mode",
             action="store", 
             type="choice",
-            choices=("split",),
+            choices=("chunk",),
             dest="mode",
-            help="split - create new store split into equal chunks"),
+            help="chunk - create new store split into equal chunks"),
             
             optParseMakeOption_Path(None, "--inp-seq",
             dest="inpSeq",
@@ -49,7 +49,7 @@ class SeqDbFastaApp(App):
             action="store", 
             type="int",
             dest="chunkSize",
-            help="Size of chunk in output store for --mode split"),
+            help="Size of chunk in output store for --mode chunk"),
 
             make_option(None, "--seq-filter",
             action="store", 
@@ -82,13 +82,13 @@ class SeqDbFastaApp(App):
     
     def doWork(self,**kw):
         opt = self.opt
-        if opt.mode == "split":
-            return self.split(**kw)
+        if opt.mode == "chunk":
+            return self.chunk(**kw)
         else:
             raise ValueError("Unknown opt.mode value: %s" % (opt.mode,))
 
-    def split(self,**kw):
-        """Convert input sequence into split store, optionally filtering.
+    def chunk(self,**kw):
+        """Convert input sequence into chunk store, optionally filtering.
         Parameters are taken from self.opt
         """
         opt = self.opt
