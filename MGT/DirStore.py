@@ -118,10 +118,13 @@ class DirStore:
     def getFileMetaPath(self,name):
         return self.meta_path_hasher(name+self.metaExt)
 
-    def delFileMetaData(self,name):
+    def delFileMetaData(self,name,ignore=True):
         p = self.getFileMetaPath(name)
-        if os.exists(p):
+        try:
             os.remove(p)
+        except OSError:
+            if not ignore:
+                raise
     
     def hasFileMetaData(self,name):
         p = self.getFileMetaPath(name)
@@ -155,9 +158,13 @@ class DirStore:
     def hasFile(self,name):
         return os.exists(self.getFilePath(name))
 
-    def delName(self,name):
-        os.remove(self.getFilePath(name))
-        self.delFileMetaData(name)
+    def delName(self,name,ignore=True):
+        try:
+            os.remove(self.getFilePath(name))
+        except OSError:
+            if not ignore:
+                raise
+        self.delFileMetaData(name,ignore=ignore)
 
     def hasObj(self,name):
         return os.exists(self.getObjPath(name))
