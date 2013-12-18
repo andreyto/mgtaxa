@@ -55,6 +55,7 @@ class ImmClassifierBenchmark(SeqDbFasta):
         @param idDb Sequences with this SeqDbId will be pulled from
         seqDb attribute, shredded and saved in this object under
         the same SeqDbId"""
+        self.delById(idDb,ignore=True)
         self.shredFasta(idDb=idDb,fragLen=fragLen,
                 fragCountMax=fragCountMax)
         self.finById(idDb)
