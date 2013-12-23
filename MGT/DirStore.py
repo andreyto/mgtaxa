@@ -294,8 +294,8 @@ class DirKeyStore(DirStore):
     def hasMetaDataById(self,id):
         return self.hasFileMetaData(self.getFileBaseById(id))
     
-    def delById(self,id):
-        self.delName(self.getFileBaseById(id))
+    def delById(self,id,ignore=True):
+        self.delName(self.getFileBaseById(id),ignore=ignore)
 
     def iterIds(self,iterPaths=None,objSfx=None):
         """Iterate over object IDs either in this store or from the externally provided iterable"""
