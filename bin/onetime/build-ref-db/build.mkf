@@ -15,6 +15,9 @@ REF_NCBI_MODEL_DATA=$MGT_DATA/refseq
 REF_NCBI_SEQ_DB=$MGT_DATA/refseq-seqdb
 REF_NCBI_ICM_DB=$MGT_DATA/refseq-icm
 
+REF_NCBI_BENCH_DB=$MGT_DATA/ref-bench
+REF_NCBI_BENCH_RES=$MGT_DATA/ref-bench-res
+
 REF_EXTRA_SEQ_DB.mkf: $REF_EXTRA_MODEL_DATA/648174.fasta.gz $REF_EXTRA_MODEL_DATA/mod.json 
     $MGT_ICM_CLASSIFIER --mode make-ref-seqdb \
     --inp-train-seq $REF_EXTRA_MODEL_DATA/648174.fasta.gz \
@@ -66,4 +69,18 @@ REF_NCBI_ICM_DB.mkf: $REF_NCBI_SEQ_DB
 $REF_NCBI_ICM_DB: REF_NCBI_ICM_DB.mkf
     LOCAL MAKEFLOW REF_NCBI_ICM_DB.mkf
 
+$REF_NCBI_BENCH_DB REF_NCBI_BENCH.mkf: $REF_NCBI_ICM_DB 
+    $MGT_ICM_CLASSIFIER --mode bench \
+    --bench-out-dir $REF_NCBI_BENCH_RES \
+    --db-bench $REF_NCBI_BENCH_DB \
+    --bench-frag-len-list 400,800,2000,5000 \
+    --db-bench-frag-count-max 10 \
+    --db-seq $REF_NCBI_SEQ_DB \
+    --db-imm $REF_NCBI_ICM_DB \
+    --run-mode batchDep \
+    --batch-backend makeflow \
+    --workflow-file REF_NCBI_BENCH.mkf
+
+$REF_NCBI_BENCH_RES: REF_NCBI_BENCH.mkf
+    LOCAL MAKEFLOW REF_NCBI_BENCH.mkf
 
