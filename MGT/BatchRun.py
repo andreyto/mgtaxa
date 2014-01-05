@@ -65,7 +65,7 @@ class BatchSubmitter(object):
         # use global options
         if hasattr(options,"batchRun"):
             options.batchRun.updateOtherMissing(opts)
-        opts.setdefault('lrmSiteOptions',r'-l memory=2000M -l medium -l arch="lx*64"')
+        opts.setdefault('lrmSiteOptions',r'')
         opts.setdefault('lrmUserOptions',None)
         opts.setdefault("stdout",None)
         opts.setdefault("stderr",None)
