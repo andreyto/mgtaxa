@@ -8,15 +8,18 @@ seqDbPath2 = pjoin(options.testDataDir,"fasta")
 def run_makeflow_if(opt):
     if opt.runMode == "batchDep" and opt.batchBackend == "makeflow":
         rmf(opt.workflowFile+".makeflowlog")
+        return
         check_call([
             options.makeflow.exe,
             opt.workflowFile
             ])
 
 optTpl = Struct()
-optTpl.runMode = "inproc" #"inproc" #"batchDep"
+optTpl.runMode = "batchDep" #"inproc" #"batchDep"
 optTpl.batchBackend = "makeflow"
-optTpl.lrmUserOptions = r"'-P 0413'"
+optTpl.workflowFile = "workflow.mkf"
+optTpl.lrmUserOptions = r"'-b n -P 0413'"
+optTpl.makeflowOptions = r"'-T sge'"
 optTpl.cwd = pabs("opt_work")
 optTpl.web = False
 optTpl.needTerminator = True
@@ -28,16 +31,17 @@ dryRun = False
 debugger = False
 
 cmdPref = "python %s $MGT_HOME/MGT/ImmClassifierApp.py" % ("-m pdb" if debugger else "",)
-cmdSfx = "--run-mode %s --lrm-user-options %s --batch-backend %s" %\
-        (optTpl.runMode,optTpl.lrmUserOptions,optTpl.batchBackend)
+cmdSfx = ("--run-mode %s --lrm-user-options %s --batch-backend %s "+\
+        "--makeflow-options %s --workflow-run 1 --workflow-file %s") %\
+        (optTpl.runMode,optTpl.lrmUserOptions,optTpl.batchBackend,optTpl.makeflowOptions,optTpl.workflowFile)
 
 cmdLog = []
 
 def runAndLog(cmd,help):
     cmd = "%s %s %s" % (cmdPref,cmd,cmdSfx)
     cmdLog.append((dedent(help),cmd))
+    #run_makeflow_if(optTpl)
     run(cmd,debug=True,dryRun=dryRun)
-    run_makeflow_if(optTpl)
 
 
 def buildRefSeqDbCmd():

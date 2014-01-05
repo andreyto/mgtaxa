@@ -5,11 +5,12 @@
 #
 ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ### ##
 
-
+from MGT.MakeflowArgParser import *
 from MGT.Common import *
 from MGT.UUID import *
 from optparse import OptionParser, make_option
 import tempfile
+from subprocess import check_call
 
 __all__ = ["App","runAppAsScript","optParseMakeOption_Path","optPathMultiOptToAbs"]
 
@@ -138,10 +139,41 @@ class App:
                 elif opt.batchBackend == "makeflow":
                     if os.path.isfile(opt.workflowFile):
                         os.remove(opt.workflowFile)
+                    #TODO: parse Makeflow options first and take log name from
+                    #where if present
+                    makeflowLog = pjoin(opt.workflowFile,".makeflowlog")
+                    if os.path.isfile(makeflowLog):
+                        os.remove(makeflowLog)
                     workflowFileWork = opt.workflowFile+"."+random_string()
                     with closing(MakeflowWriter(workflowFileWork)) as mkw:
                         mkw.appendMgtJobs(jobs=depend)
+                        mkf_args = opt.getIfUndef("makeflowOptions","")
+                        mkf_opt, mkf_other = parse_makeflow_args(
+                                mkf_args
+                                )
+                        mkf_opt.batch_options = opt.getIfUndef("lrmUserOptions",None)
+                        mkf_vars= [
+                            'MAKEFLOW_BATCH_QUEUE_TYPE="{}"'.format(mkf_opt.batch_type),
+                            'MAKEFLOW_MAX_REMOTE_JOBS={}'.format(mkf_opt.max_remote)
+                        ]
+                        if mkf_opt.batch_options is not None:
+                            mkf_vars.insert(0,
+                            'BATCH_OPTIONS="{}"'.format(mkf_opt.batch_options)
+                            )
+                        mkf_args_new = " ".join( [ '"{}"'.format(arg) for arg \
+                                in unparse_makeflow_args(mkf_opt,mkf_other) ] )
+                        writeMakeflowRunScript(
+                                makeflow = options.makeflow.exe,
+                                workflow = opt.workflowFile,
+                                env = options.envRc,
+                                vars = mkf_vars,
+                                args = mkf_args_new,
+                                out = opt.workflowScript
+                                )
+                        make_executable(opt.workflowScript)
                     os.rename(workflowFileWork,opt.workflowFile)
+                    if opt.workflowRun:
+                        check_call(["bash",opt.workflowScript])
                     #currently we just leave ret as it is, so that opt.web can print some jobId
                     #if submitting makeflow itself here, do not forget to set batchBackend to 'qsub'
                 else:
@@ -279,11 +311,14 @@ class App:
                     "submit jobs to LRM and print the ID of the terminating job "+\
                     "to track completion with "+\
                     "the LRM; - 'makeflow' will generate a Makeflow script "+\
-                    "named 'workflow'. "+\
-                    "For the makeflow, you then should run makeflow with the options "+\
-                    "specific for your execution environment and script name as the "+\
-                    "argument. For example, on SGE cluster this may look like: "+\
-                    "makeflow -T sge -B '-P PROJECT_CODE -b n -S /bin/bash' workflow"),
+                    "named according to --workflow-file and a shell script to run it "+\
+                    "named according to --workflow-script. "+\
+                    "For the makeflow, you should pass necessary run-time options "+\
+                    "specific for your execution environment in --makeflow-options "+\
+                    "and --lrm-user-options. For example, on SGE cluster this may "+\
+                    "look like: "+\
+                    "--lrm-user-options '-P PROJECT_CODE -b n' "+\
+                    "--makeflow-options '-T sge -J 500' "),
             
             make_option(None, "--need-terminator",
             action="store_true", 
@@ -314,6 +349,15 @@ class App:
                     "The string should be quoted if it contains blanks. "+\
                     "Example is a SGE project code: '-P 1111'"),
             
+            make_option(None, "--makeflow-options",
+            action="store", 
+            type="string",
+            dest="makeflowOptions",
+            default=None,
+            help="Quoted string with Makeflow options."+\
+                    "--batch-options argument will be ignored."+\
+                    "--lrm-user-options will be used instead"),
+            
             make_option(None, "--web",
             action="store_true",
             default=False,
@@ -324,6 +368,17 @@ class App:
             dest="workflowFile",
             default="workflow",
             help="Workflow file if a workflow backend such as Makeflow is used"),
+            
+            optParseMakeOption_Path(None, "--workflow-script",
+            dest="workflowScript",
+            help="Batch script that will run generated workflow [--workflow-file + .sh]"),
+            
+            make_option(None, "--workflow-run",
+            action="store",
+            type="int",
+            default=0,
+            dest="workflowRun",
+            help="Immediately execute workflow run script if Makeflow is the backend [%default]"),
             
             make_option(None, "--extra-py-args",
             action="store",
@@ -357,6 +412,7 @@ class App:
             klass.parseCmdLinePost(options=opt,args=args,parser=parser)
             if runningFromCommandLine:
                 opt.needTerminator = True
+            opt.setIfUndef("workflowScript",opt.workflowFile+".sh")
         return opt,args
 
     @classmethod
