@@ -294,6 +294,10 @@ def editSymlink(source,link_name):
         os.remove(link_name)
     os.symlink(source,link_name)
 
+def make_executable(file_name):
+    """Set executable permission bit"""
+    os.chmod(file_name,os.stat(file_name).st_mode|0755)
+
 def getCompressionFormat(filename):
     cform = "none"
     if filename.endswith('.gz'):
