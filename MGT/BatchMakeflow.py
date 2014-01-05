@@ -6,7 +6,7 @@ class MakeflowWriter(object):
     _tab = " "*4
     
     def __init__(self,out,vars=None,exports=None,mode="w"):
-        if isinstance(out,str):
+        if is_string(out):
             self.out = open(out,mode)
             #do not repeat default exports on append -
             #this breaks the Makeflow
@@ -55,7 +55,7 @@ class MakeflowWriter(object):
 
     def appendMakeflow(self,flow,targets=[],inputs=[],
             vars=None):
-        """Append a task that is itself is Makeflow.
+        """Append a task that itself is a Makeflow.
         This will mark the sub-makeflow as local unless
         it is already marked otherwise in the 'vars'"""
         if flow not in inputs:
@@ -102,4 +102,31 @@ class MakeflowWriter(object):
         if self.out:
             self.out.close()
             self.out = None
+
+
+def writeMakeflowRunScript(makeflow,workflow,env,vars,args,out,mode="w"):
+    """Write a shell script that will run this makeflow.
+    @param makeflow Makeflow executable path
+    @param workflow workflow file path
+    @param env file to source as shell environment
+    @param vars list of environment variable assignments "VAR=VAL"
+    @param args string with all arguments to makeflow executable
+    @param out file path or file object for writing the script into
+    @param mode to open out if out if a file path"""
+    out_close = False
+    if is_string(out):
+        out = open(out,mode)
+        out_close = True
+    w = out.write
+    w("#!/bin/bash\n")
+    w(". {}\n".format(env))
+    for var in vars:
+        w("export {}\n".format(var))
+    w("{makeflow} {args} {workflow}".\
+            format(
+                makeflow = makeflow,
+                args = args,
+                workflow = workflow))
+    if out_close:
+        out.close()
 
