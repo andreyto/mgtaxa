@@ -131,14 +131,14 @@ class MGTOptions(Options):
         self.hdfTestFile = 'test.hdf'
         self.predictorTable = "pred"
         self.batchRun = Options(
-                lrmSiteOptions=r'-l memory=2000M -l arch="lx*64"',
+                lrmSiteOptions=r'',
                 lrmUserOptions='-P 0413',
                 maxQueued = 1500,
                 envRc = self.envRc,
                 #[qsub|makeflow]
                 batchBackend="qsub")
         self.batchRunTerminator = deepcopy(self.batchRun)
-        self.batchRunTerminator.lrmSiteOptions=r'-l memory=200M -l fast -l arch="lx*64"'
+        self.batchRunTerminator.lrmSiteOptions=r'-l memory=200M -l fast'
         #terminator only makes sense outside of makeflow
         self.batchRunTerminator.batchBackend="qsub"
         self.app = Options(
