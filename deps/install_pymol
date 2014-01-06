@@ -1,17 +1,22 @@
 #!/bin/sh
+set -ex
 ## From distros/pymol dir, 
 ## use 'svn co https://pymol.svn.sourceforge.net/svnroot/pymol/trunk pymol' to get source (or svn update)
 topdir=$(pwd)
-#cd Pmw/src && \
-#rm -rf build && \
-#python setup.py install --prefix=$INST --exec-prefix=$INSTMACH && \
-#cd $topdir && \
+export PREFIX_PATH=$INSTMACH:$INST:/usr:/usr/local
+cd glew/glew-1.7.0
+make clean
+make
+GLEW_DEST=$INSTMACH make install
+cd $topdir
+cd Pmw/src && \
+rm -rf build && \
+python setup.py install --prefix=$INST --exec-prefix=$INSTMACH
+cd $topdir && \
 cd pymol && \
 cd pymol && \
 rm -rf build && \
 python setup.py install --prefix=$INST --exec-prefix=$INSTMACH && \
-python setup2.py install --prefix=$INST --exec-prefix=$INSTMACH && \
-cp -a pymol $INSTMACH/bin/ && \
 cd $topdir && \
 exit 0 && \
 cd cealign && \
