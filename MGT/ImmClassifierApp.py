@@ -194,7 +194,8 @@ class ImmClassifierApp(App):
             
             optParseMakeOption_Path(None, "--inp-seq",
             dest="inpSeq",
-            help="File or SeqDbFasta store with input FASTA sequences for prediction"),
+            help="File, quoted shell glob or SeqDbFasta store with input FASTA "+\
+                    "sequences for prediction"),
             
             optParseMakeOption_Path(None, "--inp-seq-attrib",
             dest="sampAttrib",
@@ -302,17 +303,8 @@ class ImmClassifierApp(App):
             action="store", 
             type="int",
             dest="trainMinLenSamp",
-            help="Min length of leaf node sequence to consider the node for training models: "+\
-                    "default is 2000 if training custom models and 2000 if training "+\
-                    "reference models. For training custom models, this means that sequences"+\
-                    "shorter that this will be ignored"),
-            
-            make_option(None, "--train-min-len-samp-model",
-            action="store", 
-            type="int",
-            dest="trainMinLenSampModel",
-            help="Min length of sequence to use when training one model, otherwise the model "+\
-                    "is skipped [10000]"),
+            help="Min total length of sequences assigned to a model to consider that "+\
+                    "model for training [2000]. Model shorter than that will be skipped."),
             
             make_option(None, "--train-max-len-samp-model",
             action="store", 
@@ -548,6 +540,9 @@ class ImmClassifierApp(App):
         opt.setIfUndef("benchOutDir",pjoin(opt.cwd,"benchResults"))
         opt.setIfUndef("benchOutDbSqlite",pjoin(opt.benchOutDir,"bench.sqlite"))
         optPathMultiOptToAbs(opt,"benchProcSubtrees")
+
+        if not opt.web:
+            opt.setIfUndef("predOutStatsKronaEmbed","resources")
 
         if not opt.isUndef("predOutStatsKronaEmbed"):
             opt.setIfUndef("predOutStatsKronaUrl",opt.predOutStatsKronaEmbed)

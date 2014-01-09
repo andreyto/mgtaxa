@@ -31,7 +31,7 @@ class SeqDbFastaApp(App):
             
             optParseMakeOption_Path(None, "--inp-seq",
             dest="inpSeq",
-            help="Path of the input store"),
+            help="Path of the input store or quote shell glob for FASTA file(s)"),
 
             optParseMakeOption_Path(None, "--inp-seq-db-ids",
             dest="inpSeqDbIds",
