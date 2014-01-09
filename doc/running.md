@@ -61,7 +61,7 @@ In this example:
     will be SGE (`--makeflow-options '-T sge'`); notice the necessary quoting. 
 
 -   Options specific to your local SGE installation are provided in 
-    --lrm-user-options and should be quoted as shown above. These options are 
+    `--lrm-user-options` and should be quoted as shown above. These options are 
     those that you would need in order to submit some shell script for execution 
     with `qsub`. In the example above, `-b n` tells SGE not to treat the input
     script as an executable program; `-P 0116` is SGE project name required
@@ -70,15 +70,15 @@ In this example:
 -   The generated Makeflow workflow will be executed immediately 
     (`--workflow-run 1`). This means that the command will block and exit
     only after the processing has finished (or failed). This is what you
-    typically need if you need to run only one `mgt-icm-classifier` command
-    or a simple lineare sequence of such commands in a shell script. Note
+    typically want if you need to run only one `mgt-icm-classifier` command
+    or a simple linear sequence of such commands in a shell script. Note
     that you can also submit this command itself for batch execution with
-    the usual `qsub` mechanism, so that you would not to run it on the submit
+    the usual `qsub` mechanism, so that you would not have to run it on the submit
     node. This would require that the compute nodes in your cluster are allowed
     to submit new jobs, because this is what the master script would be doing
     when executing the workflow.
 
--   All input sequences with length less than 1000 bp (--pred-min-len-samp 1000) 
+-   All input sequences with length less than 1000 bp (`--pred-min-len-samp 1000`) 
     will be ignored.
 
 -   The optional weight file (`--inp-seq-attrib weights.csv`), if provided, will be 
@@ -106,7 +106,7 @@ In this example:
         -    name :           NCBI node name corresponding to `taxid`
         -    rank :           NCBI name of the taxonomic rank for `taxid` 
                               (or `no_rank`)
-        -    weight :         Weight as taken from the optional --inp-seq-attrib
+        -    weight :         Weight as taken from the optional `--inp-seq-attrib`
         -    idscore :        ID of the model assigned to this sequence
         -    namescore :      Name of the model corresponding to idscore
         -    taxid_species :  NCBI taxonomy ID of the species rank in lineage
@@ -242,10 +242,11 @@ You can look at hand-edited Makeflow file in the source tree directory that
 we use to train classification models from a local copy of NCBI RefSeq and 
 benchmark them in a single invocation of `makeflow`:
 `bin/onetime/build-ref-db/build.mkf`
+
 The shell script that executes that workflow is: 
 `bin/onetime/build-ref-db/run_build.sh`
 
-The typicall pattern in that Makeflow file looks like this:
+The typical pattern in that Makeflow file looks like this:
 
 ```
 REF_NCBI_ICM_DB.mkf: $REF_NCBI_SEQ_DB 
@@ -338,7 +339,7 @@ In this example:
         Sequences in `ids_seq` list do not have to be adjacent in the `models.fasta.gz`
         file.
     -   `id` is a unique ID you wish to give to your model (32 characters
-        long or less)
+        long or less, no spaces)
     -   `name` is a descriptive name you wish to give to your model (may not
         be unique but it helps if it is)
     -   `taxid` is an existing taxonomic ID from the 
@@ -350,6 +351,7 @@ In this example:
         If you are not interested in the taxonomy of your model at all and only
         going to use it for recruiting other sequences, you can set taxid to 1
         (root node of the taxonomy).
+
 -   The output path of this command is given by (`--db-seq seq.db`). You will need 
     to use that path when you run model training.
 
