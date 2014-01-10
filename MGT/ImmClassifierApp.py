@@ -51,75 +51,9 @@ class ImmClassifierApp(App):
     TRAIN_SEL_STATUS_INDIRECT = 0x02
 
     appOptHelp = \
-    """This is a unified driver program for ICM-based classification and model training.
-    Quick start if you only want to classify with the pre-built default models:
-    In Bash shell:
-
-    source <MGT_HOME>/etc/mgtaxa.shrc
-    python $MGT_HOME/bin/454_contig_read_cnt.py < 454ReadStatus.txt > weights.csv
-    mgt-icm-classifier --mode predict --inp-seq 454LargeContigs.fna \\
-            --inp-seq-attrib weights.csv --pred-min-len-samp 1000 \\
-            --pred-out-dir my_results --run-mode batchDep \\
-            --lrm-user-options "-P 0116"
-
-    Where <MGT_HOME> should be replaced with MGTAXA installation directory. 
-    In this example: 
-    
-    The local resource manager (LRM) is SGE and is passed user-specifc project code
-    (replace it with your own and keep the proper quotation as above).
-
-    All input sequences with length less than 1000 bp (--pred-min-len-samp) will
-    be ignored.
-
-    The '--run-mode batchDep' executes the program in a distributed mode (under a batch
-    manager). You can switch to local sequential execution in a single process with
-    --run-mode inproc.
-    
-    The weight file from 454 Newbler assembly output was generated with a provided helper
-    script that extracts as weight the number of reads per contig. You can supply any other
-    number as a per-sequence weight.
-    That file, if provided, will be used when generating the aggregated clade abundance tables.
-    If you are not working with assembly or not caring about the aggregated reports, skip
-    the weight file generation and omit the --inp-seq-attrib option.
-    
-    It is required that the defline of your input FASTA file contained a unique ID for
-    each sequence (the part between the '>' and the first blank character).
-
-    The results will be in 'my_results' directory defined by --pred-out-dir options.
-
-    In batchDep run-mode, the application currently leaves some service files in the starting
-    directory after it finishes. You might want to create a temporary directory and start the
-    program from where, so that it will be easy to clean up afterwards by removing that directory.
-
-    Other examples:
-
-    Build the sequence DB for model training from NCBI RefSeq multi-FASTA file(s).
-    This currently filters the input by excluding plasmids and taxa w/o enough total sequence.
-    
-    mgt-icm-classifier --mode make-ref-seqdb \\
-            --inp-train-seq 'test_data/seqdb-fasta/*.fasta.gz' \\
-            --inp-train-model-descr 'test_data/seqdb-fasta/models.json' \\
-            --db-seq tmp.db-seq --run-mode batchDep \\
-            --lrm-user-options '-P 0413'
-    
-    Train models based on a sequence DB built by make-ref-seqdb step.
-
-    mgt-icm-classifier --mode train --db-seq tmp.db-seq \\
-            --db-imm tmp.imm --run-mode batchDep \\
-            --lrm-user-options '-P 0413'
-
-    Make a prediction for each sequence in the --inp-seq multi-FASTA file
-    against the --db-imm database of models. The output results are stored in
-    --pred-out-dir. Per-sequence predictions are stored in a CSV file. Aggregated
-    counts per clade at various taxonomic levels are provided in the stats sub-directory,
-    along with the auto-generated graphs. The same data is provided in a SQLite file.
-    Several extra options can change default locations of the individual output files.
-    If you omit the --db-imm option, the program will try to use a central DB of models
-    configured for this installation.
-
-    mgt-icm-classifier --mode predict --inp-seq 195.fasta.gz --db-imm tmp.imm \\
-            --pred-min-len-samp 1000 --pred-out-dir tmp.results \\
-            --run-mode batchDep --lrm-user-options '-P 0413'
+    """This is a unified driver program for ICM-based classification, model training
+    and benchmarking.
+    See file <MGT_HOME>/doc/running.md for a usage manual and examples.
     """
 
     @classmethod
