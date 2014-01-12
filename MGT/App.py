@@ -359,8 +359,9 @@ class App:
                     "--lrm-user-options will be used instead"),
             
             make_option(None, "--web",
-            action="store_true",
-            default=False,
+            action="store",
+            type="int",
+            default=0,
             dest="web",
             help="Is this executed from the Web API"),
             
