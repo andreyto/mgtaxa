@@ -93,8 +93,15 @@ class ImmClassifierApp(App):
             help="Path to a collection of IMMs stored as a directory. "+\
                     "Multiple entries are allowed in prediction mode, "+\
                     "but only one entry - in training mode. If 'predict' "+\
-                    "mode is used, the default will be the central database "+\
-                    "under MGT_DATA."),
+                    "mode is used and nothing is passed here or through "+\
+                    "--db-imm-archive, then --db-imm-default will be set to 1"),
+            
+            make_option(None, "--db-imm-default",
+            action="store", 
+            type="int",
+            default=0,
+            dest="dbImmDefault",
+            help="Use default models from MGT_DATA in addition to --db-imm and --db-imm-archive [0]"),
             
             make_option(None, "--db-imm-archive",
             action="append", 
@@ -436,9 +443,16 @@ class ImmClassifierApp(App):
         if opt.isUndef("mode"):
             parser.error("--mode option is required")
         opt.setIfUndef("cwd",os.getcwd())
-        if ( not opt.immDbArchive and not opt.immDb ):
-            if opt.mode in ("predict","make-bench","bench","proc-bench-scores"):
-                opt.immDb = globOpt.icm.icmDbs
+        if opt.mode in ("predict","make-bench","bench","proc-bench-scores"):
+            if ( not opt.immDbArchive and not opt.immDb ):
+                opt.dbImmDefault = 1
+            opt.setIfUndef("immDb",[])
+            if is_string(opt.immDb):
+                opt.immDb = [ opt.immDb ]
+            if opt.dbImmDefault:
+                opt.immDb += globOpt.icm.icmDbs
+                #so that we would not add it again in a child job
+                opt.dbImmDefault = 0
         if isinstance(opt.benchFragLenList,str):
             opt.benchFragLenList = [ int(x) for x in opt.benchFragLenList.split(",") ]
         #This options is accepted from the Web as a command line string, parsing should be done securily:
