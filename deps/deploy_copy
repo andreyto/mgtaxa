@@ -10,7 +10,7 @@ echo_files() {
 
 cd ~
 
-excludes="--exclude='packages/x86_64-rhel5/qpid-*/var/' --exclude=packages/x86_64-rhel5/gridway/var/ --exclude=packages/x86_64-rhel5/mgtaxa-galaxy/var/ --exclude=packages/x86_64-rhel5/pgsql/data/ --exclude=packages/x86_64-rhel5/pgsql/var/ --exclude=packages/x86_64-rhel5/mgtaxa-galaxy/database/ --exclude=mgtaxa/run_test/ --exclude=mgtaxa/build/"
+excludes="--exclude='packages/var/' --exclude='packages/x86_64-*/var/' --exclude='packages/x86_64-*/qpid-*/var/' --exclude=packages/x86_64-*/gridway/var/ --exclude=packages/x86_64-*/mgtaxa-galaxy/var/ --exclude=packages/x86_64-*/pgsql/data/ --exclude=packages/x86_64-*/pgsql/var/ --exclude=packages/x86_64-*/mgtaxa-galaxy/database/ --exclude=mgtaxa/test_run/ --exclude=mgtaxa/build/"
 
 work_subdirs="gridway-proxy-mad mgtaxa mgtdata packages"
 
