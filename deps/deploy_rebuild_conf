@@ -52,10 +52,12 @@ frontend_gridway_dir=/home/mgtaxa/work/packages/x86_64-rhel6/gridway
                               
 backend_host=mgtaxa-app
 backend_username=mgtaxa
-backend_data_dir_prefix=/usr/local/projects/MGTAXA/scratch/mgtaxa/backend
+backend_data_dir_prefix=/usr/local/scratch/METAGENOMICS/mgtaxa/web
 
-code_location_backend = /local/projects5/MGTAXA/mgtaxa/packages/x86_64-rhel6/mgtaxa-galaxy
+code_location_backend = /local/MGTAXA/mgtaxa/packages/x86_64-rhel6/mgtaxa-galaxy
 code_location_frontend = /opt/software/mgtaxa/work/packages/x86_64-rhel6/mgtaxa-galaxy
+
+sqlite_database=/home/mgtaxa/work/packages/var/gpm_backend.sqlite
 
 End-of-message
 
