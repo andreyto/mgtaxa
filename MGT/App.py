@@ -162,13 +162,24 @@ class App:
                             )
                         mkf_args_new = " ".join( [ '"{}"'.format(arg) for arg \
                                 in unparse_makeflow_args(mkf_opt,mkf_other) ] )
+                        #In Web mode, divert Makeflow output to files - it is
+                        #bulky and useless for the Web user, plus, Makeflow prints
+                        #"nothing else to do" to stderr on success and spooks Galaxy.
+                        if opt.web:
+                            mkf_stdout = None
+                            mkf_stderr = None
+                        else:
+                            mkf_stdout = "-"
+                            mkf_stderr = "-"
                         writeMakeflowRunScript(
                                 makeflow = options.makeflow.exe,
                                 workflow = opt.workflowFile,
                                 env = options.envRc,
                                 vars = mkf_vars,
                                 args = mkf_args_new,
-                                out = opt.workflowScript
+                                out = opt.workflowScript,
+                                stdout = mkf_stdout,
+                                stderr = mkf_stderr
                                 )
                         make_executable(opt.workflowScript)
                     os.rename(workflowFileWork,opt.workflowFile)
