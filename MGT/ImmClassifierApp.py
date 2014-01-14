@@ -124,7 +124,7 @@ class ImmClassifierApp(App):
             optParseMakeOption_Path(None, "--imm-ids",
             dest="immIds",
             help="File with list of IMM IDs to use in scoring and prediction. Default is all"+\
-                    " IMMs from --imm-seq-ids"),
+                    " IMMs from --imm-id-to-seq"),
             
             make_option(None, "--score-taxids-exclude-trees",
             action="store", 
@@ -311,7 +311,7 @@ class ImmClassifierApp(App):
             dest="rejectRanksHigher",
             help="If a sample was assigned a clade above this rank or below , it will be marked as "+\
                     "'rejected' instead. The default value of 'superkingdom' effectively disables "+\
-                    "this filer. Set to 'order' if performing phage-host assignment."),
+                    "this filer."),
             
             make_option(None, "--pred-mode",
             action="store",
@@ -320,7 +320,7 @@ class ImmClassifierApp(App):
             default="taxa",
             dest="predMode",
             help="Set the prediction mode [%default]: 'host' will work in a mode that assigns "+\
-                    "host taxonomy to (presumed) bacteriophage "+\
+                    "either microbial host taxonomy to (presumed) bacteriophage "+\
                     "sequence or viral taxonomy; 'taxa' will assume a mixed sample "+\
                     "and assign taxonomy using all models; 'taxa-vir' will assume a "+\
                     "viral sample and use only viral models to make predictions."),
@@ -503,11 +503,14 @@ class ImmClassifierApp(App):
         
         if opt.predMode == "host": 
             opt.setIfUndef("predMinLenSamp",5000)
+            opt.setIfUndef("scoreTaxidsExcludeTrees",[])
+            opt.scoreTaxidsExcludeTrees += [eukTaxid,unclassRootTaxid]
         elif opt.predMode == "taxa":
             opt.setIfUndef("predMinLenSamp",300)
         elif opt.predMode == "taxa-vir":
             opt.setIfUndef("predMinLenSamp",300)
-            opt.setIfUndef("scoreTaxidsExcludeTrees",[cellTaxid])
+            opt.setIfUndef("scoreTaxidsExcludeTrees",[])
+            opt.scoreTaxidsExcludeTrees += [cellTaxid]
         else:
             raise ValueError("Unknown --pred-mode value: %s" % (opt.predMode,))
         
@@ -1232,6 +1235,7 @@ class ImmClassifierApp(App):
         jobs = []
         for immD in immDb:
             jobsI = copy(jobsD)
+            skipImmD = False
             if immD[1] is not None:
                 optI = copy(opt)
                 optI.mode = "extract"
@@ -1254,8 +1258,11 @@ class ImmClassifierApp(App):
                 immIds = ImmStoreWithTaxids(immD[0]).dictMetaData()
                 assert len(immIds) > 0,"No IMMs found in IMM DB - probably training did not run yet"
             else:
-                immIds = ImmStoreWithTaxids(immD[0]).dictMetaData()
-                assert len(immIds) > 0,"No IMMs found in IMM DB - probably training did not run yet"
+                immDPath = immD[0]
+                immIds = ImmStoreWithTaxids(immDPath).dictMetaData()
+                assert len(immIds) > 0,\
+                        "No IMMs found in IMM DB {} - probably training did not run yet".\
+                        format(immDPath)
                 #we only aply taxid filters to "reference" immDbs, under 
                 #an assumption that archived immDbs are supplied by the user
                 #and contain only what needs to be used
@@ -1269,33 +1276,37 @@ class ImmClassifierApp(App):
                     immIds = dict(( (id,meta) for (id,meta) in immIds.items() \
                             if not taxaTree.getNode(meta["taxid"]).isUnderAny(subTreesExcl) )) 
                     if len(immIds) <= 0:
-                        print "Warning: No IMMs left in IMM DB after applying exclusion filters"
+                        print "Warning: No IMMs left in IMM DB {} after applying exclusion filters".format(immDPath)
+                        skipImmD = True
 
+            if not skipImmD:
+                kwI = kw.copy()
+                kwI["depend"] = jobsI
             
-            kwI = kw.copy()
-            kwI["depend"] = jobsI
-        
-            optI = copy(opt)
-            optI.mode = "score"
-            optI.immDb = immD[0]
-            #Until we change ImmApp, we have to run each in a separate dir
-            #because it uses a fixed file name for immIds file that it generates.
-            optI.cwd = self._immDbNameToScoreDirName(optI.immDb,opt.scoreWorkDir)
-            optI.outDir = optI.cwd
-            #TODO: have a separate set of the options below for each immDb,
-            #until then, we have to zap them and cause ImmApp to use all
-            #available imms in each collection.
-            optI.immIdToSeqIds = None
-            optI.immIds = pjoin(optI.outDir,"imm-ids.pkl")
-            #define idScore == idImm:
-            dumpObj([(immId,immId) for immId in immIds],optI.immIds)
-            optI.outScoreComb = pjoin(optI.outDir,"combined"+ImmApp.scoreSfx)
-            outSubScores.append(optI.outScoreComb)
-            #define idScore == idImm:
-            idScoreMeta.update(immIds)
-            app = ImmApp(opt=optI)
-            jobsI = app.run(**kwI)
-            jobs += jobsI
+                optI = copy(opt)
+                optI.mode = "score"
+                optI.immDb = immD[0]
+                #Until we change ImmApp, we have to run each in a separate dir
+                #because it uses a fixed file name for immIds file that it generates.
+                optI.cwd = self._immDbNameToScoreDirName(optI.immDb,opt.scoreWorkDir)
+                optI.outDir = optI.cwd
+                #TODO: have a separate set of the options below for each immDb,
+                #until then, we have to zap them and cause ImmApp to use all
+                #available imms in each collection.
+                optI.immIdToSeqIds = None
+                optI.immIds = pjoin(optI.outDir,"imm-ids.pkl")
+                #define idScore == idImm:
+                dumpObj([(immId,immId) for immId in immIds],optI.immIds)
+                optI.outScoreComb = pjoin(optI.outDir,"combined"+ImmApp.scoreSfx)
+                outSubScores.append(optI.outScoreComb)
+                #define idScore == idImm:
+                idScoreMeta.update(immIds)
+                app = ImmApp(opt=optI)
+                jobsI = app.run(**kwI)
+                jobs += jobsI
+
+        assert outSubScores, """After filtering, final list of models \
+                to screen against is empty - cannot proceed"""
         
         makeFilePath(opt.outIdScoreMeta)
         dumpObj(idScoreMeta,opt.outIdScoreMeta)
