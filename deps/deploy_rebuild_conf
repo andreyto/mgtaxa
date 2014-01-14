@@ -57,7 +57,7 @@ backend_data_dir_prefix=/usr/local/scratch/METAGENOMICS/mgtaxa/web
 code_location_backend = /local/MGTAXA/mgtaxa/packages/x86_64-rhel6/mgtaxa-galaxy
 code_location_frontend = /opt/software/mgtaxa/work/packages/x86_64-rhel6/mgtaxa-galaxy
 
-sqlite_database=/home/mgtaxa/work/packages/var/gpm_backend.sqlite
+backend_var_dir=/home/mgtaxa/work/packages/var
 
 End-of-message
 

@@ -33,6 +33,11 @@ def train(argv_dict,argv):
 
 def predict(argv_dict,argv):
     d = argv_dict
+    db_imm_default = d["--db-imm-default"]
+    if db_imm_default[0].lower() == "yes":
+        db_imm_default[0] = "1"
+    elif db_imm_default[0].lower() == "no":
+        db_imm_default[0] = "0"
     argv = rigid_cli_dict_to_argv(d)
     cmd = shlex.split(
             """\
