@@ -79,7 +79,7 @@ In this example:
     when executing the workflow.
 
 -   All input sequences with length less than 1000 bp (`--pred-min-len-samp 1000`) 
-    will be ignored.
+    will be ignored (the default cutoff is 300 bp).
 
 -   The optional weight file (`--inp-seq-attrib weights.csv`), if provided, will be 
     used when generating the aggregated clade abundance tables. If no weight file is
@@ -125,7 +125,9 @@ In this example:
         counts across different ranks results in the same total number for 
         sequences that were already assigned at some lower rank. Therefore, for 
         missing lineage ranks, we artifically fill them from the nodes at the 
-        nearest defined rank either below or above.
+        nearest defined rank either below or above. This is why you can see,
+        for example, clade Bacteria in the order-level position in the lineage  
+        and in corresponding summary tables.
 
     -   Summary counts for each assigned model [`pred-taxa.summ.csv`]. This is an 
         aggregation of `pred-taxa.csv` over `idscore` field, with `score_*` fields
@@ -142,17 +144,73 @@ In this example:
         Krona (PMC3190407) JavaScript library. Krona library itself is also
         exported into the results directory, so that `stats.html` can be opened
         in a Web browser from the local file system using Open File dialog (Firefox 
-        or Chrome, but not IE 8).
+        or Chrome, but not IE 8). Rank projection described above for per-sequence
+        predictions is not used in this representation. Instead, nodes that do not 
+        correspond to the main standard taxonomic ranks (species, genus, family, order,
+        class, phylum, kingdom and superkingdom) are removed, with their child nodes
+        attached directly to their parent nodes in order to reduce visual clutter. 
+        The taxon IDs are hyperlinked to corresponding nodes on the NCBI Web site.
 
     -   PDF file with aggregated counts shown as bar plots [`stats/stats.pdf`]. 
         The deviation from a standard bar plot is that the **area** of each bar 
         is proportional to the count with both height and width scaled as square
-        root of the count.
+        root of the count. This allows for a more compact graph for quickly
+        decaying abundance distributions. Because of the rank projection described 
+        above, each fixed rank chart shows counts for all samples even when the 
+        NCBI tree does not have this rank in the lineage of the predicted node.
 
     -   Compact representation of per-sequence assignments is HDF5 format 
         [`pred_taxa`]
 
     -   Representation of summaries in SQLite format [`pred-taxa.sqlite`]
+
+##To predict either microbial hosts or viral taxonomy for bacteriophage input 
+sequences using the default models pre-built from NCBI RefSeq
+
+```
+<MGT_HOME>/bin/mgt-icm-classifier --mode predict \
+        --pred-mode host
+        --inp-seq contigs.fna \
+        --pred-out-dir results --run-mode batchDep \
+        --batch-backend makeflow --makeflow-options '-T sge' \
+        --workflow-run 1 --lrm-user-options "-b n -P 0116"
+```
+
+In this example:
+
+-   The program assumes that the input sequences (`--inp-seq contigs.fna`)
+    are of bacteriophage origin. It will, by default, ignore all sequences
+    shorter than 5000 bp and consider only prokaryotic and viral models.
+    Note that the host prediction is most reliable when the sequences are
+    from bacteriophages of lysogenic life cycle. However, the sequences on which
+    the models are built are not required to contain prophages. Only
+    overall genome polynucleotide composition is considered. Please see 
+    [Williamson et al, 2012]
+    (http://www.plosone.org/article/info%3Adoi%2F10.1371%2Fjournal.pone.0042047)
+    for the application of the method and benchmarking.
+
+-   You can also set `--pred-mode taxa-vir` to restrict assignment to only
+    models trained on viral sequences.
+
+##To predict taxonomy excluding from consideration models under
+specific taxonomic nodes
+
+```
+<MGT_HOME>/bin/mgt-icm-classifier --mode predict \
+        --score-taxids-exclude-trees 10239,2759
+        --inp-seq contigs.fna \
+        --pred-out-dir results --run-mode batchDep \
+        --batch-backend makeflow --makeflow-options '-T sge' \
+        --workflow-run 1 --lrm-user-options "-b n -P 0116"
+```
+
+In this example:
+
+-   All models with assigned taxonomy under either viruses (NCBI taxid 10239)
+    or Eukaryotes (NCBI taxid 2759) will be ignored during classification
+    (`--score-taxids-exclude-trees 10239,2759`). You can supply a comma-separated
+    list (with no spaces) of any NCBI taxonomic IDs to filter out the
+    corresponding nodes and any of their sub-nodes.
 
 The application leaves various intermediate files (lots of them) in the starting
 directory after it finishes. You might want to run the program from a temporary
@@ -195,9 +253,9 @@ because `-T local` is the default backend in Makeflow) and omit
 `--lrm-user-options`. The Makeflow will then run locally, starting as many
 tasks at the same time as there are cores on the machine.
 
-It is also possible to run Makeflow with `-T mpi-queue` backend if your cluster's
-LRM is configured to schedule efficiently only large MPI jobs. A thorough
-example of using that mode can be found in our other package
+It is also possible to run Makeflow with `-T mpi-queue` backend if the LRM
+on your cluster is configured to schedule efficiently only large MPI jobs. A 
+detailed example of using that mode can be found in our other package
 [PGP](https://bitbucket.org/andreyto/proteogenomics).
 
 
@@ -384,11 +442,9 @@ with or without combining your new set of models with other sets.
 ###Classify using a combination of our models and default models.
 
 ```
-source <MGT_HOME>/etc/mgtaxa.shrc
 mgt-icm-classifier --mode predict \
     --db-imm imm.db \
-    --db-imm $MGT_DATA/refseq-icm \
-    --db-imm $MGT_DATA/ref-extra-icm \
+    --db-imm-default 1 \
     --inp-seq contigs.fna \
     --inp-seq-attrib weights.csv --pred-min-len-samp 1000 \
     --pred-out-dir results --run-mode batchDep \
@@ -398,13 +454,15 @@ mgt-icm-classifier --mode predict \
 
 In this example:
 
--   Compared to the first example of classifying sequences that used a default set
-    of models, we classify against a combination of RefSeq-based models
-    (`--db-imm $MGT_DATA/refseq-icm`), models built for a few other genomes
-    such as SAR86 (`--db-imm $MGT_DATA/ref-extra-icm`) and models that we
-    have built ourselves in the previous example (`--db-imm imm.db`).
+-   Compared to the first example of classifying sequences that used just the 
+    default set of models implicitly, we use **both** models that we have built 
+    ourselves in the previous example (`--db-imm imm.db`) **and** the default
+    set of models (`--db-imm-default 1`). If you instead want to use **only**
+    your own models, then you should set (`--db-imm-default 0`) or omit this
+    option entirely.
 
--   We dereference the environment variable `$MGT_DATA` to refer to the location of
-    the default models. That variable is defined in the current shell when the 
-    command `source <MGT_HOME>/etc/mgtaxa.shrc` is executed.
+-   If you have several sets of your own models that you have trained in different
+    invocations of the tool with `--mode train` argument, you can combine them
+    for prediction (`--mode predict`) by providing `--db-imm` option several
+    times, such as `--db-imm imm1.db --db-imm imm2.db`.
 
