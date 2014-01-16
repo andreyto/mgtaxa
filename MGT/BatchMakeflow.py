@@ -135,7 +135,7 @@ def writeMakeflowRunScript(makeflow,workflow,env,vars,args,out,mode="w",stdout="
     redir_msg = ""
     if stdout != "-":
         redir += " 1> '{}'".format(stdout)
-        if not quite:
+        if not quiet:
             redir_msg += "echo Makeflow standard output is redirected to '{}'\n".format(stdout)
     if stderr != "-":
         redir += " 2> '{}'".format(stderr)
