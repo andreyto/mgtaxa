@@ -115,7 +115,7 @@ class App:
             # submitter of other jobs.
             # TODO: use this also to set stdout and stderr for the final job only?
             ret = self.submitTerminatorJob(depend=ret)
-            if opt.web:
+            if opt.web and opt.batchBackend == "qsub":
                 print "Your job %s" % (ret[0].jobId,)
         return ret
 
