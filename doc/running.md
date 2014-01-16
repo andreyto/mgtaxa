@@ -340,6 +340,7 @@ to confuse the Makeflow.
 Training of the models consists of two steps:
 
 ###Build a sequence database in internal representation from input FASTA files
+with sequences grouped into models by a separate model description file
 
 ```
 <MGT_HOME>/bin/mgt-icm-classifier --mode make-ref-seqdb \
@@ -422,6 +423,40 @@ In this example:
 
 -   The output path of this command is given by (`--db-seq seq.db`). You will need 
     to use that path when you run model training.
+
+###Build a sequence database in internal representation from input FASTA files
+with each sequence used to train a separate model
+
+```
+<MGT_HOME>/bin/mgt-icm-classifier --mode make-ref-seqdb \
+    --inp-train-seq models.fasta.gz \
+    --inp-train-seq-format generic \
+    --db-seq seq.db \
+    --run-mode batchDep \
+    --batch-backend makeflow --makeflow-options '-T sge' \
+    --workflow-run 1 --lrm-user-options "-b n -P 0116"
+```
+
+In this example:
+
+-   The difference with the previous example is that the model description
+    option (`--inp-train-model-descr`) is not used.
+    In such case, the input FASTA (`--inp-train-seq models.fasta.gz`) must  
+    contain one sequence record per each model that you want to build.
+
+    If you originally have multiple sequences that you want to use for a given 
+    model, you should concatenate them with at least one 'N' (undefined nucleotide 
+    symbol) inserted between the original sequence strings.
+    
+    The ID of each sequence will be used as an ID of the corresponding model. This 
+    means that the requirements above regarding the model ID also apply.
+
+    Your models will be assigned NCBI taxonomy ID 1 (root node - essentially, undefined 
+    taxonomy).
+
+    This mode might be a more simple alternative to writing a model description file
+    when you only want to recruite sequences to individual contigs in your training 
+    file without assigning taxonomy.
 
 ###Train models based on a sequence DB built by a previous `--mode make-ref-seqdb` call.
 
