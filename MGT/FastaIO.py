@@ -10,7 +10,8 @@
 
 __all__ = [ "FastaReader", "FastaReaderChain", "fastaReaderGzip", "FastaWriter", 
         "splitFasta", "fastaLengths", "seqToLines", "shredFasta",
-        "filterFastaByLength","fastaReaderFilterNucDegen" ]
+        "filterFastaByLength","fastaReaderFilterNucDegen",
+        "estimateFastaLengthAndCountTotal" ]
 
 from MGT.Common import *
 from MGT.Util import openGzip, openCompressed, SymbolRunsCompressor, is_string
