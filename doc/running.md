@@ -417,6 +417,9 @@ In this example:
         going to use it for recruiting other sequences, you can set taxid to 1
         (root node of the taxonomy).
 
+    Sequences in the FASTA input that are not included into any of the models 
+    will be silently ignored.
+
 -   The output path of this command is given by (`--db-seq seq.db`). You will need 
     to use that path when you run model training.
 

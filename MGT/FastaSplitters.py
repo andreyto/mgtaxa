@@ -116,8 +116,11 @@ def splitFastaFilesByTaxa(inSeqs,outStore,taxaTree=None,giToTaxa=None,filt=None)
 def splitFastaFilesByModel(inSeqs,modelsMeta,outStore,
         taxaTree=None,checkTaxa=True,filt=None):
     """
+    Split FASTA input into SeqDbFasta by models.
     @param modelsMeta iterator of models meta data objects
     @param outStore SeqDbFasta instance
+    @post Sequences that are not in any modelsMeta entries
+    will be skipped
     """
     from MGT.FastaIO import FastaReader
     if checkTaxa and taxaTree is None:
@@ -137,17 +140,18 @@ def splitFastaFilesByModel(inSeqs,modelsMeta,outStore,
             with closing(FastaReader(inSeq)) as inpSeq:
                 for seq in filt(inpSeq).records():
                     id_seq = seq.getId()
-                    modelMeta = seqToModelMeta[id_seq]
-                    meta_group = dict(
-                            id=modelMeta["id"],
-                            taxid=modelMeta["taxid"],
-                            name=modelMeta["name"]
-                            )
-                    rec = dict(
-                            seq=seq,
-                            meta_group=meta_group
-                            )
-                    yield rec
+                    modelMeta = seqToModelMeta.get(id_seq,None)
+                    if modelMeta:
+                        meta_group = dict(
+                                id=modelMeta["id"],
+                                taxid=modelMeta["taxid"],
+                                name=modelMeta["name"]
+                                )
+                        rec = dict(
+                                seq=seq,
+                                meta_group=meta_group
+                                )
+                        yield rec
     splitFastaFilesByGroupId(iterFastaWithMeta=_multi_iter(),outStore=outStore)
 
 def splitFastaReaderIntoChunks(reader,outStore,maxChunkSize,filt=None,compresslevel=6):
