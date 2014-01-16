@@ -47,6 +47,6 @@ def test_pred():
     check_call(cmd,shell=True)
 
 
-#test_train()
+test_train()
 test_pred()
 

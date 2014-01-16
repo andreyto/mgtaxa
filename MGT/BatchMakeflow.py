@@ -104,7 +104,7 @@ class MakeflowWriter(object):
             self.out = None
 
 
-def writeMakeflowRunScript(makeflow,workflow,env,vars,args,out,mode="w",stdout="-",stderr="-"):
+def writeMakeflowRunScript(makeflow,workflow,env,vars,args,out,mode="w",stdout="-",stderr="-",quiet=False):
     """Write a shell script that will run this makeflow.
     @param makeflow Makeflow executable path
     @param workflow workflow file path
@@ -116,7 +116,8 @@ def writeMakeflowRunScript(makeflow,workflow,env,vars,args,out,mode="w",stdout="
     @param stdout redirect Makeflow standard output to that file;
     '-' (default) means no redirection; None means $workflow.out.log
     @param stderr redirect Makeflow standard error to that file;
-    '-' (default) means no redirection; None means $workflow.err.log"""
+    '-' (default) means no redirection; None means $workflow.err.log
+    @param quiet minimize chatter from script [False]"""
     out_close = False
     if is_string(out):
         out = open(out,mode)
@@ -134,13 +135,15 @@ def writeMakeflowRunScript(makeflow,workflow,env,vars,args,out,mode="w",stdout="
     redir_msg = ""
     if stdout != "-":
         redir += " 1> '{}'".format(stdout)
-        redir_msg += "echo Makeflow standard output is redirected to '{}'\n".format(stdout)
+        if not quite:
+            redir_msg += "echo Makeflow standard output is redirected to '{}'\n".format(stdout)
     if stderr != "-":
         redir += " 2> '{}'".format(stderr)
-        redir_msg += "echo Makeflow standard error is redirected to '{}'\n".format(stderr)
+        if not quiet:
+            redir_msg += "echo Makeflow standard error is redirected to '{}'\n".format(stderr)
     if redir_msg:
         w(redir_msg)
-    w('echo Starting execution of workflow "{}"\n'.format(workflow))
+    w('echo Starting execution of Makeflow "{}"\n'.format(workflow if not quiet else ""))
     w('"{makeflow}" {args} "{workflow}"{redir}\n'.\
             format(
                 makeflow = makeflow,

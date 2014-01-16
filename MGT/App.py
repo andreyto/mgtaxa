@@ -179,7 +179,8 @@ class App:
                                 args = mkf_args_new,
                                 out = opt.workflowScript,
                                 stdout = mkf_stdout,
-                                stderr = mkf_stderr
+                                stderr = mkf_stderr,
+                                quiet = True if opt.web else False
                                 )
                         make_executable(opt.workflowScript)
                     os.rename(workflowFileWork,opt.workflowFile)
