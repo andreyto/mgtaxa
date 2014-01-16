@@ -371,23 +371,26 @@ In this example:
     that groups sequence IDs from `--inp-train-seq models.fasta.gz` into models and
     maps the models to the NCBI taxonomy.
     
-    An example of such file is:
+    An example of such file describing two models is:
     
     ```
-    [
-        {
-            "ids_seq": ["contig1","contig2","contig3"], 
-            "id": "mod1", 
-            "name":"My model 1", 
-            "taxid": 766
-        }, 
-        {
-            "ids_seq": ["contig4","contig5"], 
-            "id": "mod2", 
-            "name": "My model 2", 
-            "taxid": 767892
-        }
-    ]
+    {
+        "mgt_mod_descr":
+        [
+            {
+                "ids_seq": ["contig1","contig2","contig3"], 
+                "id": "mod1", 
+                "name":"My model 1", 
+                "taxid": 766
+            }, 
+            {
+                "ids_seq": ["contig4","contig5"], 
+                "id": "mod2", 
+                "name": "My model 2", 
+                "taxid": 767892
+            }
+        ]
+    }
     ```
 
     Above:
@@ -397,7 +400,11 @@ In this example:
         Sequences in `ids_seq` list do not have to be adjacent in the `models.fasta.gz`
         file.
     -   `id` is a unique ID you wish to give to your model (32 characters
-        long or less, no spaces)
+        long or less, no spaces). If later you might need to use these models for 
+        classification in a combination with other models, such as our default set built on 
+        NCBI RefSeq sequences, you need to make sure that your IDs are different from those. 
+        Our NCBI model IDs start with a number. Make sure that your IDs at least start 
+        with a letter.
     -   `name` is a descriptive name you wish to give to your model (may not
         be unique but it helps if it is)
     -   `taxid` is an existing taxonomic ID from the 
