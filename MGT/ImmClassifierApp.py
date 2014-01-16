@@ -163,12 +163,15 @@ class ImmClassifierApp(App):
             choices=("generic","ncbi"),
             default="generic",
             dest="inpTrainSeqFormat",
-            help="Format of input training sequences: {ncbi,generic} [%default]. " +\
-                    "'generic' requires --inp-train-model-descr option defined"),
+            help="""Format of input training sequences: {ncbi,generic} [%default]. \
+                    'generic' either requires --inp-train-model-descr option to be defined \
+                    or each individual sequence will be assumed to train a separate \
+                    model with a taxonomy of the root node"""),
             
             optParseMakeOption_Path(None, "--inp-train-model-descr",
             dest="inpTrainModelDescr",
-            help="File in JSON format that maps models to training sequences"),
+            help="""File in JSON format that maps models to training sequences. See manual \
+                    for the description."""),
             
             make_option(None, "--inp-ncbi-seq-sel-policy",
             action="store",
@@ -531,9 +534,6 @@ class ImmClassifierApp(App):
                 with open(opt.inpTrainSeqList,"w") as out:
                     for f in ph.glob("*.fna.gz"):
                         out.write("{}\n".format(f))
-            if opt.inpTrainSeqFormat == "generic":
-                if opt.isUndef("inpTrainModelDescr"):
-                    raise ValueError("--inp-train-model-descr must be defined when --inp-train-seq-format is 'generic'")
         if opt.benchNLevTestModelsMin < 1:
             parser.error("--bench-n-lev-test-model-min must be at least 1")
 
@@ -713,7 +713,8 @@ class ImmClassifierApp(App):
             filt = functools.partial(fastaReaderFilterNucDegen,
                     minNonDegenRatio=0.90)
             splitFastaFilesByModel(inSeqs=inpTrainSeqFiles,
-                    modelsMeta=loadTrainModelsDescr(opt.inpTrainModelDescr),
+                    modelsMeta=loadTrainModelsDescr(opt.inpTrainModelDescr) \
+                            if opt.inpTrainModelDescr else None,
                     outStore=seqDb,
                     taxaTree=taxaTree,
                     checkTaxa=True,

@@ -123,24 +123,30 @@ def splitFastaFilesByModel(inSeqs,modelsMeta,outStore,
     will be skipped
     """
     from MGT.FastaIO import FastaReader
+    if not modelsMeta:
+        checkTaxa = False
     if checkTaxa and taxaTree is None:
         taxaTree = loadTaxaTree()
-    mis = Struct()
     if filt is None:
         filt = lambda x: x
-    #creat mapping from id_seq to model metadata
-    seqToModelMeta = dict()
-    for meta in modelsMeta:
-        for id_seq in meta["ids_seq"]:
-            seqToModelMeta[id_seq] = meta
-        if checkTaxa:
-            assert taxaTree.getNode(meta["taxid"])
+    if modelsMeta:
+        #creat mapping from id_seq to model metadata
+        seqToModelMeta = dict()
+        for meta in modelsMeta:
+            for id_seq in meta["ids_seq"]:
+                seqToModelMeta[id_seq] = meta
+            if checkTaxa:
+                assert taxaTree.getNode(meta["taxid"])
+        seqToMod = lambda id_seq: seqToModelMeta.get(id_seq,None)
+    else:
+        #assume each sequence is a model
+        seqToMod = lambda id_seq: dict(id=id_seq,taxid=rootTaxid,name=id_seq)
     def _multi_iter():
         for inSeq in inSeqs:
             with closing(FastaReader(inSeq)) as inpSeq:
                 for seq in filt(inpSeq).records():
                     id_seq = seq.getId()
-                    modelMeta = seqToModelMeta.get(id_seq,None)
+                    modelMeta = seqToMod(id_seq)
                     if modelMeta:
                         meta_group = dict(
                                 id=modelMeta["id"],

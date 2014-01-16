@@ -7,7 +7,11 @@ seqDbPath2 = pjoin(options.testDataDir,"fasta")
 lrmUserOptions = r"-b n -P 0413"
 makeflowOptions = r"-T sge"
 
-def test_train():
+def test_train(with_model_descr=True):
+    if with_model_descr:
+        mod_descr = pjoin(seqDbPath2,"generic.mod.train.json")
+    else:
+        mod_descr = "None"
     cmd = """\
     python $MGT_HOME/bin/galaxy/mgtaxa.py \
     train \
@@ -18,7 +22,7 @@ def test_train():
     --makeflow-options "{}" \
     --web 0""".format(
         pjoin(seqDbPath2,"generic.mod.train.fasta.gz"),
-        pjoin(seqDbPath2,"generic.mod.train.json"),
+        mod_descr,
         lrmUserOptions,
         makeflowOptions
         )
@@ -47,6 +51,7 @@ def test_pred():
     check_call(cmd,shell=True)
 
 
-test_train()
+test_train(with_model_descr=True)
+test_train(with_model_descr=False)
 test_pred()
 

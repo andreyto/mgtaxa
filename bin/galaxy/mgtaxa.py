@@ -12,6 +12,7 @@ _mgt_common_options = """ \
 
 
 def train(argv_dict,argv):
+    argv = rigid_cli_dict_to_argv(argv_dict)
     cmd_base = shlex.split(
             """\
             mgt-icm-classifier \
