@@ -141,7 +141,7 @@ class App:
                         os.remove(opt.workflowFile)
                     #TODO: parse Makeflow options first and take log name from
                     #where if present
-                    makeflowLog = pjoin(opt.workflowFile,".makeflowlog")
+                    makeflowLog = opt.workflowFile+".makeflowlog"
                     if os.path.isfile(makeflowLog):
                         os.remove(makeflowLog)
                     workflowFileWork = opt.workflowFile+"."+random_string()
