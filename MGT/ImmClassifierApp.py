@@ -187,13 +187,17 @@ class ImmClassifierApp(App):
             help="Maximum number of training SeqDB IDs to propagate up from "+\
                     "every child of a given node"),
             
+            #@todo We cannot set -1 (auto-estimation) until we change the
+            #workflow to run the conversion of input FASTA to SeqDb as a 
+            #blocking sub-Makeflow and the rest as another sub-Makeflow
             make_option(None, "--n-imm-batches",
             action="store", 
             type="int",
             default=200,
             dest="nImmBatches",
             help="Try to split processing into that many batches for each ICM set "+\
-                    "(leading to separate jobs in batch run-mode)"),
+                    "(leading to separate jobs in batch run-mode) [%default]. -1 means "+\
+                    "that the program will try to guess the best number"),
             
             optParseMakeOption_Path(None, "--score-out-dir",
             dest="outDir",
