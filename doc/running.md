@@ -164,8 +164,7 @@ In this example:
 
     -   Representation of summaries in SQLite format [`pred-taxa.sqlite`]
 
-##To predict either microbial hosts or viral taxonomy for bacteriophage input 
-sequences using the default models pre-built from NCBI RefSeq
+##To predict either microbial hosts or viral taxonomy for bacteriophage input sequences using the default models pre-built from NCBI RefSeq
 
 ```
 <MGT_HOME>/bin/mgt-icm-classifier --mode predict \
@@ -192,8 +191,7 @@ In this example:
 -   You can also set `--pred-mode taxa-vir` to restrict assignment to only
     models trained on viral sequences.
 
-##To predict taxonomy excluding from consideration models under
-specific taxonomic nodes
+##To predict taxonomy excluding from consideration models under specific taxonomic nodes
 
 ```
 <MGT_HOME>/bin/mgt-icm-classifier --mode predict \
@@ -339,8 +337,11 @@ to confuse the Makeflow.
 
 Training of the models consists of two steps:
 
-###Build a sequence database in internal representation from input FASTA files
-with sequences grouped into models by a separate model description file
+###Build a sequence database in internal representation from input FASTA files 
+
+**You can do it in two ways**:
+
+####With sequences grouped into models by a separate model description file
 
 ```
 <MGT_HOME>/bin/mgt-icm-classifier --mode make-ref-seqdb \
@@ -424,8 +425,7 @@ In this example:
 -   The output path of this command is given by (`--db-seq seq.db`). You will need 
     to use that path when you run model training.
 
-###Build a sequence database in internal representation from input FASTA files
-with each sequence used to train a separate model
+####With each sequence used to train a separate model
 
 ```
 <MGT_HOME>/bin/mgt-icm-classifier --mode make-ref-seqdb \
@@ -457,6 +457,7 @@ In this example:
     This mode might be a more simple alternative to writing a model description file
     when you only want to recruite sequences to individual contigs in your training 
     file without assigning taxonomy.
+
 
 ###Train models based on a sequence DB built by a previous `--mode make-ref-seqdb` call.
 
