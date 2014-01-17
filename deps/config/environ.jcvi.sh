@@ -51,16 +51,24 @@ export LD_LIBRARY_PATH=/usr/local/lib64:/usr/local/lib:$LD_LIBRARY_PATH
 
 if [ -n "$_cent6" ]; then
 
-export JAVA_HOME=/usr/local/packages/jdk-6u41
-## QPID needs java 6+
-export JAVA_6_HOME=/usr/local/packages/jdk-6u41
+    # Use conditional in case packages
+    # have different locations between cluster and DMZ
+    if [ -z "$MGT_JCVI_DMZ" ]; then
+        true
+    else
+        true
+    fi
 
-export GCC_HOME=/usr/local/packages/gcc-4.7.1
+    export JAVA_HOME=/usr/local/packages/jdk-6u41
+    ## QPID needs java 6+
+    export JAVA_6_HOME=$JAVA_HOME
 
-#Now gcc is in the PATH but its libraries are not
-export PATH=$GCC_HOME/bin:$PATH
-export LD_LIBRARY_PATH=$GCC_HOME/lib64:$LD_LIBRARY_PATH
-export LDFLAGS="$LDFLAGS -L$GCC_HOME/lib64 -Wl,-R$GCC_HOME/lib64"
+    export GCC_HOME=/usr/local/packages/gcc-4.7.1
+
+    #Now gcc is in the PATH but its libraries are not
+    export PATH=$GCC_HOME/bin:$PATH
+    export LD_LIBRARY_PATH=$GCC_HOME/lib64:$LD_LIBRARY_PATH
+    export LDFLAGS="$LDFLAGS -L$GCC_HOME/lib64 -Wl,-R$GCC_HOME/lib64"
 
 else
 
