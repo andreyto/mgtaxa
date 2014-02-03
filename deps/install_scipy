@@ -1,4 +1,8 @@
 #!/bin/bash
+## pip install also works
+## LDFLAGS="$LDFLAGS -shared" pip install -b `pwd` --install-option="--prefix=$INSTMACH" scipy
+## easy_install refuses to proceed because the setup.py writes to /dev/null
+
 set -ex
 topdir=$(pwd)
 pushd SuiteSparse
