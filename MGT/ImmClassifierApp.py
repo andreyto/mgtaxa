@@ -93,8 +93,15 @@ class ImmClassifierApp(App):
             help="Path to a collection of IMMs stored as a directory. "+\
                     "Multiple entries are allowed in prediction mode, "+\
                     "but only one entry - in training mode. If 'predict' "+\
-                    "mode is used, the default will be the central database "+\
-                    "under MGT_DATA."),
+                    "mode is used and nothing is passed here or through "+\
+                    "--db-imm-archive, then --db-imm-default will be set to 1"),
+            
+            make_option(None, "--db-imm-default",
+            action="store", 
+            type="int",
+            default=0,
+            dest="dbImmDefault",
+            help="Use default models from MGT_DATA in addition to --db-imm and --db-imm-archive [0]"),
             
             make_option(None, "--db-imm-archive",
             action="append", 
@@ -117,7 +124,7 @@ class ImmClassifierApp(App):
             optParseMakeOption_Path(None, "--imm-ids",
             dest="immIds",
             help="File with list of IMM IDs to use in scoring and prediction. Default is all"+\
-                    " IMMs from --imm-seq-ids"),
+                    " IMMs from --imm-id-to-seq"),
             
             make_option(None, "--score-taxids-exclude-trees",
             action="store", 
@@ -156,12 +163,15 @@ class ImmClassifierApp(App):
             choices=("generic","ncbi"),
             default="generic",
             dest="inpTrainSeqFormat",
-            help="Format of input training sequences: {ncbi,generic} [%default]. " +\
-                    "'generic' requires --inp-train-model-descr option defined"),
+            help="""Format of input training sequences: {ncbi,generic} [%default]. \
+                    'generic' either requires --inp-train-model-descr option to be defined \
+                    or each individual sequence will be assumed to train a separate \
+                    model with a taxonomy of the root node"""),
             
             optParseMakeOption_Path(None, "--inp-train-model-descr",
             dest="inpTrainModelDescr",
-            help="File in JSON format that maps models to training sequences"),
+            help="""File in JSON format that maps models to training sequences. See manual \
+                    for the description."""),
             
             make_option(None, "--inp-ncbi-seq-sel-policy",
             action="store",
@@ -180,13 +190,17 @@ class ImmClassifierApp(App):
             help="Maximum number of training SeqDB IDs to propagate up from "+\
                     "every child of a given node"),
             
+            #@todo We cannot set -1 (auto-estimation) until we change the
+            #workflow to run the conversion of input FASTA to SeqDb as a 
+            #blocking sub-Makeflow and the rest as another sub-Makeflow
             make_option(None, "--n-imm-batches",
             action="store", 
             type="int",
             default=200,
             dest="nImmBatches",
             help="Try to split processing into that many batches for each ICM set "+\
-                    "(leading to separate jobs in batch run-mode)"),
+                    "(leading to separate jobs in batch run-mode) [%default]. -1 means "+\
+                    "that the program will try to guess the best number"),
             
             optParseMakeOption_Path(None, "--score-out-dir",
             dest="outDir",
@@ -304,7 +318,7 @@ class ImmClassifierApp(App):
             dest="rejectRanksHigher",
             help="If a sample was assigned a clade above this rank or below , it will be marked as "+\
                     "'rejected' instead. The default value of 'superkingdom' effectively disables "+\
-                    "this filer. Set to 'order' if performing phage-host assignment."),
+                    "this filer."),
             
             make_option(None, "--pred-mode",
             action="store",
@@ -313,7 +327,7 @@ class ImmClassifierApp(App):
             default="taxa",
             dest="predMode",
             help="Set the prediction mode [%default]: 'host' will work in a mode that assigns "+\
-                    "host taxonomy to (presumed) bacteriophage "+\
+                    "either microbial host taxonomy to (presumed) bacteriophage "+\
                     "sequence or viral taxonomy; 'taxa' will assume a mixed sample "+\
                     "and assign taxonomy using all models; 'taxa-vir' will assume a "+\
                     "viral sample and use only viral models to make predictions."),
@@ -436,9 +450,16 @@ class ImmClassifierApp(App):
         if opt.isUndef("mode"):
             parser.error("--mode option is required")
         opt.setIfUndef("cwd",os.getcwd())
-        if ( not opt.immDbArchive and not opt.immDb ):
-            if opt.mode in ("predict","make-bench","bench","proc-bench-scores"):
-                opt.immDb = globOpt.icm.icmDbs
+        if opt.mode in ("predict","make-bench","bench","proc-bench-scores"):
+            if ( not opt.immDbArchive and not opt.immDb ):
+                opt.dbImmDefault = 1
+            opt.setIfUndef("immDb",[])
+            if is_string(opt.immDb):
+                opt.immDb = [ opt.immDb ]
+            if opt.dbImmDefault:
+                opt.immDb += globOpt.icm.icmDbs
+                #so that we would not add it again in a child job
+                opt.dbImmDefault = 0
         if isinstance(opt.benchFragLenList,str):
             opt.benchFragLenList = [ int(x) for x in opt.benchFragLenList.split(",") ]
         #This options is accepted from the Web as a command line string, parsing should be done securily:
@@ -489,11 +510,14 @@ class ImmClassifierApp(App):
         
         if opt.predMode == "host": 
             opt.setIfUndef("predMinLenSamp",5000)
+            opt.setIfUndef("scoreTaxidsExcludeTrees",[])
+            opt.scoreTaxidsExcludeTrees += [eukTaxid,unclassRootTaxid]
         elif opt.predMode == "taxa":
             opt.setIfUndef("predMinLenSamp",300)
         elif opt.predMode == "taxa-vir":
             opt.setIfUndef("predMinLenSamp",300)
-            opt.setIfUndef("scoreTaxidsExcludeTrees",[cellTaxid])
+            opt.setIfUndef("scoreTaxidsExcludeTrees",[])
+            opt.scoreTaxidsExcludeTrees += [cellTaxid]
         else:
             raise ValueError("Unknown --pred-mode value: %s" % (opt.predMode,))
         
@@ -510,9 +534,6 @@ class ImmClassifierApp(App):
                 with open(opt.inpTrainSeqList,"w") as out:
                     for f in ph.glob("*.fna.gz"):
                         out.write("{}\n".format(f))
-            if opt.inpTrainSeqFormat == "generic":
-                if opt.isUndef("inpTrainModelDescr"):
-                    raise ValueError("--inp-train-model-descr must be defined when --inp-train-seq-format is 'generic'")
         if opt.benchNLevTestModelsMin < 1:
             parser.error("--bench-n-lev-test-model-min must be at least 1")
 
@@ -692,7 +713,8 @@ class ImmClassifierApp(App):
             filt = functools.partial(fastaReaderFilterNucDegen,
                     minNonDegenRatio=0.90)
             splitFastaFilesByModel(inSeqs=inpTrainSeqFiles,
-                    modelsMeta=loadTrainModelsDescr(opt.inpTrainModelDescr),
+                    modelsMeta=loadTrainModelsDescr(opt.inpTrainModelDescr) \
+                            if opt.inpTrainModelDescr else None,
                     outStore=seqDb,
                     taxaTree=taxaTree,
                     checkTaxa=True,
@@ -1218,6 +1240,7 @@ class ImmClassifierApp(App):
         jobs = []
         for immD in immDb:
             jobsI = copy(jobsD)
+            skipImmD = False
             if immD[1] is not None:
                 optI = copy(opt)
                 optI.mode = "extract"
@@ -1240,8 +1263,11 @@ class ImmClassifierApp(App):
                 immIds = ImmStoreWithTaxids(immD[0]).dictMetaData()
                 assert len(immIds) > 0,"No IMMs found in IMM DB - probably training did not run yet"
             else:
-                immIds = ImmStoreWithTaxids(immD[0]).dictMetaData()
-                assert len(immIds) > 0,"No IMMs found in IMM DB - probably training did not run yet"
+                immDPath = immD[0]
+                immIds = ImmStoreWithTaxids(immDPath).dictMetaData()
+                assert len(immIds) > 0,\
+                        "No IMMs found in IMM DB {} - probably training did not run yet".\
+                        format(immDPath)
                 #we only aply taxid filters to "reference" immDbs, under 
                 #an assumption that archived immDbs are supplied by the user
                 #and contain only what needs to be used
@@ -1255,33 +1281,37 @@ class ImmClassifierApp(App):
                     immIds = dict(( (id,meta) for (id,meta) in immIds.items() \
                             if not taxaTree.getNode(meta["taxid"]).isUnderAny(subTreesExcl) )) 
                     if len(immIds) <= 0:
-                        print "Warning: No IMMs left in IMM DB after applying exclusion filters"
+                        print "Warning: No IMMs left in IMM DB {} after applying exclusion filters".format(immDPath)
+                        skipImmD = True
 
+            if not skipImmD:
+                kwI = kw.copy()
+                kwI["depend"] = jobsI
             
-            kwI = kw.copy()
-            kwI["depend"] = jobsI
-        
-            optI = copy(opt)
-            optI.mode = "score"
-            optI.immDb = immD[0]
-            #Until we change ImmApp, we have to run each in a separate dir
-            #because it uses a fixed file name for immIds file that it generates.
-            optI.cwd = self._immDbNameToScoreDirName(optI.immDb,opt.scoreWorkDir)
-            optI.outDir = optI.cwd
-            #TODO: have a separate set of the options below for each immDb,
-            #until then, we have to zap them and cause ImmApp to use all
-            #available imms in each collection.
-            optI.immIdToSeqIds = None
-            optI.immIds = pjoin(optI.outDir,"imm-ids.pkl")
-            #define idScore == idImm:
-            dumpObj([(immId,immId) for immId in immIds],optI.immIds)
-            optI.outScoreComb = pjoin(optI.outDir,"combined"+ImmApp.scoreSfx)
-            outSubScores.append(optI.outScoreComb)
-            #define idScore == idImm:
-            idScoreMeta.update(immIds)
-            app = ImmApp(opt=optI)
-            jobsI = app.run(**kwI)
-            jobs += jobsI
+                optI = copy(opt)
+                optI.mode = "score"
+                optI.immDb = immD[0]
+                #Until we change ImmApp, we have to run each in a separate dir
+                #because it uses a fixed file name for immIds file that it generates.
+                optI.cwd = self._immDbNameToScoreDirName(optI.immDb,opt.scoreWorkDir)
+                optI.outDir = optI.cwd
+                #TODO: have a separate set of the options below for each immDb,
+                #until then, we have to zap them and cause ImmApp to use all
+                #available imms in each collection.
+                optI.immIdToSeqIds = None
+                optI.immIds = pjoin(optI.outDir,"imm-ids.pkl")
+                #define idScore == idImm:
+                dumpObj([(immId,immId) for immId in immIds],optI.immIds)
+                optI.outScoreComb = pjoin(optI.outDir,"combined"+ImmApp.scoreSfx)
+                outSubScores.append(optI.outScoreComb)
+                #define idScore == idImm:
+                idScoreMeta.update(immIds)
+                app = ImmApp(opt=optI)
+                jobsI = app.run(**kwI)
+                jobs += jobsI
+
+        assert outSubScores, """After filtering, final list of models \
+                to screen against is empty - cannot proceed"""
         
         makeFilePath(opt.outIdScoreMeta)
         dumpObj(idScoreMeta,opt.outIdScoreMeta)

@@ -115,7 +115,7 @@ class App:
             # submitter of other jobs.
             # TODO: use this also to set stdout and stderr for the final job only?
             ret = self.submitTerminatorJob(depend=ret)
-            if opt.web:
+            if opt.web and opt.batchBackend == "qsub":
                 print "Your job %s" % (ret[0].jobId,)
         return ret
 
@@ -141,7 +141,7 @@ class App:
                         os.remove(opt.workflowFile)
                     #TODO: parse Makeflow options first and take log name from
                     #where if present
-                    makeflowLog = pjoin(opt.workflowFile,".makeflowlog")
+                    makeflowLog = opt.workflowFile+".makeflowlog"
                     if os.path.isfile(makeflowLog):
                         os.remove(makeflowLog)
                     workflowFileWork = opt.workflowFile+"."+random_string()
@@ -162,13 +162,25 @@ class App:
                             )
                         mkf_args_new = " ".join( [ '"{}"'.format(arg) for arg \
                                 in unparse_makeflow_args(mkf_opt,mkf_other) ] )
+                        #In Web mode, divert Makeflow output to files - it is
+                        #bulky and useless for the Web user, plus, Makeflow prints
+                        #"nothing else to do" to stderr on success and spooks Galaxy.
+                        if opt.web:
+                            mkf_stdout = None
+                            mkf_stderr = None
+                        else:
+                            mkf_stdout = "-"
+                            mkf_stderr = "-"
                         writeMakeflowRunScript(
                                 makeflow = options.makeflow.exe,
                                 workflow = opt.workflowFile,
                                 env = options.envRc,
                                 vars = mkf_vars,
                                 args = mkf_args_new,
-                                out = opt.workflowScript
+                                out = opt.workflowScript,
+                                stdout = mkf_stdout,
+                                stderr = mkf_stderr,
+                                quiet = True if opt.web else False
                                 )
                         make_executable(opt.workflowScript)
                     os.rename(workflowFileWork,opt.workflowFile)
@@ -359,8 +371,9 @@ class App:
                     "--lrm-user-options will be used instead"),
             
             make_option(None, "--web",
-            action="store_true",
-            default=False,
+            action="store",
+            type="int",
+            default=0,
             dest="web",
             help="Is this executed from the Web API"),
             

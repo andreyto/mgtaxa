@@ -367,12 +367,19 @@ class ImmStoreWithTaxids(ImmStore):
         return list(set(meta["taxid"] for (id,meta) in self.iterMetaData(iterPaths=iterPaths) if meta["is_leaf"]))
 
 def loadTrainModelsDescr(inp):
+    """Return an iterator to model description records from JSON file.
+    @param inp file name; the format example is
+    test_data/fasta/generic.mod.train.json
+    and the description is in
+    doc/running.md
+    @return iterator of records
+    """
     with closing(openCompressed(inp,"r")) as inp:
         #json.load() loads entire file in memory
         #anyway, but we return it like an iterator
-        #in case we switch to parsing stream of jsob records
+        #in case we switch to parsing stream of json records
         #in the future
-        for rec in json.load(inp):
+        for rec in json.load(inp)["mgt_mod_descr"]:
             yield rec
 
 def estimateNBatchesForScoring(
@@ -427,7 +434,7 @@ class ImmApp(App):
     def parseCmdLinePost(klass,options,args,parser):
         opt = options
         opt.setIfUndef("immDb","imm")
-        opt.setIfUndef("nImmBatches",10)
+        opt.setIfUndef("nImmBatches",-1)
         opt.setIfUndef("trainMaxLenSampModel",10**9/2) #1G with rev-compl
         if not opt.isUndef("immIdToSeqIds"):
             opt.setIfUndef("immIds",opt.immIdToSeqIds)

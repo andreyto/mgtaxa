@@ -104,7 +104,7 @@ class MakeflowWriter(object):
             self.out = None
 
 
-def writeMakeflowRunScript(makeflow,workflow,env,vars,args,out,mode="w"):
+def writeMakeflowRunScript(makeflow,workflow,env,vars,args,out,mode="w",stdout="-",stderr="-",quiet=False):
     """Write a shell script that will run this makeflow.
     @param makeflow Makeflow executable path
     @param workflow workflow file path
@@ -112,7 +112,12 @@ def writeMakeflowRunScript(makeflow,workflow,env,vars,args,out,mode="w"):
     @param vars list of environment variable assignments "VAR=VAL"
     @param args string with all arguments to makeflow executable
     @param out file path or file object for writing the script into
-    @param mode to open out if out if a file path"""
+    @param mode to open out if out if a file path
+    @param stdout redirect Makeflow standard output to that file;
+    '-' (default) means no redirection; None means $workflow.out.log
+    @param stderr redirect Makeflow standard error to that file;
+    '-' (default) means no redirection; None means $workflow.err.log
+    @param quiet minimize chatter from script [False]"""
     out_close = False
     if is_string(out):
         out = open(out,mode)
@@ -122,11 +127,39 @@ def writeMakeflowRunScript(makeflow,workflow,env,vars,args,out,mode="w"):
     w(". {}\n".format(env))
     for var in vars:
         w("export {}\n".format(var))
-    w("{makeflow} {args} {workflow}".\
+    if stdout is None:
+        stdout = workflow+".out.log"
+    if stderr is None:
+        stderr = workflow+".err.log"
+    redir = ""
+    redir_msg = ""
+    if stdout != "-":
+        redir += " 1> '{}'".format(stdout)
+        if not quiet:
+            redir_msg += "echo Makeflow standard output is redirected to '{}'\n".format(stdout)
+    if stderr != "-":
+        redir += " 2> '{}'".format(stderr)
+        if not quiet:
+            redir_msg += "echo Makeflow standard error is redirected to '{}'\n".format(stderr)
+    if redir_msg:
+        w(redir_msg)
+    w('echo Starting execution of Makeflow "{}"\n'.format(workflow if not quiet else ""))
+    w('"{makeflow}" {args} "{workflow}"{redir}\n'.\
             format(
                 makeflow = makeflow,
                 args = args,
-                workflow = workflow))
+                workflow = workflow,
+                redir=redir))
+    #use of subshell below is to reset the $? value after echo without
+    #calling exit from the main shell
+    w("""status=$?
+    if [ $status -ne 0 ]; then
+        echo "Makeflow execution failed" >&2
+    else
+        echo "Makeflow execution finished"
+    fi
+    (exit $status)
+    """)
     if out_close:
         out.close()
 

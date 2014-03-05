@@ -10,13 +10,20 @@ echo_files() {
 
 cd ~
 
-excludes="--exclude='packages/x86_64-rhel5/qpid-*/var/' --exclude=packages/x86_64-rhel5/gridway/var/ --exclude=packages/x86_64-rhel5/mgtaxa-galaxy/var/ --exclude=packages/x86_64-rhel5/pgsql/data/ --exclude=packages/x86_64-rhel5/pgsql/var/ --exclude=packages/x86_64-rhel5/mgtaxa-galaxy/database/ --exclude=mgtaxa/run_test/ --exclude=mgtaxa/build/"
+excludes="--exclude='packages/var/' --exclude='packages/x86_64-*/var/' --exclude='packages/x86_64-*/qpid-*/var/' --exclude=packages/x86_64-*/gridway/var/ --exclude=packages/x86_64-*/mgtaxa-galaxy/var/ --exclude=packages/x86_64-*/pgsql/data/ --exclude=packages/x86_64-*/pgsql/var/ --exclude=packages/x86_64-*/mgtaxa-galaxy/database/ --exclude=mgtaxa/test_run/ --exclude=mgtaxa/build/"
 
-work_subdirs="gridway-proxy-mad mgtaxa mgtdata packages"
+work_subdirs="gridway-proxy-mad mgtaxa mgtdata packages distros/gridway"
 
 echo_files $work_subdirs > rsync.flist.tmp
 
+##TODO: Need to use --delete, otherwise old files accumulate at the
+## destination and break packages (e.g. Galaxy database migration)
+## and style sheets. To preserve local data directories, use rsync
+## `protect` filter: 
+## http://superuser.com/questions/161766/how-to-exclude-rsync-excludes-from-delete
+
 rsync -arv --files-from=rsync.flist.tmp $excludes mgtaxadev@mgtaxa-dev:work/ ~/work/
+
 
 rsync -arv --files-from=rsync.flist.tmp $excludes ~/work/ mgtaxa@mgtaxa:work/
 

@@ -67,7 +67,6 @@ class ArchiveGpgApp(App):
     def initWork(self,**kw):
         opt = self.opt
         self.gpgZipExe = "gpg-zip"
-        print "DEBUG: ArchiveGpgApp --mode %s" % (opt.mode,)
     
     def doWork(self,**kw):
         opt = self.opt

@@ -29,6 +29,14 @@ make -f ../Makefile install
 
 popd
 
+if [[ "$DEPLOY_ROLES" == "frontend" ]]; then
+    
+    # Rebuild gridway because its 'var' dir is not relocatable
+    pushd ~/work/distros && rsync -av $MGT_SRC/deps/ ./ && \
+        pushd gridway && ((../install_gridway && ../install_gridway_py_drmaa); popd)
+fi
+
+
 pushd $GPM_SRC
 
 rm -rf build
@@ -52,10 +60,12 @@ frontend_gridway_dir=/home/mgtaxa/work/packages/x86_64-rhel6/gridway
                               
 backend_host=mgtaxa-app
 backend_username=mgtaxa
-backend_data_dir_prefix=/usr/local/projects/MGTAXA/scratch/mgtaxa/backend
+backend_data_dir_prefix=/usr/local/scratch/METAGENOMICS/mgtaxa/web
 
-code_location_backend = /local/projects5/MGTAXA/mgtaxa/packages/x86_64-rhel6/mgtaxa-galaxy
+code_location_backend = /local/MGTAXA/mgtaxa/packages/x86_64-rhel6/mgtaxa-galaxy
 code_location_frontend = /opt/software/mgtaxa/work/packages/x86_64-rhel6/mgtaxa-galaxy
+
+backend_var_dir=/home/mgtaxa/work/packages/var
 
 End-of-message
 
@@ -70,6 +80,7 @@ GPM_EXTRA_CONF_FILE=$GPM_EXTRA_CONF_FILE python setup.py build install --prefix=
 popd
 
 if [[ "$DEPLOY_ROLES" == "frontend" ]]; then
+    
     # Apache user will need to serve static content from Galaxy directory
     make_readable $GALAXY_LOCATION/static
 fi
