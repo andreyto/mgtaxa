@@ -229,7 +229,7 @@ class ImmClassifierApp(App):
             action="store", 
             type="int",
             dest="predMinLenSamp",
-            help="Min length of samples to consider for prediction. 300 is default "+\
+            help="Min length of samples to consider for prediction. 200 is default "+\
                     "for bacterial classification; 5000 is default for predicting "+\
                     "hosts for viral contigs."),
             
@@ -513,9 +513,9 @@ class ImmClassifierApp(App):
             opt.setIfUndef("scoreTaxidsExcludeTrees",[])
             opt.scoreTaxidsExcludeTrees += [eukTaxid,unclassRootTaxid]
         elif opt.predMode == "taxa":
-            opt.setIfUndef("predMinLenSamp",300)
+            opt.setIfUndef("predMinLenSamp",200)
         elif opt.predMode == "taxa-vir":
-            opt.setIfUndef("predMinLenSamp",300)
+            opt.setIfUndef("predMinLenSamp",200)
             opt.setIfUndef("scoreTaxidsExcludeTrees",[])
             opt.scoreTaxidsExcludeTrees += [cellTaxid]
         else:
