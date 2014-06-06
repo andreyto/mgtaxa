@@ -62,7 +62,9 @@ backend_host=mgtaxa-app
 backend_username=mgtaxa
 backend_data_dir_prefix=/usr/local/scratch/METAGENOMICS/mgtaxa/web
 
-code_location_backend = /local/MGTAXA/mgtaxa/packages/x86_64-rhel6/mgtaxa-galaxy
+code_location_backend = /home/mgtaxa/work/packages/x86_64-rhel6/mgtaxa-galaxy
+# this should look as it comes resolved by Galaxy internal code, so symlinks might
+# be converted to realpath
 code_location_frontend = /opt/software/mgtaxa/work/packages/x86_64-rhel6/mgtaxa-galaxy
 
 backend_var_dir=/home/mgtaxa/work/packages/var
