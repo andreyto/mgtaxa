@@ -32,7 +32,7 @@ validTaxid = 1
 ncbiTaxidMax = 200000000
 
 ## Our own taxonomy IDs are generated starting from this
-mgtTaxidFirst = ncbiTaxidMax + 100
+mgtTaxidFirst = ncbiTaxidMax + 1000000
 
 ## Mnemonic constants for actual taxonomy IDs of various specific nodes 
 ## in NCBI taxonomic tree. These should match the tree dump and be constant.
