@@ -90,7 +90,7 @@ class ApisAnnotReader(object):
     def sortInPepOrder(apisAnnotInp,apisAnnotOut,inpPep=None,dropTreeAttrib=True):
         import json
         assert inpPep is not None, "Currently inpPep must be always provided"
-        inpPep = MappedPepFastaReader(inpPep)
+        inpPep = FastaReader(inpPep)
         idPepOrd = dict( ( (rec.getId(),i) for (i,rec) in enumerate(inpPep.records())) )
         inpPep.close()
         #we really only need the reader attribute from apisAnnotInp

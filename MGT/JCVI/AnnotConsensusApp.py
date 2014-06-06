@@ -93,12 +93,22 @@ class AnnotTaxaClassifier(object):
                 return annNodes[0]
             else:
                 print "WARNING: name='%s' not found uniquely in the tree, will try exact name match up the lineage for '%s'." % (name,lin_names)
-        if lin_names is not None: 
+        if lin_names is not None:
+            mult_matches = []
             for lin_name in reversed(lin_names):
                 annNodes = self.taxaTree.searchName(lin_name,fuzzy=False)
                 self.nameStats[len(annNodes)]+=1
                 if len(annNodes) == 1:
                     return annNodes[0]
+                elif len(annNodes) > 1:
+                    mult_matches.append((lin_name,annNodes))
+            if mult_matches:
+                lin_name,matches = mult_matches[0]
+                lcsNode = matches[0].lcsNodeMany(matches[1:])
+                # That takes care of Actinobacteria (class and phylum)
+                print """WARNING: for lineage {} found only multiple matches. \
+                        Selected LCS {} for nodes named  {}""".format(lin_names,lcsNode,lin_name)
+                return lcsNode
         
         print "WARNING: nothing from lineage='%s' was uniquely found in the tree, skipping." % (lin_names,)
         return None
@@ -706,6 +716,8 @@ def classify(apisAnnot=None,
             rmf(mkfFileName)
             gffWriter.graphics(gdFormat="pdf",mkfFileName=mkfFileName)
             gffWriter.graphics(gdFormat="png",mkfFileName=mkfFileName)
+        targ = pjoin(outDir,"ok")
+        strToFile("OK",targ)
 
 
 def sort_apis(apisAnnotInp,apisAnnotOut,inpPep=None,dropTreeAttrib=True):
