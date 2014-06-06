@@ -232,10 +232,37 @@ class NodeStoragePickle:
 ##e.g. http://pypi.python.org/pypi/ijson/. They are supposed to be much faster,
 ##and the underlying C lib is better supported than jsonlib
 
+## This is currently our default JSON implementation
 class NodeStorageJsonPy:
     """
     Implements NodeStorage interface through json module serialization.
-    This pickles nodes as list"""
+    This nodes nodes as list.
+    Input format example:
+        {"nodes":
+            [
+                {"name":"root","divid":8,"rank":"root","id":1,"idpar":0},
+                {"name":"cellular organisms","divid":8,"rank":"no_rank","id":131567,"idpar":1},
+                {"name":"Bacteria","divid":0,"rank":"superkingdom","id":2,"idpar":131567}
+            ]
+        }
+    Input format description:
+        name  - main taxonomic name, string
+        divid - NCBI division ID, not currently used, so can be set to an arbitrary integer
+        rank  - name of the taxonomic rank. The code that slices the tree by main ranks
+          will use values defined by linnMainRanksWithRoot variable in MGT.TaxaConst.py. 
+          Note that Bacteria, Archaea and Eukaryotes are called "superkingdom" as per NCBI;
+          "kingdom" is only present in Eukaryotes; when we load NCBI tree dump, we also mark
+          Viruses as "superkingdom". Possible special values for nodes without defined ranks
+          are defined by variables noRank and unclassRank in MGT.TaxaConst.py. Any other values
+          can be present (e.g. subspecies) but will not be considered by the code in rank
+          slicing and aggregation.
+        id    - taxonomic ID, must be positive integer. If your tree is mixing nodes from NCBI
+          and your own nodes, then the recommended approach is to define your own IDs sequentially 
+          within the (open) range (ncbiTaxidMax,mgtTaxidFirst) from MGT.TaxaConst.py.
+        idpar - ID of the parent node. This field links nodes into a tree.
+
+        "root" node is special: id should be always 1; idpar always 0; rank always "root"
+    """
 
     def __init__(self,fileName):
         self.fileName = fileName
