@@ -77,6 +77,8 @@ export PYTHONPATH=${PYDIST}:${PYMACH}:${PYCOMMON}:${PYTHONPATH}
 
 fi
 
+export PYTHONPATH=$PYTHONPATH:/usr/local/lib/python${PY_VER}/site-packages
+
 export PATH="$INST/x86_32/texlive/2007/bin/i386-linux:$INSTMACH/bin:$INST/bin:$PATH"
 
 export PATH="$JAVA_HOME/bin:$PATH"
