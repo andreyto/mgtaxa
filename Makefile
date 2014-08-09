@@ -236,6 +236,7 @@ install: all
 clean:		
 	$(RMRF) $(PROGRAMS) $(PROGRAMS_TEST) $(LIBRARIES) $(BUILD_EXT_DIR) *.o *$(SO_EXT) *.pyc *.pyo $(DEP_DIR)/*.P
 	$(RMRF) $(DOC_DIR)/html $(DOC_DIR)/tex
+	$(RMRF) CMakeCache.txt
 
 
 mgtaxa.shrc: $(PROJ_DIR)/etc/mgtaxa.shrc.in
