@@ -40,6 +40,13 @@ libdir := $(exec_prefix)/lib
 sysconfdir := $(prefix)/etc
 docdir := $(prefix)/doc
 
+## extension for shared libs
+ifneq (,$(filter %cygwin,$(MACH)))
+	SO_EXT := ".dll"
+else
+	SO_EXT := ".so"
+endif
+
 CC := $(shell which gcc)
 CFLAGS := -O3 #-O0
 CXX := $(shell which g++)
@@ -68,8 +75,8 @@ PROGRAMS       := fastaFilter
 PROGRAMS_TEST  := test_kmers
 LIBRARIES      := libMGT.a
 #This should list only extensions that are to be installed, and omit testing ones
-PYEXT          := MGTX/sample_boost.so MGTX/kmersx.so
-PYEXT_TEST     := test_sample_boostx.so test_numpy_boostx.so
+PYEXT          := MGTX/sample_boost$(SO_EXT) MGTX/kmersx$(SO_EXT)
+PYEXT_TEST     := test_sample_boostx$(SO_EXT) test_numpy_boostx$(SO_EXT)
 
 EXTRA_CXXFLAGS = -I$(PROJ_DIR)/include -I$(BOOST_INC_DIR) -I$(PY_INC_DIR) -I$(NUMPY_INC_DIR)
 
@@ -227,7 +234,7 @@ install: all
 
 .PHONY: clean
 clean:		
-	$(RMRF) $(PROGRAMS) $(PROGRAMS_TEST) $(LIBRARIES) $(BUILD_EXT_DIR) *.o *.so *.pyc *.pyo $(DEP_DIR)/*.P
+	$(RMRF) $(PROGRAMS) $(PROGRAMS_TEST) $(LIBRARIES) $(BUILD_EXT_DIR) *.o *$(SO_EXT) *.pyc *.pyo $(DEP_DIR)/*.P
 	$(RMRF) $(DOC_DIR)/html $(DOC_DIR)/tex
 
 
@@ -321,16 +328,16 @@ fastaFilter: fastaFilter.o
 test_kmers: test_kmers.o libMGT.a
 	$(LINK_EXE)
 
-MGTX/sample_boost.so: sample_boost.o
+MGTX/sample_boost$(SO_EXT): sample_boost.o
 	$(LINK_EXT)
 
-MGTX/kmersx.so: kmersx.o libMGT.a
+MGTX/kmersx$(SO_EXT): kmersx.o libMGT.a
 	$(LINK_EXT) -lz
 
-test_sample_boostx.so: test_sample_boostx.o
+test_sample_boostx$(SO_EXT): test_sample_boostx.o
 	$(LINK_EXT)
 
-test_numpy_boostx.so: test_numpy_boostx.o
+test_numpy_boostx$(SO_EXT): test_numpy_boostx.o
 	$(LINK_EXT)
 
 
