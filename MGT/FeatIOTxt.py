@@ -185,7 +185,13 @@ class SvmDenseFeatureWriterCsv:
 
     def write(self,label,feature,id=None):
         if self.formatStr is None:
-            self.formatStr = ",%g"*len(feature)+'\n'
+            if self.sparseInput:
+                nFeat = self.nFeat
+            else:
+                nFeat = len(feature)
+                if self.nFeat is not None:
+                    assert nFeat == self.nFeat
+            self.formatStr = ",%g"*nFeat+'\n'
         if id is None:
             id = label
         self.out.write("%s,%d" % (id,label))
