@@ -25,7 +25,7 @@ def getProgOptions(args):
         make_option("-l", "--min-len",
         action="store", type="int",dest="minSampLen",default=0),
         make_option("-f", "--inp-format",
-        action="store", type="choice",choices=("gos","ncbi","ca"),dest="inFormat",default="gos"),
+        action="store", type="choice",choices=("gos","ncbi","ca","fasta"),dest="inFormat",default="fasta"),
         make_option("-z", "--out-format",
         action="store", type="choice",choices=("svm","fasta"),dest="outFormat",default="fasta"),
         make_option("-e", "--degen-len",
@@ -56,6 +56,8 @@ def fastaToSvm(inFileFasta,outName,opt):
         meta, allLen = gosToSvm(inpSeq,svmWriter,symCompr,opt)
     elif opt.inFormat == "ca":
         meta, allLen = caToSvm(inpSeq,svmWriter,symCompr,opt)
+    else:
+        meta, allLen = genericFastaToSvm(inpSeq,svmWriter,symCompr,opt)
     inpSeq.close()
     svmWriter.close()
     print "Saved %i samples out of %i total from file %s" % (len(meta.samp),len(allLen),inFileFasta)
@@ -88,7 +90,7 @@ def gosToSvm(inpSeq,svmWriter,symCompr,opt):
             fldValues.append(metaRec)
             if opt.prefixId:
                 id_read = "%s_%s" % (library_id,id_read)
-            svmWriter.write(None,seq,id_read)
+            svmWriter.write(0,seq,id_read)
         allLen.append(lenSeq)
         if iRec % 1000 == 0:
             print "Processed %i records" % iRec
@@ -98,18 +100,18 @@ def gosToSvm(inpSeq,svmWriter,symCompr,opt):
     meta = Struct(samp=sampMeta)
     return meta,allLen
 
-def caToSvm(inpSeq,svmWriter,symCompr,opt):
-    fldDtype=[("id","i8"),("len_samp","i4")]
+def genericFastaToSvm(inpSeq,svmWriter,symCompr,opt):
+    fldDtype=[("id",idDtype),("len_samp","i4")]
     fldValues = []
     allLen = []
     iRec = 0
     for rec in inpSeq.records():
         hdr = rec.header()
-        id = int(hdr.split(">scf")[1])
+        id = rec.getId()
         seq = symCompr(rec.sequence())
         lenSeq = len(seq)
         if lenSeq >= opt.minSampLen:
-            svmWriter.write(None,seq,id)
+            svmWriter.write(0,seq,id)
             fldValues.append((id,
                         lenSeq))
         allLen.append(lenSeq)
@@ -120,6 +122,8 @@ def caToSvm(inpSeq,svmWriter,symCompr,opt):
     allLen = numpy.asarray(allLen,dtype='i4')
     meta = Struct(samp=sampMeta)
     return meta,allLen
+
+caToSvm = genericFastaToSvm
 
 if __name__ == "__main__":
     opt,args = getProgOptions(args=None)

@@ -18,11 +18,19 @@ from MGT.Kmers import NORM_POLICY
 
 __all__ = ["SeqFeaturesApp","NORM_POLICY"]
 
+try:
+    WH_RC_FORWARD
+except NameError:
+    WH_RC_FORWARD = None
+
+try:
+    WH_RC_MERGE
+except NameError:
+    WH_RC_MERGE = None
 
 def otherVsRest(data,otherLabel):
     data['label'][:] = numpy.select([data['label'] == otherLabel],[1],default=2)
     return data
-
 
 
 class SeqFeaturesApp(App):
@@ -34,16 +42,17 @@ class SeqFeaturesApp(App):
             make_option("-m", "--mode",
             action="store", type="choice",choices=("default",),
             dest="mode",default="default"),
-            make_option("-i", "--in-seq",
-            action="store", type="string",dest="inSeq"),
+            optParseMakeOption_Path("-i", "--in-seq",dest="inSeq",help="Input file"),
             make_option(None, "--in-seq-format",
             action="store", type="choice",choices=featIOFormats,
             dest="inSeqFormat",default=defFeatIOFormat),
-            make_option("-o", "--out-feat",
-            action="store", type="string",dest="outFeat"),
+            optParseMakeOption_Path("-o", "--out-feat",dest="outFeat",help="Output file"),
             make_option(None, "--out-feat-format",
             action="store", type="choice",choices=featIOFormats,
             dest="outFeatFormat",default=defFeatIOFormat),
+            make_option(None, "--out-feat-repr",
+            action="store", type="choice",choices=("sparse","dense"),
+            dest="outFeatRepr",default="sparse"),
             make_option("-s", "--sigma",
             action="store", type="float",dest="sigma",default=200),
             make_option("-k", "--kmer-len",
@@ -53,12 +62,12 @@ class SeqFeaturesApp(App):
             make_option("-l", "--kmer-min-dist",
             action="store", type="int",dest="minDist",default=-1),
             make_option("-b", "--balance",
-            action="store", type="int",dest="balance",default=-1),
+            action="store", type="int",dest="balance",default=-2),
             make_option("-u", "--other-group",
             action="store", type="int",dest="otherGroupLab",default=0),
             make_option("-f", "--feat-type",
             action="store", type="choice",choices=("wdh","kmer","kmerlad"),
-            dest="featType",default="wdh"),
+            dest="featType",default="kmer"),
             make_option("-r", "--rev-compl",
             action="store", type="choice",choices=("merge","forward","addcol","addrow","reverse"),
             dest="revCompl",default="merge"),
@@ -101,7 +110,7 @@ class SeqFeaturesApp(App):
         print "Loaded " + showSvmDataCounts(data)
         if opt.balance >= -1:
             data = balance(data,opt.balance,labTargets={opt.otherGroupLab:-1})
-        print "Balanced to " + showSvmDataCounts(data)
+            print "Balanced to " + showSvmDataCounts(data)
         ##TMP:
         ##data = splitStringFeat(data,750)
         if opt.alphabet == 'dna':
@@ -159,7 +168,10 @@ class SeqFeaturesApp(App):
                         kmerLen=opt.kmerLen,
                         rcPolicy=rcPolicyKmer,
                         normPolicy=opt.norm)
-            svmWriter = SvmSparseFeatureWriter(opt.outFeat,format=opt.outFeatFormat)
+            if opt.outFeatRepr == "sparse":
+                svmWriter = SvmSparseFeatureWriter(opt.outFeat,format=opt.outFeatFormat)
+            else:
+                svmWriter = SvmDenseFeatureWriterCsv(opt.outFeat,nFeat=kmerCnt.getNumIds(),sparseInput=True)
             for samp in data:
                 feat = kmerCnt.kmerFrequencies(samp['feature'])
                 svmWriter.write(int(samp['label']),feat,samp['id'])

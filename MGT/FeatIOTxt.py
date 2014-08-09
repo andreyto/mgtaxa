@@ -167,8 +167,10 @@ class SvmDenseFeatureWriterTxt:
 
 class SvmDenseFeatureWriterCsv:
     
-    def __init__(self,out,writeHeader=True,nFeat=None):
+    def __init__(self,out,writeHeader=True,nFeat=None,sparseInput=False):
         assert not (writeHeader and nFeat is None)
+        assert not (sparseInput and nFeat is None)
+        self.sparseInput = sparseInput
         self.nFeat = nFeat
         if not hasattr(out,'write'):
             out = open(out,'w', buffering=1024*1024)
@@ -187,6 +189,11 @@ class SvmDenseFeatureWriterCsv:
         if id is None:
             id = label
         self.out.write("%s,%d" % (id,label))
+        if self.sparseInput:
+            #sparse ind starts from 1
+            x = n.zeros((self.nFeat,),dtype=feature.dtype["val"])
+            x[(feature['ind']-1,)] = feature['val']
+            feature = x
         self.out.write(self.formatStr % tuple(feature))
         self.nOut += 1
 

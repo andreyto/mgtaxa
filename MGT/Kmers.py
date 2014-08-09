@@ -32,9 +32,10 @@ class KmerSparseFeatures(KmerCounter):
     """Any of the kmerXXX methods may or may not return a reference to internal data,
     so make a copy if a guaranteed independent copy of the result is required."""
 
-    def __init__(self,sampLen,kmerLen,rcPolicy=RC_POLICY.MERGE,normPolicy=None):
+    def __init__(self,sampLen,kmerLen,rcPolicy=RC_POLICY.MERGE,
+            normPolicy=NORM_POLICY.FREQ|NORM_POLICY.NONE_ROW):
         if normPolicy is None:
-            normPolicy = NORM_POLICY.EU_ROW
+            normPolicy=NORM_POLICY.FREQ|NORM_POLICY.NONE_ROW
         KmerCounter.__init__(self,kmerLen,rcPolicy)
         self.normPolicy = normPolicy
         self.max_seqLen = sampLen * 2
