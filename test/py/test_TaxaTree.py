@@ -13,6 +13,9 @@ from MGT.Config import options
 
 from time import time
 
+#apisTreePath = pjoin(options.testDataDir,"taxonomy_apis","phylodb_1.075_taxonomy.json")
+apisTreePath = pjoin(options.testDataDir,"taxonomy_apis","usedTaxa.1.075_no_orphan.json")
+
 def test_merged(tree):
     merged = tree.getMerged()
     id_merged = merged.keys()[0]
@@ -27,30 +30,31 @@ print "Creating the tree from NCBI dump file"
 
 start = time()
 
-if False:
-    def debugOnNodeUpdate(node,name,value):
-        if getattr(node,'id',0) == 144409:
-            print node.id, name, value
+if True:
+    if False:
+        def debugOnNodeUpdate(node,name,value):
+            if getattr(node,'id',0) == 144409:
+                print node.id, name, value
 
-    TaxaTree.setDebugOnUpdate(debugOnNodeUpdate)
-    taxaTree = TaxaTree(storage=store)
-    taxaTree.unsetDebugOnUpdate()
+        TaxaTree.setDebugOnUpdate(debugOnNodeUpdate)
+        taxaTree = TaxaTree(storage=store)
+        taxaTree.unsetDebugOnUpdate()
 
-    print "DEBUG: Done in %s sec" % (time() - start)
+        print "DEBUG: Done in %s sec" % (time() - start)
 
 #for node in taxaTree.iterDepthTop():
 #    print node
 
-    taxaTree.deleteNodesIf(lambda n: n.rank == "species")
-    taxaTree.reindex()
-    taxaTree.setIndex()
+        taxaTree.deleteNodesIf(lambda n: n.rank == "species")
+        taxaTree.reindex()
+        taxaTree.setIndex()
 
-else:
-    taxaTree = TaxaTree(storage=store)
-    
-    print "DEBUG: Done in %s sec" % (time() - start)
+    else:
+        taxaTree = TaxaTree(storage=store)
+        
+        print "DEBUG: Done in %s sec" % (time() - start)
 
-test_merged(taxaTree)
+    test_merged(taxaTree)
 
 
 #
@@ -64,6 +68,27 @@ test_merged(taxaTree)
 #   labeler=lambda n: "%s_%s_%s" % (n.name,n.rank,n.id))
         
 #storeOut.save(taxaTree)
+
+
+######### JSON exported from APIS #########
+
+storeJson = NodeStorageJson(fileName=apisTreePath)
+
+
+print "DEBUG: Creating the tree from JSON APIS storage"
+
+start = time()
+
+taxaTreeJson = TaxaTree(storage=storeJson)
+
+print "DEBUG: Done in %s sec" % (time() - start)
+
+taxaTreeJson.reindex()
+
+rankCount = defdict(int)
+for node in taxaTreeJson.iterDepthTop():
+    rankCount[node.rank] += 1
+print "Rank counts:\n", sorted(dict(rankCount).items())
 
 
 ######### JSON #########

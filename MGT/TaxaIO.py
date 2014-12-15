@@ -256,9 +256,15 @@ class NodeStorageJsonPy:
           are defined by variables noRank and unclassRank in MGT.TaxaConst.py. Any other values
           can be present (e.g. subspecies) but will not be considered by the code in rank
           slicing and aggregation.
-        id    - taxonomic ID, must be positive integer. If your tree is mixing nodes from NCBI
+        id    - taxonomic ID, must be positive integer (or see below). If your tree is mixing 
+          nodes from NCBI
           and your own nodes, then the recommended approach is to define your own IDs sequentially 
           within the (open) range (ncbiTaxidMax,mgtTaxidFirst) from MGT.TaxaConst.py.
+          Alternatively, if the loading procedure here sees any negative IDs, it will assume
+          that those and only those were used as IDs for non-NCBI nodes. It will remap
+          them into positive IDs from the range above, and provide an inverted mapping
+          as part of the return value (@see load). The negative ID support was
+          introduced to support APIS pipeline taxonomy.
         idpar - ID of the parent node. This field links nodes into a tree.
 
         "root" node is special: id should be always 1; idpar always 0; rank always "root"
@@ -291,7 +297,10 @@ class NodeStorageJsonPy:
         print "JsonDict Loaded the nodes"
         inp.close()
         data["nodes"] = dict( ((node.id,node) for node in data["nodes"]) )
-        data["merged"] = dict( (item for item in data["merged"]) )
+        if "merged" in data:
+            data["merged"] = dict( (item for item in data["merged"]) )
+        else:
+            data["merged"] = {}
         print "Made dict"
         return data
 

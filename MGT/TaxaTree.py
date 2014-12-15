@@ -569,12 +569,22 @@ class TaxaTree(object):
         self.rootNode = None
         self.merged = data.get("merged",{})
         for v in nodes.itervalues():
+            assert v.id != nullTaxid
             #We use None for parent link of the root node
             try:
                 par = nodes[v.idpar]
             except KeyError:
-                par = None
-                self.rootNode = v
+                if v.idpar == nullTaxid:
+                    if self.rootNode:
+                        raise ValueError("""Second node without a parent detected: {}. \
+                                Existing parentless node is: {}. \
+                                Only one such node is allowed (root node).""".\
+                                format(str(v),str(self.rootNode)))
+
+                    par = None
+                    self.rootNode = v
+                else:
+                    raise
             v.setParent(par)
 
         rootNode = self.getRootNode()
@@ -1224,10 +1234,10 @@ class TaxaLevels:
         ##at this point, node.level is either one of 'levels' or 'no_rank'
         ##remove all viral levels above family (there are only two 'orders' currently defined
         ##for viruses, so it does not make much sense to train for them)
-        viralLevels = self.viralLevels
-        for node in taxaTree.iterDepthTop(viralRootTaxid):
-            if node.level not in viralLevels:
-                node.level = noRank
+        #viralLevels = self.viralLevels
+        #for node in taxaTree.iterDepthTop(viralRootTaxid):
+        #    if node.level not in viralLevels:
+        #        node.level = noRank
         levelIds = self.levelIds
         #assign node.linn_level to the lowest linnean level in the lineage,
         #also assign node.idlevel
