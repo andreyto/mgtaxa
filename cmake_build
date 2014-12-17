@@ -13,7 +13,7 @@ if [ -z "$src_dir" ]; then
     exit 1
 fi
 
-rm -f CMakeCache.txt
+#rm -f CMakeCache.txt
 
 cmake \
 -D CMAKE_PREFIX_PATH="$INSTMACH:$INST" \

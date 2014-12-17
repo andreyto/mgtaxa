@@ -19,6 +19,10 @@ export PY_INC_DIR=`$PYTHON -c 'from distutils.sysconfig import *; print get_pyth
 #get_config_var() is "build dependent"
 export PY_LIB_DIR=`$PYTHON -c 'from distutils.sysconfig import *; print get_config_var("LIBPL")'`
 export PY_LIB=`$PYTHON -c 'from distutils.sysconfig import *; print get_config_var("LIBRARY")'`
+## librray name reported incrorrectly on cygwin, fix it here:
+if [[ "$DISTRO" == "cygwin" ]]; then
+    export PY_LIB="libpython${PY_VER}.dll.a"
+fi
 
 fi #$PYTHON
 

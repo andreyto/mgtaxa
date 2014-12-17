@@ -10,20 +10,36 @@ if [ -z "$MGT_PREFIX_ENV_RUN_DONE" ]; then
 
 export INST=$WORK/packages
 
-case $(uname -r) in
-    *el6* )
-    _distr_ver=el6 ;;
-    *el5* )
-    _distr_ver=el5 ;;
+case $(uname -a) in
+    *i686*Cygwin )
+        export DISTRO=cygwin
+        export CPUARCH=x86_32
+        ;;
+    *amd64*Cygwin )
+        export DISTRO=cygwin
+        export CPUARCH=x86_64
+        ;;
 esac
 
-export CPUARCH=$(uname -i)
-if [ -e /etc/redhat-release ]; then
-    _distr=rh
-else
-    _distr=un
+if [ -z "$CPUARCH" ]; then
+
+    case $(uname -r) in
+        *el6* )
+        _distr_ver=el6 ;;
+        *el5* )
+        _distr_ver=el5 ;;
+    esac
+
+    export CPUARCH=$(uname -i)
+    if [ -e /etc/redhat-release ]; then
+        _distr=rh
+    else
+        _distr=un
+    fi
+    export DISTRO="$_distr$_distr_ver"
+
 fi
-export DISTRO="$_distr$_distr_ver"
+
 export MACH="$CPUARCH-$DISTRO"
 
 export INSTMACH=$INST/$MACH
@@ -60,6 +76,8 @@ export PYDIST=$INSTMACH/lib/python${PY_VER}/dist-packages
 export PYTHONPATH=${PYDIST}:${PYMACH}:${PYCOMMON}:${PYTHONPATH}
 
 fi
+
+export PYTHONPATH=$PYTHONPATH:/usr/local/lib/python${PY_VER}/site-packages
 
 export PATH="$INST/x86_32/texlive/2007/bin/i386-linux:$INSTMACH/bin:$INST/bin:$PATH"
 

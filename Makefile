@@ -40,6 +40,13 @@ libdir := $(exec_prefix)/lib
 sysconfdir := $(prefix)/etc
 docdir := $(prefix)/doc
 
+## extension for shared libs
+ifneq (,$(filter %cygwin,$(MACH)))
+	SO_EXT := ".dll"
+else
+	SO_EXT := ".so"
+endif
+
 CC := $(shell which gcc)
 CFLAGS := -O3 #-O0
 CXX := $(shell which g++)
@@ -68,8 +75,8 @@ PROGRAMS       := fastaFilter
 PROGRAMS_TEST  := test_kmers
 LIBRARIES      := libMGT.a
 #This should list only extensions that are to be installed, and omit testing ones
-PYEXT          := MGTX/sample_boost.so MGTX/kmersx.so
-PYEXT_TEST     := test_sample_boostx.so test_numpy_boostx.so
+PYEXT          := MGTX/sample_boost$(SO_EXT) MGTX/kmersx$(SO_EXT)
+PYEXT_TEST     := test_sample_boostx$(SO_EXT) test_numpy_boostx$(SO_EXT)
 
 EXTRA_CXXFLAGS = -I$(PROJ_DIR)/include -I$(BOOST_INC_DIR) -I$(PY_INC_DIR) -I$(NUMPY_INC_DIR)
 
@@ -127,11 +134,12 @@ vpath %.py $(PY_DIRS)
 
 ####################### Support for building Python extensions ############
 
-PY_INC_DIR := $(shell $(PYTHON) -c 'from distutils.sysconfig import *; print get_python_inc()')
+## vars should come from environment
+#PY_INC_DIR := $(shell $(PYTHON) -c 'from distutils.sysconfig import *; print get_python_inc()')
 ## As per distutils documentation,
 ## get_config_var() might not be portable.
-PY_LIB_DIR := $(shell $(PYTHON) -c 'from distutils.sysconfig import *; print get_config_var("LIBPL")')
-PY_LIB := $(shell $(PYTHON) -c 'from distutils.sysconfig import *; print get_config_var("LIBRARY")')
+#PY_LIB_DIR := $(shell $(PYTHON) -c 'from distutils.sysconfig import *; print get_config_var("LIBPL")')
+#PY_LIB := $(shell $(PYTHON) -c 'from distutils.sysconfig import *; print get_config_var("LIBRARY")')
 
 NUMPY_INC_DIR := $(shell $(PYTHON) -c 'import numpy; print numpy.get_include()')
 
@@ -142,36 +150,37 @@ NUMPY_INC_DIR := $(shell $(PYTHON) -c 'import numpy; print numpy.get_include()')
 #Boost.python would require linking with a shared boost library.
 
 ifeq ($(BOOST_OS),YES)
-ifneq (,$(filter x86_32%,$(MACH)))
-BOOST_LIB_DIR := /usr/lib
-else 
-ifneq (,$(filter x86_64%,$(MACH)))
-BOOST_LIB_DIR := /usr/lib64
+	ifneq (,$(filter x86_32%,$(MACH)))
+		BOOST_LIB_DIR := /usr/lib
+	else 
+	ifneq (,$(filter x86_64%,$(MACH)))
+		BOOST_LIB_DIR := /usr/lib64
+	else
+		$(error "Unknown MACH variable value: $(MACH))
+	endif
+	endif
+	BOOST_INC_DIR := /usr/include
+	BOOST_PY_ST_LIB := libboost_python$(BOOST_LIB_SFX_STAT).a
+	BOOST_PY_SH_LIB := boost_python$(BOOST_LIB_SFX_SHARED)
 else
-$(error "Unknown MACH variable value: $(MACH))
-endif
-BOOST_INC_DIR := /usr/include
-BOOST_PY_ST_LIB := libboost_python.a
-BOOST_PY_SH_LIB := boost_python
-endif
-else
-BOOST_INC_DIR := $(INST)/include
-BOOST_LIB_DIR := $(INSTMACH)/lib
-BOOST_PY_ST_LIB := libboost_python.a
-BOOST_PY_SH_LIB := boost_python
+	BOOST_INC_DIR := $(INST)/include
+	BOOST_LIB_DIR := $(INSTMACH)/lib
+	BOOST_PY_ST_LIB := libboost_python.a
+	BOOST_PY_SH_LIB := boost_python
 endif
 
 ifdef ($BOOST_STATIC)
-BOOST_PY_LINK := $(BOOST_LIB_DIR)/$(BOOST_PY_ST_LIB)
+BOOST_PY_LINK := $(BOOST_LIB_DIR)/$(BOOST_PY_ST_LIB) $(PY_LIB_DIR)/$(PY_LIB)
 else
-BOOST_PY_LINK := -L$(BOOST_LIB_DIR) -l$(BOOST_PY_SH_LIB)
+BOOST_PY_LINK := -L$(BOOST_LIB_DIR) -l$(BOOST_PY_SH_LIB) $(PY_LIB_DIR)/$(PY_LIB)
 endif
 
 #Example of debugging the make process.
 #Debugging using 'echo' outside of target definition works fine as 
 #long as we redirect all output to a file.
 #$(shell echo $(PY_INC_DIR) &> make.log)
-#$(info $(PY_INC_DIR))
+$(info $(PY_INC_DIR))
+$(info "BOOST_INC_DIR=$(BOOST_INC_DIR)")
 
 ####################### .PHONY Target Definitions #########################
 
@@ -225,8 +234,9 @@ install: all
 
 .PHONY: clean
 clean:		
-	$(RMRF) $(PROGRAMS) $(PROGRAMS_TEST) $(LIBRARIES) $(BUILD_EXT_DIR) *.o *.so *.pyc *.pyo $(DEP_DIR)/*.P
+	$(RMRF) $(PROGRAMS) $(PROGRAMS_TEST) $(LIBRARIES) $(BUILD_EXT_DIR) *.o *$(SO_EXT) *.pyc *.pyo $(DEP_DIR)/*.P
 	$(RMRF) $(DOC_DIR)/html $(DOC_DIR)/tex
+	$(RMRF) CMakeCache.txt
 
 
 mgtaxa.shrc: $(PROJ_DIR)/etc/mgtaxa.shrc.in
@@ -319,16 +329,16 @@ fastaFilter: fastaFilter.o
 test_kmers: test_kmers.o libMGT.a
 	$(LINK_EXE)
 
-MGTX/sample_boost.so: sample_boost.o
+MGTX/sample_boost$(SO_EXT): sample_boost.o
 	$(LINK_EXT)
 
-MGTX/kmersx.so: kmersx.o libMGT.a
+MGTX/kmersx$(SO_EXT): kmersx.o libMGT.a
 	$(LINK_EXT) -lz
 
-test_sample_boostx.so: test_sample_boostx.o
+test_sample_boostx$(SO_EXT): test_sample_boostx.o
 	$(LINK_EXT)
 
-test_numpy_boostx.so: test_numpy_boostx.o
+test_numpy_boostx$(SO_EXT): test_numpy_boostx.o
 	$(LINK_EXT)
 
 

@@ -21,6 +21,8 @@ except ImportError:
     pass
 #from shogun.PreProc import SortWordString, SortUlongString
 
+
+
 def makeRandomSplits(nSamp,nSplits):
     """Generate a permuted index that splits nSamp samples into nSplits parts.
     @return array(nSamp) where each element is the split's index in the range [0,nSplits)"""

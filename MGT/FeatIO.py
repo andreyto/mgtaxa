@@ -285,8 +285,8 @@ def convSeqsToSparseInPlace(data):
     return convFeatInPlace(data,preProc=loadSeqPreprocParseSparse)
 
 
-def loadSparseSeqsAsDense(inpFile,inpFileId=None):
-    return sparseToDenseSeqs(loadSparseSeqs(inpFile,inpFileId))
+def loadSparseSeqsAsDense(inpFile,inpFileId=None,genMissingId=False,format=defFeatIOFormat):
+    return sparseToDenseSeqs(loadSparseSeqs(inpFile,inpFileId,genMissingId=genMissingId,format=format))
 
 def saveSeqs(data,outFile,outFileId=None,format=defFeatIOFormat,lineLen=None):
     writer = SvmStringFeatureWriter(out=outFile,outId=outFileId,format=format,lineLen=lineLen)
