@@ -635,6 +635,7 @@ def classify(apisAnnot=None,
         inpPep=None,
         inpContigs=None,
         predTaxa=None,
+        taxaTreeJson=None,
         predMinLenSamp=1,
         gffMinLenSamp=5000,
         outDir=None,
@@ -693,7 +694,8 @@ def classify(apisAnnot=None,
                 apisAnnot = ApisAnnotReader(apisAnnot)
         predMinLenSamp = int(predMinLenSamp)
         #taxaTree = None
-        taxaTree = loadTaxaTree()
+        taxaTree = loadTaxaTree(jsonFile=taxaTreeJson)
+        
         taxaLevels = TaxaLevels(taxaTree=taxaTree)
         print "DEBUG: loaded taxonomic tree"
         #gffBtab(inpAnnot,predTaxa,taxaTree,predMinLenSamp,outDir)
