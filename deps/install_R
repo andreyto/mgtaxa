@@ -1,0 +1,51 @@
+#!/bin/sh
+
+set -ex
+
+curdir=`pwd`
+
+#export LDLAGS="-L/home/atovtchi/work/packages/x86_64-rhel6/lib64 -L/usr/local/lib -L/usr/local/packages/gcc-4.7.1/lib64 -L/usr/local/lib -L/usr/local/packages/gcc-4.7.1/lib -L/usr/local/lib64"
+
+## if that is not set, configure will try to figure it out and create non-existing -R options
+export FLIBS="$LDFLAGS"
+
+## this is neede for c-fortran loading of shared libs during run-time
+export CC="gcc -m64"
+export CXX="g++ -m64"
+export F77="gfortran -m64"
+export FC="gfortran -m64"
+
+export LD_RUN_PATH=${INST}/R/lib:${LD_RUN_PAT}
+## Somehow only LD_LIBRARY_PATH assignment make rpy to
+## work after compilation. Without it, we get blast
+## shared lib not found when trying to import rpy module.
+## Also add the R lib build dir so that module compilation works during build
+export LD_LIBRARY_PATH=$curdir/R/lib:${LD_LIBRARY_PATH}:${INST}/R/lib
+
+cd R
+
+make distclean || true
+./configure --prefix=$INST \
+    --enable-R-shlib \
+    --with-lapack \
+    --with-blas && \
+make -j 8 && \
+make install && \
+make check
+
+exit
+
+cd $curdir
+
+# as of 2010/05/11, 'easy_install rpy2' fails on gcc compile,
+# but 'python setup.py install' works.
+cd rpy2
+
+rm -rf build
+python setup.py install --prefix=$INST --exec-prefix=$INST
+
+# that should all pass with python 2.6, but give a few fail/error with python 2.5
+python -m 'rpy2.tests'
+
+cd $curdir
+
